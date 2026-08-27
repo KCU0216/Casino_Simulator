@@ -9,14 +9,12 @@
 #include "InputActionValue.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "AbilitySystemComponent.h"
+#include "Blackjack/BlackjackPlayerComponent.h"
 #include "Economy/CasinoShopComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Machine/SeatedMachineBase.h"
 #include "casino_simulatorPlayerController.h"
-#include "RaceGame/RaceManager.h"
-#include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
-#include "Item/ItemData.h"
 #include "casino_simulator.h"
 
 Acasino_simulatorCharacter::Acasino_simulatorCharacter()
@@ -64,6 +62,7 @@ Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 
 	ShopComponent = CreateDefaultSubobject<UCasinoShopComponent>(TEXT("ShopComponent"));
 	WorldInteractionDetector = CreateDefaultSubobject<UWorldInteractionDetectorComponent>(TEXT("WorldInteractionDetector"));
+	BlackjackPlayerComponent = CreateDefaultSubobject<UBlackjackPlayerComponent>(TEXT("BlackjackPlayerComponent"));
 }
 
 UAbilitySystemComponent* Acasino_simulatorCharacter::GetAbilitySystemComponent() const
@@ -286,18 +285,6 @@ void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* Play
 			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &Acasino_simulatorCharacter::InteractInput);
 		}
 
-		// Quick-use slots
-		if (Slot1Action)
-		{
-			EnhancedInputComponent->BindAction(Slot1Action, ETriggerEvent::Started, this, &Acasino_simulatorCharacter::Slot1Input);
-			UE_LOG(LogTemp, Log, TEXT("Bind"));
-		}
-
-		if (Slot2Action)
-		{
-			EnhancedInputComponent->BindAction(Slot2Action, ETriggerEvent::Started, this, &Acasino_simulatorCharacter::Slot2Input);
-		}
-
 		if (MachineExitAction)
 		{
 			EnhancedInputComponent->BindAction(MachineExitAction, ETriggerEvent::Started, this, &Acasino_simulatorCharacter::MachineExitInput);
@@ -362,64 +349,6 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 	}
 }
 
-void Acasino_simulatorCharacter::Slot1Input(const FInputActionValue& Value)
-{
-	Acasino_simulatorPlayerState* State = GetPlayerState<Acasino_simulatorPlayerState>();
-	
-	if (!State|| !State->NumberSlots.IsValidIndex(0))
-	{
-		return;
-	}
-
-	const int32 ItemID = State->NumberSlots[0];
-
-	FItemData ItemData;
-	if (!State->FindItemData(ItemID, ItemData) || State->GetItemQuantity(ItemID) <= 0)
-	{
-		return;
-	}
-	
-	if (!ItemData.bConsumeOnUse || !ItemData.OnUseEffect || !AbilitySystemComponent)
-	{
-		return;
-	}
-
-	// GameplayEffects should only ever be applied on the authority (see PossessedBy/InitializeDefaultAttributes).
-	// On a remote client this input is handled locally but won't have authority - a Server RPC would be
-	// needed there to actually apply the effect; out of scope for this pass.
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
-	EffectContext.AddSourceObject(this);
-
-	const FGameplayEffectSpecHandle SpecHandle = AbilitySystemComponent->MakeOutgoingSpec(ItemData.OnUseEffect, 1.0f, EffectContext);
-	if (!SpecHandle.IsValid())
-	{
-		return;
-	}
-
-	// ItemData.ItemCategory doubles as the SetByCaller tag the item's OnUseEffect modifier should be
-	// configured to read (Magnitude Calculation Type = Set by Caller, Data Tag = that item's category).
-	// EffectMagnitude is per-item (e.g. how much Nicotine/Alcohol this specific item restores), so it's
-	// supplied here rather than baked into the GameplayEffect asset itself.
-	SpecHandle.Data->SetSetByCallerMagnitude(ItemData.ItemCategory, ItemData.EffectMagnitude);
-
-	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-	
-	if(State)
-	{
-		State->RemoveItem(ItemID, 1);
-	}
-}
-
-void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
-{
-	// TODO: quick-use the item in PlayerState's NumberSlots[1] once that use-item flow exists.
-}
-
 void Acasino_simulatorCharacter::MachineExitInput()
 {
 	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController()))
@@ -458,14 +387,4 @@ void Acasino_simulatorCharacter::DoJumpEnd()
 {
 	// pass StopJumping to the character
 	StopJumping();
-}
-
-void Acasino_simulatorCharacter::ServerBuyRaceTicket_Implementation(ARaceManager* Manager, int32 RunnerIndex, int32 Amount, int32 Count)
-{
-	if (Manager) Manager->ServerBuyTicket(this, RunnerIndex, Amount, Count);
-}
-
-void Acasino_simulatorCharacter::ServerClaimRaceWinnings_Implementation(ARaceManager* Manager)
-{
-	if (Manager) Manager->ServerClaimWinnings(this);
 }

@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blackjack/BlackjackTypes.h"
-#include "NPC/NPC_Base.h"
+#include "Interaction/WorldInteractableBase.h"
 #include "BlackjackSeatInteractionActor.generated.h"
 
 class ABlackjackTableActor;
@@ -17,7 +17,7 @@ class Acasino_simulatorCharacter;
  * target for a specific seat index, then reports the claim result back to Blueprint.
  */
 UCLASS(Blueprintable)
-class CASINO_SIMULATOR_API ABlackjackSeatInteractionActor : public ANPC_Base
+class CASINO_SIMULATOR_API ABlackjackSeatInteractionActor : public AWorldInteractableBase
 {
 	GENERATED_BODY()
 
@@ -25,6 +25,7 @@ public:
 	ABlackjackSeatInteractionActor();
 
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
+	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
 	ABlackjackTableActor* GetBlackjackTable() const;
@@ -52,4 +53,5 @@ protected:
 
 private:
 	ABlackjackTableActor* ResolveBlackjackTable() const;
+	void SyncSeatIndexFromNearestSeatPoint();
 };

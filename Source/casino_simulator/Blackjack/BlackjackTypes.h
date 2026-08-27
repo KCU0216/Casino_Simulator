@@ -3,7 +3,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/DataTable.h"
+#include "Engine/Texture2D.h"
 #include "BlackjackTypes.generated.h"
+
+UENUM(BlueprintType)
+enum class EBlackjackDeckStyle : uint8
+{
+	Classic UMETA(DisplayName="Classic"),
+	CasinoRed UMETA(DisplayName="Casino Red"),
+	CasinoBlue UMETA(DisplayName="Casino Blue"),
+	Gold UMETA(DisplayName="Gold")
+};
 
 UENUM(BlueprintType)
 enum class EBlackjackSuit : uint8
@@ -142,4 +153,25 @@ struct CASINO_SIMULATOR_API FBlackjackSeatState
 	bool bHasSplitThisRound = false;
 
 	bool IsOccupied() const { return Occupant != nullptr; }
+};
+
+USTRUCT(BlueprintType)
+struct CASINO_SIMULATOR_API FBlackjackCardVisualData : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Visual")
+	EBlackjackDeckStyle DeckStyle = EBlackjackDeckStyle::Classic;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Visual")
+	EBlackjackSuit Suit = EBlackjackSuit::Clubs;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Visual")
+	EBlackjackRank Rank = EBlackjackRank::Ace;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Visual")
+	TObjectPtr<UTexture2D> FrontTexture = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Visual")
+	TObjectPtr<UTexture2D> BackTexture = nullptr;
 };

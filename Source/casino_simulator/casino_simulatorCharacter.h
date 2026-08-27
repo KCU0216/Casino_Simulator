@@ -17,10 +17,10 @@ class UAbilitySystemComponent;
 class Ucasino_simulatorAttributeSet;
 class UCasinoShopComponent;
 class UWorldInteractionDetectorComponent;
+class UBlackjackPlayerComponent;
 class UGameplayEffect;
 class ASeatedMachineBase;
 struct FInputActionValue;
-class ARaceManager;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
@@ -49,14 +49,6 @@ protected:
 	/** Interact Input Action */
 	UPROPERTY(EditAnywhere, Category ="Input")
 	UInputAction* InteractAction;
-
-	/** Slot 1 Input Action (quick-use item in PlayerState's NumberSlots[0]) */
-	UPROPERTY(EditAnywhere, Category ="Input")
-	UInputAction* Slot1Action;
-
-	/** Slot 2 Input Action (quick-use item in PlayerState's NumberSlots[1]) */
-	UPROPERTY(EditAnywhere, Category ="Input")
-	UInputAction* Slot2Action;
 
 	/** Machine Exit Input Action */
 	UPROPERTY(EditAnywhere, Category ="Input")
@@ -93,6 +85,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Interaction", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UWorldInteractionDetectorComponent> WorldInteractionDetector;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Blackjack", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UBlackjackPlayerComponent> BlackjackPlayerComponent;
+
 	/** Infinite periodic GameplayEffect (typically a Blueprint) that decays Nicotine/Alcohol over time. Applied once, server-side. */
 	UPROPERTY(EditDefaultsOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UGameplayEffect> AttributeDecayEffectClass;
@@ -101,7 +96,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
 	FActiveGameplayEffectHandle AttributeDecayEffectHandle;
 
-	UPROPERTY(Transient, BlueprintReadOnly, Category="Machine|Interaction", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Machine|Interaction", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ASeatedMachineBase> CurrentSeatedMachine;
 
 	/** Walking speed at full Nicotine (ratio = 1). CharacterMovementComponent's MaxWalkSpeed is scaled from this as Nicotine depletes. */
@@ -129,6 +124,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	UWorldInteractionDetectorComponent* GetWorldInteractionDetector() const { return WorldInteractionDetector; }
 
+	UFUNCTION(BlueprintPure, Category="Blackjack")
+	UBlackjackPlayerComponent* GetBlackjackPlayerComponent() const { return BlackjackPlayerComponent; }
+
 	UFUNCTION(BlueprintCallable, Category = "Economy|Currency")
 	bool TrySpendCurrency(float Amount);
 
@@ -138,17 +136,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Economy|Currency")
 	float GetCurrency() const;
 
-	// ── 마권 (돈이라 서버 검증 필수). UI에서 소유 캐릭터에 호출 → 서버에서 매니저로 전달 ──
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
-	void ServerBuyRaceTicket(ARaceManager* Manager, int32 RunnerIndex, int32 Amount, int32 Count);
-
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
-	void ServerClaimRaceWinnings(ARaceManager* Manager);
-
-	UFUNCTION(BlueprintPure, Category="Machine|Interaction")
+	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
 	ASeatedMachineBase* GetCurrentSeatedMachine() const { return CurrentSeatedMachine; }
 
-	UFUNCTION(BlueprintPure, Category="Machine|Interaction")
+	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
 	bool IsUsingSeatedMachine() const { return CurrentSeatedMachine != nullptr; }
 
 	void SetCurrentSeatedMachine(ASeatedMachineBase* NewMachine);
@@ -190,12 +181,6 @@ protected:
 
 	/** Called from Input Actions for interaction input */
 	void InteractInput(const FInputActionValue& Value);
-
-	/** Called from Input Actions for slot 1 input */
-	void Slot1Input(const FInputActionValue& Value);
-
-	/** Called from Input Actions for slot 2 input */
-	void Slot2Input(const FInputActionValue& Value);
 
 	void MachineExitInput();
 
