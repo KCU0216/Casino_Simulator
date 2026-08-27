@@ -1,0 +1,31 @@
+# Unreal Engine generated folders
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Visual Studio and IDE files
+.vs/
+.vs_backup_*/
+*.sln
+*.suo
+*.user
+*.userosscache
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+
+# Build and upgrade logs
+UpgradeLog*.htm
+Backup*/
+
+# Codex temporary review artifacts
+.codex_tmp_ppt_view/
+
+# Local animation source assets
+Content/Casino_Animation/
+
+# OS metadata
+Thumbs.db
+Desktop.ini

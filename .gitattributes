@@ -1,0 +1,29 @@
+# ── Git LFS 사용 안 함 (de-LFS) ──
+# 바이너리 에셋은 일반 git 객체로 저장. LFS 필터 절대 넣지 말 것!
+# 'binary' = -text -diff -merge (줄바꿈 변환/자동머지 방지)
+
+# Unreal 에셋
+*.uasset binary
+*.umap   binary
+
+# 3D / 애니메이션
+*.fbx    binary
+*.obj    binary
+*.blend  binary
+
+# 오디오
+*.wav    binary
+*.mp3    binary
+*.ogg    binary
+
+# 비디오
+*.mp4    binary
+*.mov    binary
+
+# 이미지
+*.png    binary
+*.tga    binary
+*.jpg    binary
+*.jpeg   binary
+*.bmp    binary
+*.psd    binary
