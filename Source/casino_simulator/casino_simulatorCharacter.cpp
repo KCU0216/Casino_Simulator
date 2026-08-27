@@ -413,6 +413,12 @@ void Acasino_simulatorCharacter::Slot1Input(const FInputActionValue& Value)
 	{
 		State->RemoveItem(ItemID, 1);
 	}
+
+	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
+	if (PC && PC->IsInventoryOpen())
+	{
+		PC->RefreshInventroy();
+	}
 }
 
 void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
