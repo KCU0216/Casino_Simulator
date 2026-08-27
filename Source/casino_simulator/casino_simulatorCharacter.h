@@ -21,6 +21,7 @@ class UBlackjackPlayerComponent;
 class UGameplayEffect;
 class ASeatedMachineBase;
 struct FInputActionValue;
+class ARaceManager;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
@@ -49,6 +50,14 @@ protected:
 	/** Interact Input Action */
 	UPROPERTY(EditAnywhere, Category ="Input")
 	UInputAction* InteractAction;
+
+	/** Slot 1 Input Action (quick-use item in PlayerState's NumberSlots[0]) */
+	UPROPERTY(EditAnywhere, Category ="Input")
+	UInputAction* Slot1Action;
+
+	/** Slot 2 Input Action (quick-use item in PlayerState's NumberSlots[1]) */
+	UPROPERTY(EditAnywhere, Category ="Input")
+	UInputAction* Slot2Action;
 
 	/** Machine Exit Input Action */
 	UPROPERTY(EditAnywhere, Category ="Input")
@@ -136,6 +145,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Economy|Currency")
 	float GetCurrency() const;
 
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
+	void ServerBuyRaceTicket(ARaceManager* Manager, int32 RunnerIndex, int32 Amount, int32 Count);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
+	void ServerClaimRaceWinnings(ARaceManager* Manager);
+
 	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
 	ASeatedMachineBase* GetCurrentSeatedMachine() const { return CurrentSeatedMachine; }
 
@@ -181,6 +196,12 @@ protected:
 
 	/** Called from Input Actions for interaction input */
 	void InteractInput(const FInputActionValue& Value);
+
+	/** Called from Input Actions for slot 1 input */
+	void Slot1Input(const FInputActionValue& Value);
+
+	/** Called from Input Actions for slot 2 input */
+	void Slot2Input(const FInputActionValue& Value);
 
 	void MachineExitInput();
 

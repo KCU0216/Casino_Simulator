@@ -13,6 +13,7 @@
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "UI/casino_simulatorPlayerHUD.h"
 #include "UI/WorldInteractionPromptWidget.h"
+#include "UI/InventoryWidget.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
 #include "casino_simulatorCharacter.h"
@@ -337,7 +338,8 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 		{
 			CloseInteraction();
 			CurrentInteractionTarget->Interact(PlayerCharacter);
-			if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
+			UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement();
+			if (HitNPC->GetNPCType() != ENPCType::Shop && MovementComponent)
 			{
 				MovementComponent->DisableMovement();
 			}
@@ -589,6 +591,14 @@ void Acasino_simulatorPlayerController::CloseInteraction()
 	}
 }
 
+void Acasino_simulatorPlayerController::RefreshInventroy()
+{
+	if (InventoryWidget)
+	{
+		InventoryWidget->BP_AllRefresh();
+	}
+}
+
 bool Acasino_simulatorPlayerController::OpenWorldInteraction(const FText& PromptText)
 {
 	if (bInteractionUIOpen || bInteractionPromptSuppressed || (CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection()))
@@ -706,7 +716,7 @@ void Acasino_simulatorPlayerController::ToggleInventory()
 
 	if (!InventoryWidget)
 	{
-		InventoryWidget = CreateWidget<UUserWidget>(this, InventoryWidgetClass);
+		InventoryWidget = CreateWidget<UInventoryWidget>(this, InventoryWidgetClass);
 		if (InventoryWidget)
 		{
 			InventoryWidget->AddToViewport();

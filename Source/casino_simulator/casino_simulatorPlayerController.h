@@ -14,6 +14,7 @@ class UWorldInteractionPromptWidget;
 class UAbilitySystemComponent;
 class ANPC_Base;
 class ASeatedMachineBase;
+class UInventoryWidget;
 class AWorldInteractableBase;
 struct FOnAttributeChangeData;
 
@@ -48,11 +49,11 @@ protected:
 
 	/** Inventory widget class to spawn (e.g. WBP_Inventory) */
 	UPROPERTY(EditAnywhere, Category="Inventory")
-	TSubclassOf<UUserWidget> InventoryWidgetClass;
+	TSubclassOf<UInventoryWidget> InventoryWidgetClass;
 
 	/** Pointer to the spawned inventory widget, created lazily the first time it's toggled on */
 	UPROPERTY()
-	TObjectPtr<UUserWidget> InventoryWidget;
+	TObjectPtr<UInventoryWidget> InventoryWidget;
 
 	/** Mobile controls widget to spawn */
 	UPROPERTY(EditAnywhere, Category="Input|Touch Controls")
@@ -215,6 +216,9 @@ public:
 	void OpenInteraction();
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void CloseInteraction();
+
+	UFUNCTION(BlueprintCallable, Category="Inventory")
+	void RefreshInventroy();
 
 protected:
 	UFUNCTION(Server, Reliable)
