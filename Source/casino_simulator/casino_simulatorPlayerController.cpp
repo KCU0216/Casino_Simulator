@@ -338,7 +338,8 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 		{
 			CloseInteraction();
 			CurrentInteractionTarget->Interact(PlayerCharacter);
-			if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
+			UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement();
+			if (HitNPC->GetNPCType() != ENPCType::Shop && MovementComponent)
 			{
 				MovementComponent->DisableMovement();
 			}
