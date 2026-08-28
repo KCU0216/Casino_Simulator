@@ -56,6 +56,8 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race") TArray<int32> FinishOrder;
 	// 마권 원장 (서버 권위, 모두에게 복제)
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race|Bet") TArray<FBetTicket> Tickets;
+	//현재 경마 라운드
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race") int32 CurrentRoundNumber = 0;
 
 	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceLineupReady OnLineupReady;
 	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceStarted     OnRaceStarted;
@@ -80,7 +82,8 @@ protected:
 	virtual void BeginPlay() override;
 	UFUNCTION() void OnRep_Phase();
 
-	UPROPERTY() TArray<ARaceRunner*> Runners;
+	// 서버가 스폰한 러너의 순서를 클라이언트 UI에도 전달한다.
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race") TArray<ARaceRunner*> Runners;
 
 	int32 NextTicketId = 1;
 	void SettleTickets();   // 단승 정산: 진 마권 삭제, 당첨 마권 유지

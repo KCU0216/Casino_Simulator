@@ -59,6 +59,8 @@ void ARaceManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ARaceManager, WinnerIndex);
 	DOREPLIFETIME(ARaceManager, FinishOrder);
 	DOREPLIFETIME(ARaceManager, Tickets);
+	DOREPLIFETIME(ARaceManager, CurrentRoundNumber);
+	DOREPLIFETIME(ARaceManager, Runners);
 }
 
 void ARaceManager::BeginPlay()
@@ -81,7 +83,7 @@ void ARaceManager::BeginPlay()
 				UE_LOG(LogTemp, Warning, TEXT("[RaceManager] NPC 스폰 실패 - 클래스/위치 확인"));
 		}
 
-		StartNewRound();
+		// 첫 경주는 외부 입력으로 시작한다. BeginPlay에서는 Idle 상태를 유지한다.
 	}
 }
 
@@ -119,8 +121,8 @@ FRunnerRaceScript ARaceManager::RollScript(const FRaceRunnerStats& S, const FVec
 
 void ARaceManager::StartNewRound()
 {
-	if (!HasAuthority()) return;
-
+	if (!HasAuthority() || Phase != ERacePhase::Idle) return;
+	
 	for (ARaceRunner* R : Runners) { if (R) R->Destroy(); }
 	Runners.Reset();
 	WinnerIndex = -1;
@@ -134,7 +136,7 @@ void ARaceManager::StartNewRound()
 		UE_LOG(LogTemp, Warning, TEXT("[RaceManager] RunnerClass 미지정 - 러너 BP를 지정해줘"));
 		return;
 	}
-
+	CurrentRoundNumber++;
 	const bool bUseSpawnPoints = RunnerSpawnPoints.Num() > 0;
 	const int32 Count = bUseSpawnPoints ? RunnerSpawnPoints.Num() : NumRunners;
 
@@ -231,12 +233,20 @@ void ARaceManager::Tick(float Dt)
 
 void ARaceManager::ResetRace()
 {
-	if (!HasAuthority()) return;
+	if (!HasAuthority() || Phase != ERacePhase::Finished) return;
+
+	for (ARaceRunner* R : Runners)
+	{
+		if (R) R->Destroy();
+	}
+	Runners.Reset();
+
 	Phase = ERacePhase::Idle;
 	WinnerIndex = -1;
 	FinishOrder.Reset();
+	RaceElapsed = 0.f;
+	RaceDuration = 0.f;
 	bResultBroadcast = false;
-	for (ARaceRunner* R : Runners) { if (R) R->ServerSetRacing(false); }
 	OnRep_Phase();
 }
 
@@ -268,6 +278,7 @@ bool ARaceManager::ServerBuyTicket(Acasino_simulatorCharacter* Player, int32 Run
 	T.TicketId    = NextTicketId++;
 	T.Buyer       = PS;
 	T.BuyerName   = PS ? PS->GetPlayerName() : TEXT("?");
+	T.RoundNumber = CurrentRoundNumber;
 	T.RunnerIndex = RunnerIndex;
 	T.RunnerName  = Runners[RunnerIndex]->Stats.Name;
 	T.Amount      = Amount;

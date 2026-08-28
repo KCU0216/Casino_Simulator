@@ -56,6 +56,8 @@ struct FBetTicket
 	// 누가 (폰 리스폰돼도 유지되게 PlayerState 기준)
 	UPROPERTY(BlueprintReadOnly, Category = "Bet") TObjectPtr<APlayerState> Buyer = nullptr;
 	UPROPERTY(BlueprintReadOnly, Category = "Bet") FString BuyerName;
+	// 어느 라운드에
+	UPROPERTY(BlueprintReadOnly, Category = "Bet") int32 RoundNumber = 1;
 	// 어느 러너에
 	UPROPERTY(BlueprintReadOnly, Category = "Bet") int32 RunnerIndex = -1;
 	UPROPERTY(BlueprintReadOnly, Category = "Bet") FString RunnerName;
@@ -68,3 +70,4 @@ struct FBetTicket
 
 	int32 Payout() const { return FMath::FloorToInt(Amount * Count * Odds); }
 };
+	
