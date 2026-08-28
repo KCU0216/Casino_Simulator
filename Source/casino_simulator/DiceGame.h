@@ -57,13 +57,24 @@ protected:
 	TObjectPtr<UStaticMeshComponent> Mesh;
 
 	virtual void BeginPlay() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 private:
 	/** Spawns one die from the given class at the given transform, or returns nullptr if the class isn't set. */
 	ADice* SpawnDice(TSubclassOf<ADice> DiceClass, const FTransform& SpawnTransform) const;
 
-	/** Reveals ResultText with the given value; called after ResultTextRevealDelay once dice start rolling. */
+	/** Reveals ResultText with the given value; called after ResultTextRevealDelay once dice start rolling. Server-only. */
 	void ShowResultText(int32 ResultValue);
+
+	/** Result number currently shown above the table (0 = hidden/empty). Replicated so the reveal shows
+	 * on every client, not just the machine that ran ShowResultText (e.g. a listen server's own client). */
+	UPROPERTY(ReplicatedUsing = OnRep_DisplayedResult)
+	int32 DisplayedResult = 0;
+
+	/** Applies DisplayedResult to ResultText (visible + number, or hidden if 0). Called directly on the
+	 * authority right after DisplayedResult changes, and via replication on every client. */
+	UFUNCTION()
+	void OnRep_DisplayedResult();
 
 	/** Delay (seconds) before ResultText appears after SetDice(true, ...) is called, so it shows up after the dice roll. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dice Game", meta = (AllowPrivateAccess = "true"))

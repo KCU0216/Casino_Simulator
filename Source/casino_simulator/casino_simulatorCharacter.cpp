@@ -13,6 +13,7 @@
 #include "Economy/CasinoShopComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Machine/SeatedMachineBase.h"
+#include "NPC/NPC_Dice.h"
 #include "casino_simulatorPlayerController.h"
 #include "RaceGame/RaceManager.h"
 #include "casino_simulatorPlayerState.h"
@@ -75,7 +76,11 @@ UAbilitySystemComponent* Acasino_simulatorCharacter::GetAbilitySystemComponent()
 
 bool Acasino_simulatorCharacter::TrySpendCurrency(float Amount)
 {
-	if (Amount <= 0.0f || !AbilitySystemComponent)
+	// ApplyModToAttribute below is a raw, non-replicated change - it must only ever run on the
+	// server, or a client would just mutate its own local value and see it snap back on the next
+	// attribute replication. Callers on a client should route through a Server RPC instead
+	// (see UCasinoShopComponent::BuyShopItem for the pattern).
+	if (!HasAuthority() || Amount <= 0.0f || !AbilitySystemComponent)
 	{
 		return false;
 	}
@@ -102,7 +107,8 @@ bool Acasino_simulatorCharacter::TrySpendCurrency(float Amount)
 
 void Acasino_simulatorCharacter::AddCurrency(float Amount)
 {
-	if (Amount <= 0.0f || !AbilitySystemComponent)
+	// Same reasoning as TrySpendCurrency - server-only, since ApplyModToAttribute doesn't replicate.
+	if (!HasAuthority() || Amount <= 0.0f || !AbilitySystemComponent)
 	{
 		return;
 	}
@@ -536,5 +542,13 @@ void Acasino_simulatorCharacter::ServerClaimRaceWinnings_Implementation(ARaceMan
 	if (Manager)
 	{
 		Manager->ServerClaimWinnings(this);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerPlaceDiceBet_Implementation(ANPC_Dice* DiceNPC, int32 Select, int32 Betting)
+{
+	if (DiceNPC)
+	{
+		DiceNPC->ExecutePlaceBet(this, Select, Betting);
 	}
 }
