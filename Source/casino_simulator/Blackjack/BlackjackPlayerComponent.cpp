@@ -194,6 +194,22 @@ bool UBlackjackPlayerComponent::PlaceInsurance(int32 Amount)
 	return true;
 }
 
+bool UBlackjackPlayerComponent::SkipInsurance()
+{
+	if (!IsInBlackjackSeat())
+	{
+		return false;
+	}
+
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		return ExecuteSkipInsurance();
+	}
+
+	ServerSkipInsurance();
+	return true;
+}
+
 void UBlackjackPlayerComponent::ServerEnterBlackjackSeatMode_Implementation(ABlackjackTableActor* Table, int32 SeatIndex)
 {
 	Acasino_simulatorCharacter* Character = GetOwnerCharacter();
@@ -243,6 +259,11 @@ void UBlackjackPlayerComponent::ServerSplit_Implementation()
 void UBlackjackPlayerComponent::ServerPlaceInsurance_Implementation(int32 Amount)
 {
 	ExecutePlaceInsurance(Amount);
+}
+
+void UBlackjackPlayerComponent::ServerSkipInsurance_Implementation()
+{
+	ExecuteSkipInsurance();
 }
 
 void UBlackjackPlayerComponent::OnRep_BlackjackSeatMode()
@@ -430,4 +451,15 @@ bool UBlackjackPlayerComponent::ExecutePlaceInsurance(int32 Amount)
 	}
 
 	return CurrentBlackjackTable->PlaceInsurance(Character, Amount);
+}
+
+bool UBlackjackPlayerComponent::ExecuteSkipInsurance()
+{
+	Acasino_simulatorCharacter* Character = GetOwnerCharacter();
+	if (!Character || !CurrentBlackjackTable)
+	{
+		return false;
+	}
+
+	return CurrentBlackjackTable->SkipInsurance(Character);
 }

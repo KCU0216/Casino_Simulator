@@ -8,7 +8,6 @@
 #include "BlackjackTableActor.generated.h"
 
 class Acasino_simulatorCharacter;
-class UCameraComponent;
 class USceneComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBlackjackTableChanged);
@@ -74,6 +73,9 @@ public:
 	bool PlaceInsurance(Acasino_simulatorCharacter* Player, int32 Amount);
 
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Round")
+	bool SkipInsurance(Acasino_simulatorCharacter* Player);
+
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Round")
 	void ResetRound();
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Round")
@@ -97,29 +99,14 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack|Rules")
 	bool CanOfferInsurance() const;
 
+	UFUNCTION(BlueprintPure, Category="Blackjack|Rules")
+	bool IsPlayerTurn(Acasino_simulatorCharacter* Player) const;
+
 	UFUNCTION(BlueprintPure, Category="Blackjack|Layout")
 	USceneComponent* GetSeatPoint(int32 SeatIndex) const;
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Layout")
-	USceneComponent* GetSeatCameraPoint(int32 SeatIndex) const;
-
-	UFUNCTION(BlueprintPure, Category="Blackjack|Layout")
 	USceneComponent* GetStandBackPoint() const { return StandBackPoint; }
-
-	UFUNCTION(BlueprintPure, Category="Blackjack|Camera")
-	UCameraComponent* GetSeatSelectCamera() const { return nullptr; }
-
-	UFUNCTION(BlueprintPure, Category="Blackjack|Camera")
-	UCameraComponent* GetSeatCamera(int32 SeatIndex) const;
-
-	UFUNCTION(BlueprintCallable, Category="Blackjack|Camera")
-	void ActivateSeatSelectCamera();
-
-	UFUNCTION(BlueprintCallable, Category="Blackjack|Camera")
-	bool ActivateSeatCamera(int32 SeatIndex);
-
-	UFUNCTION(BlueprintCallable, Category="Blackjack|Camera")
-	void DeactivateTableCameras();
 
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
 	FBlackjackTableChanged OnTableChanged;
@@ -138,9 +125,6 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USceneComponent> TableRoot;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Blackjack|Layout")
-	TObjectPtr<USceneComponent> SeatSelectCameraPoint;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Blackjack|Layout")
 	TObjectPtr<USceneComponent> StandBackPoint;
@@ -182,6 +166,9 @@ protected:
 	FBlackjackHand DealerHand;
 
 	UPROPERTY(ReplicatedUsing=OnRep_TableState, BlueprintReadOnly, Category="Blackjack|State")
+	int32 ActiveSeatIndex = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadOnly, Category="Blackjack|State")
 	TArray<FBlackjackCard> Shoe;
 
 	UPROPERTY(BlueprintReadOnly, Category="Blackjack|State")
@@ -200,6 +187,10 @@ private:
 	void AdvanceTurnAfterSeat(int32 SeatIndex);
 	void RunDealerAndResolve();
 	void ResolveSeats();
+	void FinishInsuranceIfReady();
+	bool AllInsuranceDecisionsComplete() const;
+	bool MoveToNextPlayableHand(int32 CurrentSeatIndex);
+	bool IsHandComplete(const FBlackjackHand& Hand) const;
 	void BroadcastSeat(int32 SeatIndex);
 	FBlackjackSeatState* FindSeatForPlayer(Acasino_simulatorCharacter* Player);
 	const FBlackjackSeatState* FindSeatForPlayer(Acasino_simulatorCharacter* Player) const;
@@ -208,4 +199,6 @@ private:
 	bool AllActiveSeatsComplete() const;
 	int32 GetCardValue(const FBlackjackCard& Card) const;
 	bool IsSoft17(const FBlackjackHand& Hand) const;
+
+	FBlackjackHand ServerDealerHand;
 };
