@@ -191,6 +191,7 @@ private:
 	bool AllInsuranceDecisionsComplete() const;
 	bool MoveToNextPlayableHand(int32 CurrentSeatIndex);
 	bool IsHandComplete(const FBlackjackHand& Hand) const;
+	bool HasAnyNonBustPlayerHand() const;
 	void BroadcastSeat(int32 SeatIndex);
 	FBlackjackSeatState* FindSeatForPlayer(Acasino_simulatorCharacter* Player);
 	const FBlackjackSeatState* FindSeatForPlayer(Acasino_simulatorCharacter* Player) const;

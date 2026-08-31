@@ -738,6 +738,27 @@ bool ABlackjackTableActor::IsHandComplete(const FBlackjackHand& Hand) const
 	return Hand.bStood || IsHandBust(Hand) || IsNaturalBlackjack(Hand);
 }
 
+bool ABlackjackTableActor::HasAnyNonBustPlayerHand() const
+{
+	for (const FBlackjackSeatState& Seat : Seats)
+	{
+		if (!Seat.IsOccupied() || Seat.BetAmount <= 0)
+		{
+			continue;
+		}
+
+		for (const FBlackjackHand& Hand : Seat.Hands)
+		{
+			if (!Hand.Cards.IsEmpty() && !IsHandBust(Hand))
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 void ABlackjackTableActor::RunDealerAndResolve()
 {
 	RoundState = EBlackjackRoundState::DealerTurn;
@@ -748,6 +769,12 @@ void ABlackjackTableActor::RunDealerAndResolve()
 		Card.bFaceUp = true;
 	}
 	DealerHand = ServerDealerHand;
+
+	if (!HasAnyNonBustPlayerHand())
+	{
+		ResolveSeats();
+		return;
+	}
 
 	while (!IsHandBust(ServerDealerHand))
 	{
