@@ -770,6 +770,11 @@ void ABlackjackTableActor::RunDealerAndResolve()
 	}
 	DealerHand = ServerDealerHand;
 
+	if (ServerDealerHand.Cards.IsValidIndex(1))
+	{
+		OnDealerHoleCardRevealed.Broadcast(INDEX_NONE, ServerDealerHand.Cards[1]);
+	}
+
 	if (!HasAnyNonBustPlayerHand())
 	{
 		ResolveSeats();

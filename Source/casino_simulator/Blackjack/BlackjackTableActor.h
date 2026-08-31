@@ -120,6 +120,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
 	FBlackjackCardDealt OnDealerCardDealt;
 
+	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
+	FBlackjackCardDealt OnDealerHoleCardRevealed;
+
 protected:
 	virtual void BeginPlay() override;
 
