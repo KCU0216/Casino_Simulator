@@ -11,6 +11,7 @@ class Acasino_simulatorCharacter;
 class USceneComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBlackjackTableChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBlackjackRoundCompleted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBlackjackSeatChanged, int32, SeatIndex, const FBlackjackSeatState&, SeatState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBlackjackCardDealt, int32, SeatIndex, const FBlackjackCard&, Card);
 
@@ -43,7 +44,19 @@ public:
 	void LeaveSeat(Acasino_simulatorCharacter* Player);
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
+	bool CanLeaveSeat(Acasino_simulatorCharacter* Player) const;
+
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Seats")
+	bool ToggleLeaveAfterRound(Acasino_simulatorCharacter* Player);
+
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Seats")
+	int32 ReleaseSeatsLeavingAfterRound();
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
 	int32 GetSeatIndexForPlayer(Acasino_simulatorCharacter* Player) const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
+	bool IsLeaveAfterRoundRequested(Acasino_simulatorCharacter* Player) const;
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
 	bool IsSeatAvailable(int32 SeatIndex) const;
@@ -123,6 +136,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
 	FBlackjackCardDealt OnDealerHoleCardRevealed;
 
+	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
+	FBlackjackRoundCompleted OnRoundCompleted;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -200,6 +216,7 @@ private:
 	const FBlackjackSeatState* FindSeatForPlayer(Acasino_simulatorCharacter* Player) const;
 	bool IsValidSeatIndex(int32 SeatIndex) const;
 	bool IsRoundActive() const;
+	bool IsSeatLockedForCurrentRound(const FBlackjackSeatState& Seat) const;
 	bool AllActiveSeatsComplete() const;
 	int32 GetCardValue(const FBlackjackCard& Card) const;
 	bool IsSoft17(const FBlackjackHand& Hand) const;

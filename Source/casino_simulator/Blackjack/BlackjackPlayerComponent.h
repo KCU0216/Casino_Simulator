@@ -38,8 +38,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Seat")
 	void CompleteExitBlackjackSeat();
 
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Seat")
+	bool ToggleLeaveAfterRound();
+
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
 	bool IsInBlackjackSeat() const { return CurrentBlackjackTable != nullptr && CurrentSeatIndex != INDEX_NONE; }
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
+	bool IsLeaveAfterRoundRequested() const;
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
 	ABlackjackTableActor* GetCurrentBlackjackTable() const { return CurrentBlackjackTable; }
@@ -92,6 +98,9 @@ protected:
 	void ServerCompleteExitBlackjackSeat();
 
 	UFUNCTION(Server, Reliable)
+	void ServerToggleLeaveAfterRound();
+
+	UFUNCTION(Server, Reliable)
 	void ServerPlaceBet(int32 Amount);
 
 	UFUNCTION(Server, Reliable)
@@ -133,6 +142,7 @@ private:
 	void ApplyMovementLock();
 	void ClearMovementLock();
 	bool CanLeaveCurrentSeat() const;
+	bool ExecuteToggleLeaveAfterRound();
 	bool ExecutePlaceBet(int32 Amount);
 	bool ExecuteStartRound();
 	bool ExecuteHit();

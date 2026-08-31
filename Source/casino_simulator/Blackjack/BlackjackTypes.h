@@ -162,6 +162,9 @@ struct CASINO_SIMULATOR_API FBlackjackSeatState
 	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
 	bool bInsuranceDecisionMade = false;
 
+	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
+	bool bLeaveAfterRound = false;
+
 	bool IsOccupied() const { return Occupant != nullptr; }
 };
 

@@ -44,6 +44,12 @@ void UBlackjackPlayerComponent::RequestExitBlackjackSeat()
 		return;
 	}
 
+	if (!CanLeaveCurrentSeat())
+	{
+		ToggleLeaveAfterRound();
+		return;
+	}
+
 	if (OnBlackjackSeatExitRequested.IsBound())
 	{
 		OnBlackjackSeatExitRequested.Broadcast(CurrentBlackjackTable, CurrentSeatIndex);
@@ -80,6 +86,37 @@ void UBlackjackPlayerComponent::CompleteExitBlackjackSeat()
 	}
 
 	ServerCompleteExitBlackjackSeat();
+}
+
+bool UBlackjackPlayerComponent::ToggleLeaveAfterRound()
+{
+	if (!IsInBlackjackSeat())
+	{
+		return false;
+	}
+
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		return ExecuteToggleLeaveAfterRound();
+	}
+
+	ServerToggleLeaveAfterRound();
+	return true;
+}
+
+bool UBlackjackPlayerComponent::IsLeaveAfterRoundRequested() const
+{
+	if (!CurrentBlackjackTable)
+	{
+		return false;
+	}
+
+	if (Acasino_simulatorCharacter* Character = GetOwnerCharacter())
+	{
+		return CurrentBlackjackTable->IsLeaveAfterRoundRequested(Character);
+	}
+
+	return false;
 }
 
 bool UBlackjackPlayerComponent::PlaceBet(int32 Amount)
@@ -224,6 +261,11 @@ void UBlackjackPlayerComponent::ServerEnterBlackjackSeatMode_Implementation(ABla
 void UBlackjackPlayerComponent::ServerCompleteExitBlackjackSeat_Implementation()
 {
 	CompleteExitBlackjackSeat();
+}
+
+void UBlackjackPlayerComponent::ServerToggleLeaveAfterRound_Implementation()
+{
+	ExecuteToggleLeaveAfterRound();
 }
 
 void UBlackjackPlayerComponent::ServerPlaceBet_Implementation(int32 Amount)
@@ -371,10 +413,23 @@ bool UBlackjackPlayerComponent::CanLeaveCurrentSeat() const
 		return true;
 	}
 
-	const EBlackjackRoundState RoundState = CurrentBlackjackTable->GetRoundState();
-	return RoundState == EBlackjackRoundState::WaitingForPlayers
-		|| RoundState == EBlackjackRoundState::Betting
-		|| RoundState == EBlackjackRoundState::RoundComplete;
+	if (Acasino_simulatorCharacter* Character = GetOwnerCharacter())
+	{
+		return CurrentBlackjackTable->CanLeaveSeat(Character);
+	}
+
+	return false;
+}
+
+bool UBlackjackPlayerComponent::ExecuteToggleLeaveAfterRound()
+{
+	Acasino_simulatorCharacter* Character = GetOwnerCharacter();
+	if (!Character || !CurrentBlackjackTable)
+	{
+		return false;
+	}
+
+	return CurrentBlackjackTable->ToggleLeaveAfterRound(Character);
 }
 
 bool UBlackjackPlayerComponent::ExecutePlaceBet(int32 Amount)

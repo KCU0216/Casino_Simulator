@@ -2,6 +2,7 @@
 
 #include "Blackjack/BlackjackTableActor.h"
 
+#include "Blackjack/BlackjackPlayerComponent.h"
 #include "Components/SceneComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
@@ -121,7 +122,7 @@ bool ABlackjackTableActor::CanClaimSeat(Acasino_simulatorCharacter* Player, int3
 
 void ABlackjackTableActor::LeaveSeat(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || !Player || IsRoundActive())
+	if (!HasAuthority() || !Player)
 	{
 		return;
 	}
@@ -132,10 +133,95 @@ void ABlackjackTableActor::LeaveSeat(Acasino_simulatorCharacter* Player)
 		return;
 	}
 
+	if (!CanLeaveSeat(Player))
+	{
+		return;
+	}
+
 	Seats[SeatIndex] = FBlackjackSeatState();
 	Seats[SeatIndex].SeatIndex = SeatIndex;
 	BroadcastSeat(SeatIndex);
 	OnTableChanged.Broadcast();
+}
+
+bool ABlackjackTableActor::CanLeaveSeat(Acasino_simulatorCharacter* Player) const
+{
+	if (!Player)
+	{
+		return false;
+	}
+
+	const int32 SeatIndex = GetSeatIndexForPlayer(Player);
+	if (!IsValidSeatIndex(SeatIndex))
+	{
+		return false;
+	}
+
+	return !IsSeatLockedForCurrentRound(Seats[SeatIndex]);
+}
+
+bool ABlackjackTableActor::ToggleLeaveAfterRound(Acasino_simulatorCharacter* Player)
+{
+	if (!HasAuthority() || !Player || CanLeaveSeat(Player))
+	{
+		return false;
+	}
+
+	const int32 SeatIndex = GetSeatIndexForPlayer(Player);
+	if (!IsValidSeatIndex(SeatIndex))
+	{
+		return false;
+	}
+
+	Seats[SeatIndex].bLeaveAfterRound = !Seats[SeatIndex].bLeaveAfterRound;
+	BroadcastSeat(SeatIndex);
+	OnTableChanged.Broadcast();
+	return true;
+}
+
+int32 ABlackjackTableActor::ReleaseSeatsLeavingAfterRound()
+{
+	if (!HasAuthority() || IsRoundActive())
+	{
+		return 0;
+	}
+
+	TArray<Acasino_simulatorCharacter*> PlayersToRelease;
+	for (const FBlackjackSeatState& Seat : Seats)
+	{
+		if (Seat.bLeaveAfterRound)
+		{
+			if (Acasino_simulatorCharacter* Player = Cast<Acasino_simulatorCharacter>(Seat.Occupant))
+			{
+				PlayersToRelease.Add(Player);
+			}
+		}
+	}
+
+	int32 ReleasedCount = 0;
+	for (Acasino_simulatorCharacter* Player : PlayersToRelease)
+	{
+		if (!Player)
+		{
+			continue;
+		}
+
+		if (UBlackjackPlayerComponent* BlackjackPlayerComponent = Player->GetBlackjackPlayerComponent())
+		{
+			BlackjackPlayerComponent->CompleteExitBlackjackSeat();
+		}
+		else
+		{
+			LeaveSeat(Player);
+		}
+
+		if (GetSeatIndexForPlayer(Player) == INDEX_NONE)
+		{
+			++ReleasedCount;
+		}
+	}
+
+	return ReleasedCount;
 }
 
 int32 ABlackjackTableActor::GetSeatIndexForPlayer(Acasino_simulatorCharacter* Player) const
@@ -154,6 +240,12 @@ int32 ABlackjackTableActor::GetSeatIndexForPlayer(Acasino_simulatorCharacter* Pl
 	}
 
 	return INDEX_NONE;
+}
+
+bool ABlackjackTableActor::IsLeaveAfterRoundRequested(Acasino_simulatorCharacter* Player) const
+{
+	const FBlackjackSeatState* Seat = FindSeatForPlayer(Player);
+	return Seat && Seat->bLeaveAfterRound;
 }
 
 bool ABlackjackTableActor::IsSeatAvailable(int32 SeatIndex) const
@@ -858,6 +950,7 @@ void ABlackjackTableActor::ResolveSeats()
 
 	RoundState = EBlackjackRoundState::RoundComplete;
 	OnTableChanged.Broadcast();
+	OnRoundCompleted.Broadcast();
 }
 
 void ABlackjackTableActor::BroadcastSeat(int32 SeatIndex)
@@ -916,6 +1009,16 @@ bool ABlackjackTableActor::IsRoundActive() const
 		|| RoundState == EBlackjackRoundState::PlayerTurns
 		|| RoundState == EBlackjackRoundState::DealerTurn
 		|| RoundState == EBlackjackRoundState::Resolving;
+}
+
+bool ABlackjackTableActor::IsSeatLockedForCurrentRound(const FBlackjackSeatState& Seat) const
+{
+	if (!IsRoundActive())
+	{
+		return false;
+	}
+
+	return Seat.BetAmount > 0 || !Seat.Hands.IsEmpty();
 }
 
 bool ABlackjackTableActor::AllActiveSeatsComplete() const
