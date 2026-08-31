@@ -225,6 +225,9 @@ protected:
 	void Server_RequestWorldInteraction(AWorldInteractableBase* Target);
 
 	UFUNCTION(Server, Reliable)
+	void Server_InteractWithNPC(ANPC_Base* Target);
+
+	UFUNCTION(Server, Reliable)
 	void Server_HandleMachinePrimaryInput(ASeatedMachineBase* Machine);
 
 	UFUNCTION(Server, Reliable)

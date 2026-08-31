@@ -22,6 +22,7 @@ class UGameplayEffect;
 class ASeatedMachineBase;
 struct FInputActionValue;
 class ARaceManager;
+class ANPC_Dice;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
@@ -150,6 +151,11 @@ public:
 
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
 	void ServerClaimRaceWinnings(ARaceManager* Manager);
+
+	/** Forwards a dice game bet placed by this (locally-owned) character to the server, since a
+	 * client can't call a Server RPC declared on DiceNPC directly (it isn't owned by that client). */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Dice Game")
+	void ServerPlaceDiceBet(ANPC_Dice* DiceNPC, int32 Select, int32 Betting);
 
 	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
 	ASeatedMachineBase* GetCurrentSeatedMachine() const { return CurrentSeatedMachine; }

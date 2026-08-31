@@ -106,7 +106,12 @@ void ANPC_Base::SetCanInterection(bool value)
 
 void ANPC_Base::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	if (!InteractingCharacter)
+	// Interact() is now called both locally (by whichever machine the interacting player is on, for
+	// immediate UI/cosmetic feedback) and on the server via RPC (to update authoritative NPC state,
+	// e.g. NPC_Dice's InteractingPlayer). BP_OnInteract is the cosmetic half, so it should only ever
+	// actually fire on the one machine where InteractingCharacter is locally controlled - otherwise a
+	// listen server would also run it for the host when a remote client is the one who interacted.
+	if (!InteractingCharacter || !InteractingCharacter->IsLocallyControlled())
 	{
 		return;
 	}

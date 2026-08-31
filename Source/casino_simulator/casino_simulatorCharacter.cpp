@@ -13,6 +13,7 @@
 #include "Economy/CasinoShopComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Machine/SeatedMachineBase.h"
+#include "NPC/NPC_Dice.h"
 #include "casino_simulatorPlayerController.h"
 #include "RaceGame/RaceManager.h"
 #include "casino_simulatorPlayerState.h"
@@ -75,7 +76,11 @@ UAbilitySystemComponent* Acasino_simulatorCharacter::GetAbilitySystemComponent()
 
 bool Acasino_simulatorCharacter::TrySpendCurrency(float Amount)
 {
-	if (Amount <= 0.0f || !AbilitySystemComponent)
+	// ApplyModToAttribute below is a raw, non-replicated change - it must only ever run on the
+	// server, or a client would just mutate its own local value and see it snap back on the next
+	// attribute replication. Callers on a client should route through a Server RPC instead
+	// (see UCasinoShopComponent::BuyShopItem for the pattern).
+	if (!HasAuthority() || Amount <= 0.0f || !AbilitySystemComponent)
 	{
 		return false;
 	}
@@ -102,7 +107,8 @@ bool Acasino_simulatorCharacter::TrySpendCurrency(float Amount)
 
 void Acasino_simulatorCharacter::AddCurrency(float Amount)
 {
-	if (Amount <= 0.0f || !AbilitySystemComponent)
+	// Same reasoning as TrySpendCurrency - server-only, since ApplyModToAttribute doesn't replicate.
+	if (!HasAuthority() || Amount <= 0.0f || !AbilitySystemComponent)
 	{
 		return;
 	}
@@ -426,6 +432,61 @@ void Acasino_simulatorCharacter::Slot1Input(const FInputActionValue& Value)
 void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
 {
 	// TODO: quick-use the item in PlayerState's NumberSlots[1] once that use-item flow exists.
+	Acasino_simulatorPlayerState* State = GetPlayerState<Acasino_simulatorPlayerState>();
+
+	if (!State || !State->NumberSlots.IsValidIndex(1))
+	{
+		return;
+	}
+
+	const int32 ItemID = State->NumberSlots[1];
+
+	FItemData ItemData;
+	if (!State->FindItemData(ItemID, ItemData) || State->GetItemQuantity(ItemID) <= 0)
+	{
+		return;
+	}
+
+	if (!ItemData.bConsumeOnUse || !ItemData.OnUseEffect || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	// GameplayEffects should only ever be applied on the authority (see PossessedBy/InitializeDefaultAttributes).
+	// On a remote client this input is handled locally but won't have authority - a Server RPC would be
+	// needed there to actually apply the effect; out of scope for this pass.
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
+	EffectContext.AddSourceObject(this);
+
+	const FGameplayEffectSpecHandle SpecHandle = AbilitySystemComponent->MakeOutgoingSpec(ItemData.OnUseEffect, 1.0f, EffectContext);
+	if (!SpecHandle.IsValid())
+	{
+		return;
+	}
+
+	// ItemData.ItemCategory doubles as the SetByCaller tag the item's OnUseEffect modifier should be
+	// configured to read (Magnitude Calculation Type = Set by Caller, Data Tag = that item's category).
+	// EffectMagnitude is per-item (e.g. how much Nicotine/Alcohol this specific item restores), so it's
+	// supplied here rather than baked into the GameplayEffect asset itself.
+	SpecHandle.Data->SetSetByCallerMagnitude(ItemData.ItemCategory, ItemData.EffectMagnitude);
+
+	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+
+	if (State)
+	{
+		State->RemoveItem(ItemID, 1);
+	}
+
+	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
+	if (PC && PC->IsInventoryOpen())
+	{
+		PC->RefreshInventroy();
+	}
 }
 
 void Acasino_simulatorCharacter::MachineExitInput()
@@ -481,5 +542,13 @@ void Acasino_simulatorCharacter::ServerClaimRaceWinnings_Implementation(ARaceMan
 	if (Manager)
 	{
 		Manager->ServerClaimWinnings(this);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerPlaceDiceBet_Implementation(ANPC_Dice* DiceNPC, int32 Select, int32 Betting)
+{
+	if (DiceNPC)
+	{
+		DiceNPC->ExecutePlaceBet(this, Select, Betting);
 	}
 }

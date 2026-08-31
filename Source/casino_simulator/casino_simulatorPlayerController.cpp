@@ -337,7 +337,26 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 		if (HitNPC)
 		{
 			CloseInteraction();
+
+			//Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+			if (!PlayerCharacter || !HitNPC || !HitNPC->GetCanInterection())
+			{
+				return;
+			}
+
+			//HitNPC->Interact(PlayerCharacter);
+
+			// Always run locally so BP_OnInteract (opening the UI, playing local effects, etc.)
+			// fires immediately on this player's own machine. On a client this only touches that
+			// client's non-authoritative copy of the NPC though, so also tell the server to run
+			// the same Interact() on its authoritative copy (e.g. so NPC_Dice's InteractingPlayer
+			// is set server-side too) - skip it on the server/host, which already just ran it above.
 			CurrentInteractionTarget->Interact(PlayerCharacter);
+			if (!HasAuthority())
+			{
+				Server_InteractWithNPC(CurrentInteractionTarget);
+			}
+
 			UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement();
 			if (HitNPC->GetNPCType() != ENPCType::Shop && MovementComponent)
 			{
@@ -405,6 +424,17 @@ void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implement
 		return;
 	}
 
+	Target->Interact(PlayerCharacter);
+}
+
+void Acasino_simulatorPlayerController::Server_InteractWithNPC_Implementation(ANPC_Base* Target)
+{
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+	if (!PlayerCharacter || !Target || !Target->GetCanInterection())
+	{
+		return;
+	}
+	CurrentInteractionTarget = Target;
 	Target->Interact(PlayerCharacter);
 }
 
