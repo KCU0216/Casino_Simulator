@@ -68,6 +68,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Actions")
 	bool PlaceInsurance(int32 Amount);
 
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Actions")
+	bool SkipInsurance();
+
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Seat")
 	FBlackjackSeatModeChanged OnBlackjackSeatModeStarted;
 
@@ -109,6 +112,9 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerPlaceInsurance(int32 Amount);
 
+	UFUNCTION(Server, Reliable)
+	void ServerSkipInsurance();
+
 	UFUNCTION()
 	void OnRep_BlackjackSeatMode();
 
@@ -134,4 +140,5 @@ private:
 	bool ExecuteDoubleDown();
 	bool ExecuteSplit();
 	bool ExecutePlaceInsurance(int32 Amount);
+	bool ExecuteSkipInsurance();
 };

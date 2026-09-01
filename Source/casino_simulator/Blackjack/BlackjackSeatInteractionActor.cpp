@@ -2,8 +2,10 @@
 
 #include "Blackjack/BlackjackSeatInteractionActor.h"
 
+#include "Blackjack/BlackjackPlayerComponent.h"
 #include "Blackjack/BlackjackTableActor.h"
 #include "Components/SceneComponent.h"
+#include "casino_simulatorCharacter.h"
 
 ABlackjackSeatInteractionActor::ABlackjackSeatInteractionActor()
 {
@@ -49,6 +51,11 @@ void ABlackjackSeatInteractionActor::Interact(Acasino_simulatorCharacter* Intera
 	{
 		BP_OnSeatClaimFailed(InteractingCharacter, EBlackjackSeatClaimResult::RequestFailed);
 		return;
+	}
+
+	if (UBlackjackPlayerComponent* BlackjackPlayerComponent = InteractingCharacter->GetBlackjackPlayerComponent())
+	{
+		BlackjackPlayerComponent->EnterBlackjackSeatMode(Table, SeatIndex);
 	}
 
 	BP_OnSeatClaimSucceeded(InteractingCharacter, Table, SeatIndex);
