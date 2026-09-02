@@ -41,11 +41,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Seat")
 	bool ToggleLeaveAfterRound();
 
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Seat")
+	bool ToggleSitOut();
+
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
 	bool IsInBlackjackSeat() const { return CurrentBlackjackTable != nullptr && CurrentSeatIndex != INDEX_NONE; }
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
 	bool IsLeaveAfterRoundRequested() const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
+	bool IsSitOutRequested() const;
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
 	ABlackjackTableActor* GetCurrentBlackjackTable() const { return CurrentBlackjackTable; }
@@ -55,6 +61,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Actions")
 	bool PlaceBet(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Actions")
+	bool NotifyBettingInteractionStarted();
 
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Actions")
 	bool StartRound();
@@ -95,13 +104,22 @@ protected:
 	void ServerEnterBlackjackSeatMode(ABlackjackTableActor* Table, int32 SeatIndex);
 
 	UFUNCTION(Server, Reliable)
+	void ServerRequestExitBlackjackSeat();
+
+	UFUNCTION(Server, Reliable)
 	void ServerCompleteExitBlackjackSeat();
 
 	UFUNCTION(Server, Reliable)
 	void ServerToggleLeaveAfterRound();
 
 	UFUNCTION(Server, Reliable)
+	void ServerToggleSitOut();
+
+	UFUNCTION(Server, Reliable)
 	void ServerPlaceBet(int32 Amount);
+
+	UFUNCTION(Server, Reliable)
+	void ServerNotifyBettingInteractionStarted();
 
 	UFUNCTION(Server, Reliable)
 	void ServerStartRound();
@@ -142,8 +160,11 @@ private:
 	void ApplyMovementLock();
 	void ClearMovementLock();
 	bool CanLeaveCurrentSeat() const;
+	void ExecuteRequestExitBlackjackSeat();
 	bool ExecuteToggleLeaveAfterRound();
+	bool ExecuteToggleSitOut();
 	bool ExecutePlaceBet(int32 Amount);
+	bool ExecuteNotifyBettingInteractionStarted();
 	bool ExecuteStartRound();
 	bool ExecuteHit();
 	bool ExecuteStand();

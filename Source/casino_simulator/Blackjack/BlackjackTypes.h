@@ -79,6 +79,15 @@ enum class EBlackjackSeatClaimResult : uint8
 	RequestFailed UMETA(DisplayName="Request Failed")
 };
 
+UENUM(BlueprintType)
+enum class EBlackjackRoundDecision : uint8
+{
+	None UMETA(DisplayName="None"),
+	BetPlaced UMETA(DisplayName="Bet Placed"),
+	SitOut UMETA(DisplayName="Sit Out"),
+	LeaveAfterRound UMETA(DisplayName="Leave After Round")
+};
+
 USTRUCT(BlueprintType)
 struct CASINO_SIMULATOR_API FBlackjackCard
 {
@@ -152,6 +161,9 @@ struct CASINO_SIMULATOR_API FBlackjackSeatState
 
 	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
 	EBlackjackSeatResult LastResult = EBlackjackSeatResult::None;
+
+	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
+	EBlackjackRoundDecision RoundDecision = EBlackjackRoundDecision::None;
 
 	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
 	bool bReadyForRound = false;

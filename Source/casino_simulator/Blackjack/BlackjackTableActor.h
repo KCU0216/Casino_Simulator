@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "TimerManager.h"
 #include "Blackjack/BlackjackTypes.h"
 #include "BlackjackTableActor.generated.h"
 
@@ -58,6 +59,12 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
 	bool IsLeaveAfterRoundRequested(Acasino_simulatorCharacter* Player) const;
 
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Seats")
+	bool ToggleSitOut(Acasino_simulatorCharacter* Player);
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
+	bool IsSitOutRequested(Acasino_simulatorCharacter* Player) const;
+
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
 	bool IsSeatAvailable(int32 SeatIndex) const;
 
@@ -90,6 +97,30 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Round")
 	void ResetRound();
+
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
+	bool StartBettingWindow(float DurationSeconds = -1.0f);
+
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
+	void FinishBettingWindow();
+
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
+	bool ExtendBettingWindow(float MinRemainingSeconds);
+
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
+	bool NotifyBettingInteractionStarted(Acasino_simulatorCharacter* Player);
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
+	bool HasAnyBettingPlayer() const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
+	bool AreAllSeatedPlayersDecided() const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
+	bool IsBettingWindowOpen() const { return bBettingWindowOpen; }
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
+	float GetBettingRemainingTime() const;
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Round")
 	EBlackjackRoundState GetRoundState() const { return RoundState; }
@@ -175,6 +206,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Rules")
 	bool bDealerStandsOnSoft17 = true;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Betting", meta=(ClampMin="1.0"))
+	float DefaultBettingWindowSeconds = 15.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Betting", meta=(ClampMin="0.0"))
+	float MinBettingInteractionSeconds = 6.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Betting", meta=(ClampMin="0.0"))
+	float MinAfterBetSeconds = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Betting", meta=(ClampMin="1.0"))
+	float MaxBettingWindowSeconds = 25.0f;
+
 	UPROPERTY(ReplicatedUsing=OnRep_TableState, BlueprintReadOnly, Category="Blackjack|State")
 	EBlackjackRoundState RoundState = EBlackjackRoundState::WaitingForPlayers;
 
@@ -186,6 +229,15 @@ protected:
 
 	UPROPERTY(ReplicatedUsing=OnRep_TableState, BlueprintReadOnly, Category="Blackjack|State")
 	int32 ActiveSeatIndex = INDEX_NONE;
+
+	UPROPERTY(ReplicatedUsing=OnRep_TableState, BlueprintReadOnly, Category="Blackjack|Betting")
+	bool bBettingWindowOpen = false;
+
+	UPROPERTY(ReplicatedUsing=OnRep_TableState, BlueprintReadOnly, Category="Blackjack|Betting")
+	float BettingWindowEndsAtServerTime = 0.0f;
+
+	UPROPERTY(ReplicatedUsing=OnRep_TableState, BlueprintReadOnly, Category="Blackjack|Betting")
+	float BettingWindowMaxEndsAtServerTime = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category="Blackjack|State")
 	TArray<FBlackjackCard> Shoe;
@@ -211,15 +263,20 @@ private:
 	bool MoveToNextPlayableHand(int32 CurrentSeatIndex);
 	bool IsHandComplete(const FBlackjackHand& Hand) const;
 	bool HasAnyNonBustPlayerHand() const;
+	bool TryStartRoundFromBettingWindow();
+	void ClearBettingWindowTimer();
+	void ScheduleBettingWindowTimer();
 	void BroadcastSeat(int32 SeatIndex);
 	FBlackjackSeatState* FindSeatForPlayer(Acasino_simulatorCharacter* Player);
 	const FBlackjackSeatState* FindSeatForPlayer(Acasino_simulatorCharacter* Player) const;
 	bool IsValidSeatIndex(int32 SeatIndex) const;
 	bool IsRoundActive() const;
 	bool IsSeatLockedForCurrentRound(const FBlackjackSeatState& Seat) const;
+	float GetServerWorldTimeSeconds() const;
 	bool AllActiveSeatsComplete() const;
 	int32 GetCardValue(const FBlackjackCard& Card) const;
 	bool IsSoft17(const FBlackjackHand& Hand) const;
 
 	FBlackjackHand ServerDealerHand;
+	FTimerHandle BettingWindowTimerHandle;
 };

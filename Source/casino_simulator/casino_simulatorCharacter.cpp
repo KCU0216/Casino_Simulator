@@ -491,6 +491,12 @@ void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
 
 void Acasino_simulatorCharacter::MachineExitInput()
 {
+	if (BlackjackPlayerComponent && BlackjackPlayerComponent->IsInBlackjackSeat())
+	{
+		BlackjackPlayerComponent->RequestExitBlackjackSeat();
+		return;
+	}
+
 	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController()))
 	{
 		PC->ExitCurrentMachine();

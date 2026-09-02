@@ -4,6 +4,7 @@
 
 #include "Blackjack/BlackjackPlayerComponent.h"
 #include "Components/SceneComponent.h"
+#include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
 
@@ -74,6 +75,9 @@ void ABlackjackTableActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(ABlackjackTableActor, Seats);
 	DOREPLIFETIME(ABlackjackTableActor, DealerHand);
 	DOREPLIFETIME(ABlackjackTableActor, ActiveSeatIndex);
+	DOREPLIFETIME(ABlackjackTableActor, bBettingWindowOpen);
+	DOREPLIFETIME(ABlackjackTableActor, BettingWindowEndsAtServerTime);
+	DOREPLIFETIME(ABlackjackTableActor, BettingWindowMaxEndsAtServerTime);
 }
 
 bool ABlackjackTableActor::TryClaimSeat(Acasino_simulatorCharacter* Player, int32 SeatIndex)
@@ -142,6 +146,7 @@ void ABlackjackTableActor::LeaveSeat(Acasino_simulatorCharacter* Player)
 	Seats[SeatIndex].SeatIndex = SeatIndex;
 	BroadcastSeat(SeatIndex);
 	OnTableChanged.Broadcast();
+	TryStartRoundFromBettingWindow();
 }
 
 bool ABlackjackTableActor::CanLeaveSeat(Acasino_simulatorCharacter* Player) const
@@ -174,6 +179,9 @@ bool ABlackjackTableActor::ToggleLeaveAfterRound(Acasino_simulatorCharacter* Pla
 	}
 
 	Seats[SeatIndex].bLeaveAfterRound = !Seats[SeatIndex].bLeaveAfterRound;
+	Seats[SeatIndex].RoundDecision = Seats[SeatIndex].bLeaveAfterRound
+		? EBlackjackRoundDecision::LeaveAfterRound
+		: (Seats[SeatIndex].BetAmount > 0 ? EBlackjackRoundDecision::BetPlaced : EBlackjackRoundDecision::None);
 	BroadcastSeat(SeatIndex);
 	OnTableChanged.Broadcast();
 	return true;
@@ -248,6 +256,35 @@ bool ABlackjackTableActor::IsLeaveAfterRoundRequested(Acasino_simulatorCharacter
 	return Seat && Seat->bLeaveAfterRound;
 }
 
+bool ABlackjackTableActor::ToggleSitOut(Acasino_simulatorCharacter* Player)
+{
+	if (!HasAuthority() || !Player || (RoundState != EBlackjackRoundState::WaitingForPlayers && RoundState != EBlackjackRoundState::Betting))
+	{
+		return false;
+	}
+
+	FBlackjackSeatState* Seat = FindSeatForPlayer(Player);
+	if (!Seat || Seat->BetAmount > 0)
+	{
+		return false;
+	}
+
+	const bool bShouldSitOut = Seat->RoundDecision != EBlackjackRoundDecision::SitOut;
+	Seat->RoundDecision = bShouldSitOut ? EBlackjackRoundDecision::SitOut : EBlackjackRoundDecision::None;
+	Seat->bReadyForRound = false;
+	Seat->bLeaveAfterRound = false;
+	BroadcastSeat(Seat->SeatIndex);
+	OnTableChanged.Broadcast();
+	TryStartRoundFromBettingWindow();
+	return true;
+}
+
+bool ABlackjackTableActor::IsSitOutRequested(Acasino_simulatorCharacter* Player) const
+{
+	const FBlackjackSeatState* Seat = FindSeatForPlayer(Player);
+	return Seat && Seat->RoundDecision == EBlackjackRoundDecision::SitOut;
+}
+
 bool ABlackjackTableActor::IsSeatAvailable(int32 SeatIndex) const
 {
 	return IsValidSeatIndex(SeatIndex) && !Seats[SeatIndex].IsOccupied();
@@ -273,9 +310,13 @@ bool ABlackjackTableActor::PlaceBet(Acasino_simulatorCharacter* Player, int32 Am
 
 	RoundState = EBlackjackRoundState::Betting;
 	Seat->BetAmount += Amount;
+	Seat->RoundDecision = EBlackjackRoundDecision::BetPlaced;
 	Seat->bReadyForRound = true;
+	Seat->bLeaveAfterRound = false;
 	BroadcastSeat(Seat->SeatIndex);
 	OnTableChanged.Broadcast();
+	ExtendBettingWindow(MinAfterBetSeconds);
+	TryStartRoundFromBettingWindow();
 	return true;
 }
 
@@ -286,12 +327,18 @@ bool ABlackjackTableActor::StartRound()
 		return false;
 	}
 
+	ClearBettingWindowTimer();
+	bBettingWindowOpen = false;
+	BettingWindowEndsAtServerTime = 0.0f;
+	BettingWindowMaxEndsAtServerTime = 0.0f;
+
 	bool bHasBettingPlayer = false;
 	for (FBlackjackSeatState& Seat : Seats)
 	{
 		if (Seat.IsOccupied() && Seat.BetAmount > 0)
 		{
 			bHasBettingPlayer = true;
+			Seat.RoundDecision = EBlackjackRoundDecision::BetPlaced;
 			Seat.Hands.Reset();
 			FBlackjackHand InitialHand;
 			InitialHand.BetAmount = Seat.BetAmount;
@@ -524,6 +571,11 @@ void ABlackjackTableActor::ResetRound()
 		return;
 	}
 
+	ClearBettingWindowTimer();
+	bBettingWindowOpen = false;
+	BettingWindowEndsAtServerTime = 0.0f;
+	BettingWindowMaxEndsAtServerTime = 0.0f;
+
 	for (FBlackjackSeatState& Seat : Seats)
 	{
 		Seat.Hands.Reset();
@@ -531,6 +583,7 @@ void ABlackjackTableActor::ResetRound()
 		Seat.BetAmount = 0;
 		Seat.InsuranceBetAmount = 0;
 		Seat.LastResult = EBlackjackSeatResult::None;
+		Seat.RoundDecision = Seat.bLeaveAfterRound ? EBlackjackRoundDecision::LeaveAfterRound : EBlackjackRoundDecision::None;
 		Seat.bReadyForRound = false;
 		Seat.bHasSplitThisRound = false;
 		Seat.bInsuranceDecisionMade = false;
@@ -542,6 +595,169 @@ void ABlackjackTableActor::ResetRound()
 	ActiveSeatIndex = INDEX_NONE;
 	RoundState = EBlackjackRoundState::WaitingForPlayers;
 	OnTableChanged.Broadcast();
+}
+
+bool ABlackjackTableActor::StartBettingWindow(float DurationSeconds)
+{
+	if (!HasAuthority() || (RoundState != EBlackjackRoundState::WaitingForPlayers && RoundState != EBlackjackRoundState::Betting))
+	{
+		return false;
+	}
+
+	const float Now = GetServerWorldTimeSeconds();
+	const float WindowDuration = DurationSeconds > 0.0f ? DurationSeconds : DefaultBettingWindowSeconds;
+	const float ClampedDuration = FMath::Max(1.0f, WindowDuration);
+	const float MaxDuration = FMath::Max(ClampedDuration, MaxBettingWindowSeconds);
+
+	bBettingWindowOpen = true;
+	BettingWindowEndsAtServerTime = Now + ClampedDuration;
+	BettingWindowMaxEndsAtServerTime = Now + MaxDuration;
+	RoundState = EBlackjackRoundState::Betting;
+
+	for (FBlackjackSeatState& Seat : Seats)
+	{
+		if (!Seat.IsOccupied())
+		{
+			continue;
+		}
+
+		if (Seat.BetAmount > 0)
+		{
+			Seat.RoundDecision = EBlackjackRoundDecision::BetPlaced;
+			Seat.bReadyForRound = true;
+		}
+		else if (Seat.bLeaveAfterRound)
+		{
+			Seat.RoundDecision = EBlackjackRoundDecision::LeaveAfterRound;
+			Seat.bReadyForRound = false;
+		}
+		else
+		{
+			Seat.RoundDecision = EBlackjackRoundDecision::None;
+			Seat.bReadyForRound = false;
+		}
+
+		BroadcastSeat(Seat.SeatIndex);
+	}
+
+	ScheduleBettingWindowTimer();
+	OnTableChanged.Broadcast();
+	TryStartRoundFromBettingWindow();
+	return true;
+}
+
+void ABlackjackTableActor::FinishBettingWindow()
+{
+	if (!HasAuthority() || !bBettingWindowOpen)
+	{
+		return;
+	}
+
+	ClearBettingWindowTimer();
+	bBettingWindowOpen = false;
+	BettingWindowEndsAtServerTime = 0.0f;
+	BettingWindowMaxEndsAtServerTime = 0.0f;
+
+	if (HasAnyBettingPlayer())
+	{
+		StartRound();
+		return;
+	}
+
+	RoundState = EBlackjackRoundState::WaitingForPlayers;
+	for (FBlackjackSeatState& Seat : Seats)
+	{
+		if (Seat.RoundDecision == EBlackjackRoundDecision::None)
+		{
+			continue;
+		}
+
+		Seat.RoundDecision = Seat.bLeaveAfterRound ? EBlackjackRoundDecision::LeaveAfterRound : EBlackjackRoundDecision::None;
+		Seat.bReadyForRound = false;
+		BroadcastSeat(Seat.SeatIndex);
+	}
+
+	OnTableChanged.Broadcast();
+}
+
+bool ABlackjackTableActor::ExtendBettingWindow(float MinRemainingSeconds)
+{
+	if (!HasAuthority() || !bBettingWindowOpen || MinRemainingSeconds <= 0.0f)
+	{
+		return false;
+	}
+
+	const float Now = GetServerWorldTimeSeconds();
+	const float DesiredEndTime = Now + MinRemainingSeconds;
+	const float NewEndTime = FMath::Min(FMath::Max(BettingWindowEndsAtServerTime, DesiredEndTime), BettingWindowMaxEndsAtServerTime);
+	if (NewEndTime <= BettingWindowEndsAtServerTime + KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	BettingWindowEndsAtServerTime = NewEndTime;
+	ScheduleBettingWindowTimer();
+	OnTableChanged.Broadcast();
+	return true;
+}
+
+bool ABlackjackTableActor::NotifyBettingInteractionStarted(Acasino_simulatorCharacter* Player)
+{
+	if (!HasAuthority() || !bBettingWindowOpen || !Player || GetSeatIndexForPlayer(Player) == INDEX_NONE)
+	{
+		return false;
+	}
+
+	return ExtendBettingWindow(MinBettingInteractionSeconds);
+}
+
+bool ABlackjackTableActor::HasAnyBettingPlayer() const
+{
+	for (const FBlackjackSeatState& Seat : Seats)
+	{
+		if (Seat.IsOccupied() && Seat.BetAmount > 0)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool ABlackjackTableActor::AreAllSeatedPlayersDecided() const
+{
+	bool bHasSeatedPlayer = false;
+	for (const FBlackjackSeatState& Seat : Seats)
+	{
+		if (!Seat.IsOccupied())
+		{
+			continue;
+		}
+
+		bHasSeatedPlayer = true;
+		if (Seat.BetAmount > 0)
+		{
+			continue;
+		}
+
+		if (Seat.RoundDecision != EBlackjackRoundDecision::SitOut
+			&& Seat.RoundDecision != EBlackjackRoundDecision::LeaveAfterRound)
+		{
+			return false;
+		}
+	}
+
+	return bHasSeatedPlayer;
+}
+
+float ABlackjackTableActor::GetBettingRemainingTime() const
+{
+	if (!bBettingWindowOpen)
+	{
+		return 0.0f;
+	}
+
+	return FMath::Max(0.0f, BettingWindowEndsAtServerTime - GetServerWorldTimeSeconds());
 }
 
 int32 ABlackjackTableActor::GetHandBestValue(const FBlackjackHand& Hand) const
@@ -851,6 +1067,51 @@ bool ABlackjackTableActor::HasAnyNonBustPlayerHand() const
 	return false;
 }
 
+bool ABlackjackTableActor::TryStartRoundFromBettingWindow()
+{
+	if (!HasAuthority() || !bBettingWindowOpen || !AreAllSeatedPlayersDecided())
+	{
+		return false;
+	}
+
+	FinishBettingWindow();
+	return true;
+}
+
+void ABlackjackTableActor::ClearBettingWindowTimer()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(BettingWindowTimerHandle);
+	}
+}
+
+void ABlackjackTableActor::ScheduleBettingWindowTimer()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ClearBettingWindowTimer();
+	if (!bBettingWindowOpen)
+	{
+		return;
+	}
+
+	const float RemainingSeconds = GetBettingRemainingTime();
+	if (RemainingSeconds <= KINDA_SMALL_NUMBER)
+	{
+		FinishBettingWindow();
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(BettingWindowTimerHandle, this, &ABlackjackTableActor::FinishBettingWindow, RemainingSeconds, false);
+	}
+}
+
 void ABlackjackTableActor::RunDealerAndResolve()
 {
 	RoundState = EBlackjackRoundState::DealerTurn;
@@ -1013,12 +1274,32 @@ bool ABlackjackTableActor::IsRoundActive() const
 
 bool ABlackjackTableActor::IsSeatLockedForCurrentRound(const FBlackjackSeatState& Seat) const
 {
+	if (RoundState == EBlackjackRoundState::Betting)
+	{
+		return Seat.BetAmount > 0 || Seat.RoundDecision == EBlackjackRoundDecision::BetPlaced;
+	}
+
 	if (!IsRoundActive())
 	{
 		return false;
 	}
 
 	return Seat.BetAmount > 0 || !Seat.Hands.IsEmpty();
+}
+
+float ABlackjackTableActor::GetServerWorldTimeSeconds() const
+{
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AGameStateBase* GameState = World->GetGameState())
+		{
+			return GameState->GetServerWorldTimeSeconds();
+		}
+
+		return World->GetTimeSeconds();
+	}
+
+	return 0.0f;
 }
 
 bool ABlackjackTableActor::AllActiveSeatsComplete() const
