@@ -44,6 +44,23 @@ void UBlackjackPlayerComponent::RequestExitBlackjackSeat()
 		return;
 	}
 
+	if (GetOwner() && !GetOwner()->HasAuthority())
+	{
+		ServerRequestExitBlackjackSeat();
+		return;
+	}
+
+	ExecuteRequestExitBlackjackSeat();
+}
+
+void UBlackjackPlayerComponent::ExecuteRequestExitBlackjackSeat()
+{
+	if (!CanLeaveCurrentSeat())
+	{
+		ToggleLeaveAfterRound();
+		return;
+	}
+
 	if (OnBlackjackSeatExitRequested.IsBound())
 	{
 		OnBlackjackSeatExitRequested.Broadcast(CurrentBlackjackTable, CurrentSeatIndex);
@@ -82,6 +99,68 @@ void UBlackjackPlayerComponent::CompleteExitBlackjackSeat()
 	ServerCompleteExitBlackjackSeat();
 }
 
+bool UBlackjackPlayerComponent::ToggleLeaveAfterRound()
+{
+	if (!IsInBlackjackSeat())
+	{
+		return false;
+	}
+
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		return ExecuteToggleLeaveAfterRound();
+	}
+
+	ServerToggleLeaveAfterRound();
+	return true;
+}
+
+bool UBlackjackPlayerComponent::ToggleSitOut()
+{
+	if (!IsInBlackjackSeat())
+	{
+		return false;
+	}
+
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		return ExecuteToggleSitOut();
+	}
+
+	ServerToggleSitOut();
+	return true;
+}
+
+bool UBlackjackPlayerComponent::IsLeaveAfterRoundRequested() const
+{
+	if (!CurrentBlackjackTable)
+	{
+		return false;
+	}
+
+	if (Acasino_simulatorCharacter* Character = GetOwnerCharacter())
+	{
+		return CurrentBlackjackTable->IsLeaveAfterRoundRequested(Character);
+	}
+
+	return false;
+}
+
+bool UBlackjackPlayerComponent::IsSitOutRequested() const
+{
+	if (!CurrentBlackjackTable)
+	{
+		return false;
+	}
+
+	if (Acasino_simulatorCharacter* Character = GetOwnerCharacter())
+	{
+		return CurrentBlackjackTable->IsSitOutRequested(Character);
+	}
+
+	return false;
+}
+
 bool UBlackjackPlayerComponent::PlaceBet(int32 Amount)
 {
 	if (!IsInBlackjackSeat() || Amount <= 0)
@@ -95,6 +174,22 @@ bool UBlackjackPlayerComponent::PlaceBet(int32 Amount)
 	}
 
 	ServerPlaceBet(Amount);
+	return true;
+}
+
+bool UBlackjackPlayerComponent::NotifyBettingInteractionStarted()
+{
+	if (!IsInBlackjackSeat())
+	{
+		return false;
+	}
+
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		return ExecuteNotifyBettingInteractionStarted();
+	}
+
+	ServerNotifyBettingInteractionStarted();
 	return true;
 }
 
@@ -221,14 +316,34 @@ void UBlackjackPlayerComponent::ServerEnterBlackjackSeatMode_Implementation(ABla
 	SetBlackjackSeatMode(Table, SeatIndex);
 }
 
+void UBlackjackPlayerComponent::ServerRequestExitBlackjackSeat_Implementation()
+{
+	ExecuteRequestExitBlackjackSeat();
+}
+
 void UBlackjackPlayerComponent::ServerCompleteExitBlackjackSeat_Implementation()
 {
 	CompleteExitBlackjackSeat();
 }
 
+void UBlackjackPlayerComponent::ServerToggleLeaveAfterRound_Implementation()
+{
+	ExecuteToggleLeaveAfterRound();
+}
+
+void UBlackjackPlayerComponent::ServerToggleSitOut_Implementation()
+{
+	ExecuteToggleSitOut();
+}
+
 void UBlackjackPlayerComponent::ServerPlaceBet_Implementation(int32 Amount)
 {
 	ExecutePlaceBet(Amount);
+}
+
+void UBlackjackPlayerComponent::ServerNotifyBettingInteractionStarted_Implementation()
+{
+	ExecuteNotifyBettingInteractionStarted();
 }
 
 void UBlackjackPlayerComponent::ServerStartRound_Implementation()
@@ -371,10 +486,34 @@ bool UBlackjackPlayerComponent::CanLeaveCurrentSeat() const
 		return true;
 	}
 
-	const EBlackjackRoundState RoundState = CurrentBlackjackTable->GetRoundState();
-	return RoundState == EBlackjackRoundState::WaitingForPlayers
-		|| RoundState == EBlackjackRoundState::Betting
-		|| RoundState == EBlackjackRoundState::RoundComplete;
+	if (Acasino_simulatorCharacter* Character = GetOwnerCharacter())
+	{
+		return CurrentBlackjackTable->CanLeaveSeat(Character);
+	}
+
+	return false;
+}
+
+bool UBlackjackPlayerComponent::ExecuteToggleLeaveAfterRound()
+{
+	Acasino_simulatorCharacter* Character = GetOwnerCharacter();
+	if (!Character || !CurrentBlackjackTable)
+	{
+		return false;
+	}
+
+	return CurrentBlackjackTable->ToggleLeaveAfterRound(Character);
+}
+
+bool UBlackjackPlayerComponent::ExecuteToggleSitOut()
+{
+	Acasino_simulatorCharacter* Character = GetOwnerCharacter();
+	if (!Character || !CurrentBlackjackTable)
+	{
+		return false;
+	}
+
+	return CurrentBlackjackTable->ToggleSitOut(Character);
 }
 
 bool UBlackjackPlayerComponent::ExecutePlaceBet(int32 Amount)
@@ -386,6 +525,17 @@ bool UBlackjackPlayerComponent::ExecutePlaceBet(int32 Amount)
 	}
 
 	return CurrentBlackjackTable->PlaceBet(Character, Amount);
+}
+
+bool UBlackjackPlayerComponent::ExecuteNotifyBettingInteractionStarted()
+{
+	Acasino_simulatorCharacter* Character = GetOwnerCharacter();
+	if (!Character || !CurrentBlackjackTable)
+	{
+		return false;
+	}
+
+	return CurrentBlackjackTable->NotifyBettingInteractionStarted(Character);
 }
 
 bool UBlackjackPlayerComponent::ExecuteStartRound()
