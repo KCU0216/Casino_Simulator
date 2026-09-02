@@ -150,6 +150,12 @@ void UWorldInteractionDetectorComponent::SetFocusedTarget(AWorldInteractableBase
 		return;
 	}
 
+	if (FocusedTarget)
+	{
+		FocusedTarget->OnInteractionFocusEnded(OwnerCharacter);
+	}
+	CloseWorldPrompt();
+
 	FocusedTarget = NewFocusedTarget;
 
 	Acasino_simulatorPlayerController* PlayerController = OwnerCharacter
@@ -162,6 +168,7 @@ void UWorldInteractionDetectorComponent::SetFocusedTarget(AWorldInteractableBase
 
 	if (FocusedTarget)
 	{
+		FocusedTarget->OnInteractionFocusStarted(OwnerCharacter);
 		bWorldPromptOpen = PlayerController->OpenWorldInteraction(FocusedTarget->GetInteractionPromptText());
 	}
 	else
