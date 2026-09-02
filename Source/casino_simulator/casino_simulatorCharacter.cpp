@@ -9,6 +9,8 @@
 #include "InputActionValue.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbility.h"
+#include "casino_simulatorAbilitySystemComponent.h"
 #include "Blackjack/BlackjackPlayerComponent.h"
 #include "Economy/CasinoShopComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
@@ -56,7 +58,7 @@ Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 
 	// Create the ability system component. Attributes/abilities/effects are replicated
 	// via the ASC itself, so the actor doesn't need to replicate it separately.
-	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent = CreateDefaultSubobject<Ucasino_simulatorAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
@@ -161,6 +163,7 @@ void Acasino_simulatorCharacter::PossessedBy(AController* NewController)
 		{
 			InitializeDefaultAttributes();
 			ApplyAttributeDecayEffect();
+			GrantStartupAbilities();
 		}
 
 		// Every machine (server and each client) needs its own local MaxWalkSpeed/JumpZVelocity to
@@ -182,6 +185,44 @@ void Acasino_simulatorCharacter::OnRep_PlayerState()
 		BindMoveSpeedToNicotine();
 		BindJumpSpeedToAlcohol();
 	}
+}
+
+void Acasino_simulatorCharacter::GrantStartupAbilities()
+{
+	if (bStartupAbilitiesGranted)
+	{
+		return;
+	}
+
+	for (const FStartupAbilityDefinition& AbilityDefinition : StartupAbilities)
+	{
+		GrantAbility(AbilityDefinition.AbilityClass, 1, AbilityDefinition.InputTag);
+	}
+
+	bStartupAbilitiesGranted = true;
+}
+
+FGameplayAbilitySpecHandle Acasino_simulatorCharacter::GrantAbility(TSubclassOf<UGameplayAbility> AbilityClass, int32 Level, FGameplayTag InputTag)
+{
+	if (!AbilitySystemComponent || !AbilityClass || !HasAuthority())
+	{
+		return FGameplayAbilitySpecHandle();
+	}
+
+	FGameplayAbilitySpec AbilitySpec(AbilityClass, Level, INDEX_NONE, this);
+	if (InputTag.IsValid())
+	{
+		AbilitySpec.GetDynamicSpecSourceTags().AddTag(InputTag);
+	}
+
+	const FGameplayAbilitySpecHandle Handle = AbilitySystemComponent->GiveAbility(AbilitySpec);
+
+	if (Handle.IsValid())
+	{
+		GrantedAbilityHandles.Add(Handle);
+	}
+
+	return Handle;
 }
 
 void Acasino_simulatorCharacter::InitializeDefaultAttributes() const

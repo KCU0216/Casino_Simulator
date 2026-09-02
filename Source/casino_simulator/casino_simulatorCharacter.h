@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -7,6 +7,8 @@
 #include "Logging/LogMacros.h"
 #include "AbilitySystemInterface.h"
 #include "ActiveGameplayEffectHandle.h"
+#include "GameplayAbilitySpecHandle.h"
+#include "GameplayTagContainer.h"
 #include "casino_simulatorCharacter.generated.h"
 
 class UInputComponent;
@@ -14,15 +16,30 @@ class USkeletalMeshComponent;
 class UCameraComponent;
 class UInputAction;
 class UAbilitySystemComponent;
+class Ucasino_simulatorAbilitySystemComponent;
 class Ucasino_simulatorAttributeSet;
 class UCasinoShopComponent;
 class UWorldInteractionDetectorComponent;
 class UBlackjackPlayerComponent;
 class UGameplayEffect;
+class UGameplayAbility;
 class ASeatedMachineBase;
 struct FInputActionValue;
 class ARaceManager;
 class ANPC_Dice;
+
+/** A startup ability and the semantic input tag used to activate it (empty for passive/event abilities). */
+USTRUCT(BlueprintType)
+struct FStartupAbilityDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
+	TSubclassOf<UGameplayAbility> AbilityClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities", meta = (Categories = "Input"))
+	FGameplayTag InputTag;
+};
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
@@ -78,7 +95,7 @@ protected:
 
 	/** Ability system component driving this character's abilities/attributes/effects */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
-	UAbilitySystemComponent* AbilitySystemComponent;
+	Ucasino_simulatorAbilitySystemComponent* AbilitySystemComponent;
 
 	/** Attribute set holding this character's nicotine/alcohol intoxication levels */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
@@ -87,6 +104,17 @@ protected:
 	/** GameplayEffect (typically a Blueprint) applied once, server-side, to set starting Nicotine/Alcohol values */
 	UPROPERTY(EditDefaultsOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UGameplayEffect> InitialAttributesEffectClass;
+
+	/** Abilities granted once after this character is possessed, optionally bound to a semantic input tag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
+	TArray<FStartupAbilityDefinition> StartupAbilities;
+
+	/** Handles of abilities granted to this character, retained for future lookup/removal. */
+	UPROPERTY(BlueprintReadOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
+	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
+
+	/** Prevents a repeated possession of the same pawn from granting duplicate startup abilities. */
+	bool bStartupAbilitiesGranted = false;
 
 	/** Handles cigarette/alcohol shop purchases and forwards successful recovery to GAS */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Shop", meta = (AllowPrivateAccess = "true"))
@@ -146,6 +174,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Economy|Currency")
 	float GetCurrency() const;
 
+	/** Grants an ability to this character's ASC. Authority-only; granted specs replicate to the owning client. */
+	UFUNCTION(BlueprintCallable, Category="Abilities")
+	FGameplayAbilitySpecHandle GrantAbility(TSubclassOf<UGameplayAbility> AbilityClass, int32 Level = 1, FGameplayTag InputTag = FGameplayTag());
+
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
 	void ServerBuyRaceTicket(ARaceManager* Manager, int32 RunnerIndex, int32 Amount, int32 Count);
 
@@ -178,6 +210,9 @@ protected:
 
 	/** Applies InitialAttributesEffectClass to this character's own ability system. Server-only; call after InitAbilityActorInfo. */
 	void InitializeDefaultAttributes() const;
+
+	/** Grants all configured startup abilities. Server-only; call after InitAbilityActorInfo. */
+	void GrantStartupAbilities();
 
 	/** Applies AttributeDecayEffectClass to this character's own ability system so Nicotine/Alcohol decay over time. Server-only. */
 	void ApplyAttributeDecayEffect();
