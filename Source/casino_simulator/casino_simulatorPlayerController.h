@@ -174,6 +174,12 @@ public:
 	UFUNCTION(BlueprintPure, Category="Inventory")
 	bool IsInventoryOpen() const;
 
+	/** The NPC this controller is currently interacting with (null if none). Used by e.g.
+	 * UThreeCardPokerBlueprintLibrary::GetThreeCardPokerTableForPlayer to resolve which table a
+	 * player is at without the caller needing direct access to the protected member. */
+	UFUNCTION(BlueprintPure, Category="Interaction")
+	ANPC_Base* GetCurrentInteractionTarget() const { return CurrentInteractionTarget; }
+
 	UFUNCTION(BlueprintCallable, Category="Interaction")
 	void SetInteractionTarget(ANPC_Base* NewInteractionTarget);
 

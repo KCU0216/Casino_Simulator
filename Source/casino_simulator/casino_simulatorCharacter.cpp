@@ -16,6 +16,7 @@
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Machine/SeatedMachineBase.h"
 #include "NPC/NPC_Dice.h"
+#include "ThreeCardPoker/ThreeCardPokerTableActor.h"
 #include "casino_simulatorPlayerController.h"
 #include "RaceGame/RaceManager.h"
 #include "casino_simulatorPlayerState.h"
@@ -597,5 +598,45 @@ void Acasino_simulatorCharacter::ServerPlaceDiceBet_Implementation(ANPC_Dice* Di
 	if (DiceNPC)
 	{
 		DiceNPC->ExecutePlaceBet(this, Select, Betting);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerAnte_Implementation(AThreeCardPokerTableActor* Table, int32 Amount)
+{
+	if (Table)
+	{
+		Table->ExecutePlaceAnte(this, Amount);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerPairPlus_Implementation(AThreeCardPokerTableActor* Table, int32 Amount)
+{
+	if (Table)
+	{
+		Table->ExecutePlacePairPlus(this, Amount);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerPlayThreeCardPokerHand_Implementation(AThreeCardPokerTableActor* Table)
+{
+	if (Table)
+	{
+		Table->ExecutePlayHand(this);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerFoldThreeCardPokerHand_Implementation(AThreeCardPokerTableActor* Table)
+{
+	if (Table)
+	{
+		Table->ExecuteFoldHand(this);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerLeaveThreeCardPokerTable_Implementation(AThreeCardPokerTableActor* Table)
+{
+	if (Table)
+	{
+		Table->ExecuteLeaveTable(this);
 	}
 }
