@@ -404,6 +404,7 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 		return;
 	}
 
+	Target->OnLocalInteract(PlayerCharacter);
 	CloseWorldInteraction();
 
 	if (HasAuthority())
