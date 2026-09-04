@@ -50,6 +50,7 @@ enum class EBlackjackRoundState : uint8
 	WaitingForPlayers UMETA(DisplayName="Waiting For Players"),
 	Betting UMETA(DisplayName="Betting"),
 	Dealing UMETA(DisplayName="Dealing"),
+	Insurance UMETA(DisplayName="Insurance"),
 	PlayerTurns UMETA(DisplayName="Player Turns"),
 	DealerTurn UMETA(DisplayName="Dealer Turn"),
 	Resolving UMETA(DisplayName="Resolving"),
@@ -118,6 +119,12 @@ struct CASINO_SIMULATOR_API FBlackjackHand
 
 	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
 	bool bFromSplit = false;
+
+	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
+	int32 BetAmount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
+	EBlackjackSeatResult LastResult = EBlackjackSeatResult::None;
 };
 
 USTRUCT(BlueprintType)
@@ -151,6 +158,9 @@ struct CASINO_SIMULATOR_API FBlackjackSeatState
 
 	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
 	bool bHasSplitThisRound = false;
+
+	UPROPERTY(BlueprintReadOnly, Category="Blackjack")
+	bool bInsuranceDecisionMade = false;
 
 	bool IsOccupied() const { return Occupant != nullptr; }
 };
