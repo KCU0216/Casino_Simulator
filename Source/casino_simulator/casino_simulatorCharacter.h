@@ -27,6 +27,7 @@ class ASeatedMachineBase;
 struct FInputActionValue;
 class ARaceManager;
 class ANPC_Dice;
+class AThreeCardPokerTableActor;
 
 /** A startup ability and the semantic input tag used to activate it (empty for passive/event abilities). */
 USTRUCT(BlueprintType)
@@ -188,6 +189,25 @@ public:
 	 * client can't call a Server RPC declared on DiceNPC directly (it isn't owned by that client). */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Dice Game")
 	void ServerPlaceDiceBet(ANPC_Dice* DiceNPC, int32 Select, int32 Betting);
+
+	/** Forwards Three Card Poker actions from this (locally-owned) character to the server, since a
+	 * client can't call a Server RPC declared on AThreeCardPokerTableActor directly (it isn't owned
+	 * by that client's connection - see AThreeCardPokerTableActor's class comment). Same forwarding
+	 * trick as ServerPlaceDiceBet. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
+	void ServerPlaceThreeCardPokerAnte(AThreeCardPokerTableActor* Table, int32 Amount);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
+	void ServerPlaceThreeCardPokerPairPlus(AThreeCardPokerTableActor* Table, int32 Amount);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
+	void ServerPlayThreeCardPokerHand(AThreeCardPokerTableActor* Table);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
+	void ServerFoldThreeCardPokerHand(AThreeCardPokerTableActor* Table);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
+	void ServerLeaveThreeCardPokerTable(AThreeCardPokerTableActor* Table);
 
 	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
 	ASeatedMachineBase* GetCurrentSeatedMachine() const { return CurrentSeatedMachine; }
