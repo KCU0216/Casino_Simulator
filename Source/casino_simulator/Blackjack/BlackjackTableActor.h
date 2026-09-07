@@ -98,12 +98,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Round")
 	void ResetRound();
 
+	/** Opens betting without a deadline until the first accepted bet. DurationSeconds is
+	 * retained for existing BP nodes; the countdown is always 15 seconds from that bet. */
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
 	bool StartBettingWindow(float DurationSeconds = -1.0f);
 
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
 	void FinishBettingWindow();
 
+	/** Legacy BP entry point. Fixed betting deadlines cannot be extended; returns false. */
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
 	bool ExtendBettingWindow(float MinRemainingSeconds);
 
@@ -119,6 +122,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
 	bool IsBettingWindowOpen() const { return bBettingWindowOpen; }
 
+	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
+	bool IsBettingCountdownActive() const { return bBettingWindowOpen && BettingWindowEndsAtServerTime > 0.0f; }
+
+	/** Returns -1 while accepting bets without a deadline, 0 when closed, otherwise seconds left. */
 	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
 	float GetBettingRemainingTime() const;
 
@@ -206,6 +213,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Rules")
 	bool bDealerStandsOnSoft17 = true;
 
+	// Legacy serialized settings retained for BP compatibility. The fixed 15-second rule
+	// no longer uses these duration/extension values.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Betting", meta=(ClampMin="1.0"))
 	float DefaultBettingWindowSeconds = 15.0f;
 
@@ -263,6 +272,7 @@ private:
 	bool MoveToNextPlayableHand(int32 CurrentSeatIndex);
 	bool IsHandComplete(const FBlackjackHand& Hand) const;
 	bool HasAnyNonBustPlayerHand() const;
+	bool HaveAllSeatedPlayersBet() const;
 	bool TryStartRoundFromBettingWindow();
 	void ClearBettingWindowTimer();
 	void ScheduleBettingWindowTimer();
