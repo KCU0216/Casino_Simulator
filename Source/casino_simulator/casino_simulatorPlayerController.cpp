@@ -399,12 +399,18 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractableBase* Target)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Target || !Target->CanInteract(PlayerCharacter))
+	if (!PlayerCharacter || !Target)
 	{
 		return;
 	}
 
 	CloseWorldInteraction();
+
+	if (Target->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
+	{
+		Target->BeginLocalInteraction(PlayerCharacter);
+		return;
+	}
 
 	if (HasAuthority())
 	{

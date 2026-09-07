@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+ï»¿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "casino_simulatorAttributeSet.h"
 #include "AbilitySystemComponent.h"
@@ -8,6 +8,7 @@
 Ucasino_simulatorAttributeSet::Ucasino_simulatorAttributeSet()
 {
 	InitCurrency(10000.0f);
+	InitCarryMovementMultiplier(1.0f);
 }
 
 void Ucasino_simulatorAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -21,13 +22,15 @@ void Ucasino_simulatorAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeP
 	DOREPLIFETIME_CONDITION_NOTIFY(Ucasino_simulatorAttributeSet, Alcohol, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(Ucasino_simulatorAttributeSet, AlcoholDecayRate, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(Ucasino_simulatorAttributeSet, MaxAlcohol, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(Ucasino_simulatorAttributeSet, CarryMovementMultiplier, COND_None, REPNOTIFY_Always);
+
 }
 
 void Ucasino_simulatorAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 
-	// ÇöÀç °ª
+	// í˜„ìž¬ ê°’
 	if (Attribute == GetNicotineAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, MaxNicotine.GetCurrentValue());
@@ -36,7 +39,7 @@ void Ucasino_simulatorAttributeSet::PreAttributeChange(const FGameplayAttribute&
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, MaxAlcohol.GetCurrentValue());
 	}
-	// Â÷°¨ °ª
+	// ì°¨ê° ê°’
 	else if (Attribute == GetNicotineDecayRateAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, MaxNicotine.GetCurrentValue());
@@ -45,7 +48,7 @@ void Ucasino_simulatorAttributeSet::PreAttributeChange(const FGameplayAttribute&
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, MaxAlcohol.GetCurrentValue());
 	}
-	// ÃÖ´ë °ª
+	// ìµœëŒ€ ê°’
 	else if (Attribute == GetMaxNicotineAttribute())
 	{
 		AdjustAttributeForMaxChange(Nicotine, MaxNicotine, NewValue, GetNicotineAttribute());
@@ -120,4 +123,9 @@ void Ucasino_simulatorAttributeSet::OnRep_AlcoholDecayRate(const FGameplayAttrib
 void Ucasino_simulatorAttributeSet::OnRep_MaxAlcohol(const FGameplayAttributeData& OldMaxAlcohol)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(Ucasino_simulatorAttributeSet, MaxAlcohol, OldMaxAlcohol);
+}
+
+void Ucasino_simulatorAttributeSet::OnRep_CarryMovementMultiplier(const FGameplayAttributeData& OldCarryMovementMultiplier)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(Ucasino_simulatorAttributeSet, CarryMovementMultiplier, OldCarryMovementMultiplier);
 }
