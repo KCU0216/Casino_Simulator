@@ -11,6 +11,7 @@
 class Acasino_simulatorCharacter;
 class USceneComponent;
 class UStaticMeshComponent;
+class UTextRenderComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FThreeCardPokerTableChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FThreeCardPokerRoundCompleted);
@@ -135,6 +136,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ThreeCardPoker|Layout")
 	TObjectPtr<USceneComponent> DeckPoint;
 
+	/** Shows the round result (e.g. "승리!") in-world above the table, mirroring what
+	 * UThreeCardPokerBlueprintLibrary::GetThreeCardPokerResultText feeds the betting UI. Kept in
+	 * sync with OnTableChanged (see UpdateResultText). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UTextRenderComponent> ResultText;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="ThreeCardPoker|Rules", meta=(ClampMin="1"))
 	int32 MinAnteBet = 10;
 
@@ -199,11 +206,38 @@ protected:
 	UFUNCTION()
 	void OnRep_TableState();
 
+	/** Refreshes ResultText from the current table state. Bound to OnTableChanged in BeginPlay so it
+	 * runs on the server (explicit broadcasts) and on every client (via OnRep_TableState) alike. */
+	UFUNCTION()
+	void UpdateResultText();
+
 private:
 	void BuildAndShuffleDeck();
 	FBlackjackCard DrawCard();
 	void DealCardToPlayer();
 	void DealCardToDealer(bool bFaceUp);
+
+	/** OnPlayerCardDealt/OnDealerCardDealt are plain (non-replicated) delegates, so DealCardToPlayer/
+	 * DealCardToDealer route their broadcast through these instead of calling Broadcast() directly.
+	 * NetMulticast makes the server-only DealNextRoundCard timer's per-card reveal actually run on
+	 * every remote client too (a listen server's host was already seeing it locally, since its own
+	 * broadcast fires in the same process — pure clients never got it before this). */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_PlayerCardDealt(const FBlackjackCard& Card);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_DealerCardDealt(const FBlackjackCard& Card);
+
+	/** Same reasoning as the two above — OnDealerHandRevealed drives the dealer's face-down cards
+	 * flipping face-up in BP_ThreeCardPokerTable, so it needs to actually reach remote clients too.
+	 * Carries the revealed hand directly rather than relying on clients reading the (separately
+	 * replicated) DealerHand property: RPC delivery and property replication aren't guaranteed to
+	 * arrive in the same order, so a client could otherwise run this reveal before its local
+	 * DealerHand has actually updated and briefly (or, if another update never nudges it, indefinitely)
+	 * show the wrong/masked cards. */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_DealerHandRevealed(const TArray<FBlackjackCard>& RevealedHand);
+
 	void StartRound();
 	void DealNextRoundCard();
 	void ClearDealingTimer();

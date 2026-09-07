@@ -323,8 +323,15 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 	if (CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection())
 	{
 		FVector Location = PlayerCharacter->GetActorLocation();
-		FVector ForwardLocation = PlayerCharacter->GetActorForwardVector() * 1000.f;
-		FVector LineLocation = Location + ForwardLocation;
+		FVector Direction = PlayerCharacter->GetActorForwardVector();
+
+		if (UCameraComponent* Camera = PlayerCharacter->GetFirstPersonCameraComponent())
+		{
+			Location = Camera->GetComponentLocation();
+			Direction = Camera->GetForwardVector();
+		}
+
+		FVector LineLocation = Location + Direction * 1000.f;
 
 		FHitResult OutHit;
 		FCollisionQueryParams Params;

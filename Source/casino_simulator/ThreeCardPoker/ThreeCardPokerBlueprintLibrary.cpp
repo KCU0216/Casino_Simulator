@@ -28,16 +28,17 @@ FText UThreeCardPokerBlueprintLibrary::GetThreeCardPokerHandRankText(AThreeCardP
 {
 	if (!Table || Table->GetPlayerCards().Num() != 3)
 	{
-		return FText::FromString(TEXT("Hand: -"));
+		return FText::FromString(TEXT(""));
 	}
 
 	const FText RankName = GetThreeCardPokerHandRankDisplayName(Table->GetHandRank(Table->GetPlayerCards()));
-	return FText::Format(FText::FromString(TEXT("Hand: {0}")), RankName);
+	return FText::Format(FText::FromString(TEXT("{0}")), RankName);
 }
 
 FText UThreeCardPokerBlueprintLibrary::GetThreeCardPokerResultText(AThreeCardPokerTableActor* Table)
 {
-	if (!Table || Table->GetRoundState() != EThreeCardPokerRoundState::RoundComplete)
+	//|| Table->GetRoundState() != EThreeCardPokerRoundState::RoundComplete
+	if (!Table)
 	{
 		return FText::GetEmpty();
 	}
@@ -45,15 +46,15 @@ FText UThreeCardPokerBlueprintLibrary::GetThreeCardPokerResultText(AThreeCardPok
 	switch (Table->GetLastResult())
 	{
 	case EThreeCardPokerHandResult::PlayerWin:
-		return FText::FromString(TEXT("승리!"));
+		return FText::FromString(TEXT("Win!"));
 	case EThreeCardPokerHandResult::DealerWin:
-		return FText::FromString(TEXT("패배"));
+		return FText::FromString(TEXT("Lose"));
 	case EThreeCardPokerHandResult::Push:
-		return FText::FromString(TEXT("푸시 (베팅 반환)"));
+		return FText::FromString(TEXT("Push"));
 	case EThreeCardPokerHandResult::Folded:
-		return FText::FromString(TEXT("폴드"));
+		return FText::FromString(TEXT("Fold"));
 	case EThreeCardPokerHandResult::DealerNotQualified:
-		return FText::FromString(TEXT("딜러 미자격 - Ante 승리, Play 푸시"));
+		return FText::FromString(TEXT("Dealer Miss"));
 	default:
 		return FText::GetEmpty();
 	}

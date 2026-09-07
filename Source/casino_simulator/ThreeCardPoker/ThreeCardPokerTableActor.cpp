@@ -4,9 +4,11 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/TextRenderComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
+#include "ThreeCardPoker/ThreeCardPokerBlueprintLibrary.h"
 
 AThreeCardPokerTableActor::AThreeCardPokerTableActor()
 {
@@ -24,6 +26,15 @@ AThreeCardPokerTableActor::AThreeCardPokerTableActor()
 	DeckPoint = CreateDefaultSubobject<USceneComponent>(TEXT("DeckPoint"));
 	DeckPoint->SetupAttachment(TableRoot);
 	DeckPoint->SetRelativeLocation(FVector(30.0f, 95.0f, 8.0f));
+
+	ResultText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ResultText"));
+	ResultText->SetupAttachment(TableRoot);
+	ResultText->SetRelativeLocation(FVector(0.0f, 0.0f, 100.0f));
+	ResultText->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
+	ResultText->SetHorizontalAlignment(EHTA_Center);
+	ResultText->SetVerticalAlignment(EVRTA_TextCenter);
+	ResultText->SetWorldSize(20.0f);
+	ResultText->SetText(FText::GetEmpty());
 }
 
 void AThreeCardPokerTableActor::BeginPlay()
@@ -38,6 +49,9 @@ void AThreeCardPokerTableActor::BeginPlay()
 	{
 		BuildAndShuffleDeck();
 	}
+
+	OnTableChanged.AddDynamic(this, &AThreeCardPokerTableActor::UpdateResultText);
+	UpdateResultText();
 }
 
 void AThreeCardPokerTableActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -201,6 +215,8 @@ bool AThreeCardPokerTableActor::ExecutePlayHand(Acasino_simulatorCharacter* Play
 	bDecisionMade = true;
 	OnTableChanged.Broadcast();
 	FinishDecisionWindow();
+	UpdateResultText();
+	
 	return true;
 }
 
@@ -236,6 +252,7 @@ bool AThreeCardPokerTableActor::ExecuteFoldHand(Acasino_simulatorCharacter* Play
 	bDecisionMade = true;
 	OnTableChanged.Broadcast();
 	FinishDecisionWindow();
+	ResetRound();
 	return true;
 }
 
@@ -274,7 +291,6 @@ void AThreeCardPokerTableActor::ResetRound()
 	}
 
 	ClearDecisionWindowTimer();
-	ClearDealingTimer();
 	bDecisionWindowOpen = false;
 	DecisionWindowEndsAtServerTime = 0.0f;
 
@@ -289,6 +305,7 @@ void AThreeCardPokerTableActor::ResetRound()
 	LastResult = EThreeCardPokerHandResult::None;
 	RoundState = EThreeCardPokerRoundState::WaitingForBet;
 	OnTableChanged.Broadcast();
+	ClearDealingTimer();
 }
 
 float AThreeCardPokerTableActor::GetDecisionRemainingTime() const
@@ -333,6 +350,16 @@ void AThreeCardPokerTableActor::OnRep_TableState()
 	OnTableChanged.Broadcast();
 }
 
+void AThreeCardPokerTableActor::UpdateResultText()
+{
+	if (!ResultText)
+	{
+		return;
+	}
+
+	ResultText->SetText(UThreeCardPokerBlueprintLibrary::GetThreeCardPokerResultText(this));
+}
+
 void AThreeCardPokerTableActor::BuildAndShuffleDeck()
 {
 	Deck.Reset();
@@ -367,7 +394,7 @@ void AThreeCardPokerTableActor::DealCardToPlayer()
 	FBlackjackCard Card = DrawCard();
 	Card.bFaceUp = true;
 	PlayerCards.Add(Card);
-	OnPlayerCardDealt.Broadcast(Card);
+	Multicast_PlayerCardDealt(Card);
 }
 
 void AThreeCardPokerTableActor::DealCardToDealer(bool bFaceUp)
@@ -391,7 +418,37 @@ void AThreeCardPokerTableActor::DealCardToDealer(bool bFaceUp)
 	}
 
 	DealerHand.Add(PublicCard);
-	OnDealerCardDealt.Broadcast(DealerHand.Last());
+	Multicast_DealerCardDealt(PublicCard);
+}
+
+void AThreeCardPokerTableActor::Multicast_PlayerCardDealt_Implementation(const FBlackjackCard& Card)
+{
+	// Temporary diagnostic: read the raw (Replicated) properties directly here, bypassing OnRep
+	// entirely, to tell apart "the values never actually replicated to this client" from "the values
+	// are here but OnRep_TableState just never runs". This RPC is confirmed to already reach clients.
+	const FString DiagMsg = FString::Printf(TEXT("[3CP] Multicast_PlayerCardDealt: HasAuthority=%d PlayerCards.Num=%d RoundState=%d"),
+		HasAuthority(), PlayerCards.Num(), static_cast<int32>(RoundState));
+	UE_LOG(LogTemp, Warning, TEXT("%s"), *DiagMsg);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Yellow, DiagMsg);
+	}
+
+	OnPlayerCardDealt.Broadcast(Card);
+}
+
+void AThreeCardPokerTableActor::Multicast_DealerCardDealt_Implementation(const FBlackjackCard& Card)
+{
+	OnDealerCardDealt.Broadcast(Card);
+}
+
+void AThreeCardPokerTableActor::Multicast_DealerHandRevealed_Implementation(const TArray<FBlackjackCard>& RevealedHand)
+{
+	// Force the local mirror to the revealed hand before broadcasting, instead of trusting that
+	// DealerHand's own (separately-timed) property replication has already landed — see the
+	// declaration comment. Harmless on the server, which already holds this exact value.
+	DealerHand = RevealedHand;
+	OnDealerHandRevealed.Broadcast();
 }
 
 void AThreeCardPokerTableActor::StartRound()
@@ -439,6 +496,11 @@ void AThreeCardPokerTableActor::ClearDealingTimer()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(DealingTimerHandle);
+	}
+	if (ResultText)
+	{
+		FText RankText = UThreeCardPokerBlueprintLibrary::GetThreeCardPokerHandRankText(this);
+		ResultText->SetText(RankText);
 	}
 }
 
@@ -518,7 +580,7 @@ void AThreeCardPokerTableActor::RevealDealerHandAndResolve()
 		Card.bFaceUp = true;
 	}
 
-	OnDealerHandRevealed.Broadcast();
+	Multicast_DealerHandRevealed(DealerHand);
 	Resolve();
 }
 
@@ -590,7 +652,6 @@ void AThreeCardPokerTableActor::Resolve()
 			}
 		}
 	}
-
 	RoundState = EThreeCardPokerRoundState::RoundComplete;
 	OnTableChanged.Broadcast();
 	OnRoundCompleted.Broadcast();
