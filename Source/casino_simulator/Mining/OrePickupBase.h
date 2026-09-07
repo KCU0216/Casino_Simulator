@@ -42,7 +42,7 @@ public:
 	bool TryThrow(Acasino_simulatorCharacter* Character, FVector ThrowDirection);
 
 	UFUNCTION(BlueprintPure, Category = "OrePickup")
-	float GetCarryMovementMultiplier() const { return CarryMovementMultiplier; }
+	float GetCarryMovementMultiplier() const;
 
 	/** Local presentation hook when a player tries to pick up ore while their pickaxe is equipped. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "OrePickup|Presentation")
@@ -64,15 +64,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "OrePickup")
 	float Weight = 10.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "OrePickup", meta = (ClampMin = "0.1", ClampMax = "1.0"))
-	float CarryMovementMultiplier = 0.6f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "OrePickup|Throw", meta = (ClampMin = "0.0"))
-	float ThrowImpulse = 900.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "OrePickup|Throw")
-	float ThrowUpwardBias = 0.15f;
 
 	/** Source of truth for whether this pickup is carried, and by whom. */
 	UPROPERTY(ReplicatedUsing = OnRep_Carrier, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup")

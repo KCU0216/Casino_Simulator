@@ -14,6 +14,14 @@
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Event_Ore_Pickup, "Event.Ore.Pickup");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Equipment_Pickaxe_Equipped, "State.Equipment.Pickaxe.Equipped");
 
+namespace
+{
+	constexpr float WeightForFullPenalty = 100.0f;
+	constexpr float MinimumCarryMovementMultiplier = 0.1f;
+	constexpr float OreThrowImpulse = 900.0f;
+	constexpr float ThrowUpwardBias = 0.15f;
+}
+
 // Sets default values
 AOrePickupBase::AOrePickupBase()
 {
@@ -34,6 +42,12 @@ bool AOrePickupBase::CanInteract(Acasino_simulatorCharacter* InteractingCharacte
 {
 	return Super::CanInteract(InteractingCharacter)
 		&& Carrier == nullptr;
+}
+
+float AOrePickupBase::GetCarryMovementMultiplier() const
+{
+	const float WeightRatio = FMath::Clamp(Weight / WeightForFullPenalty, 0.0f, 1.0f);
+	return FMath::Clamp(1.0f - WeightRatio, MinimumCarryMovementMultiplier, 1.0f);
 }
 
 void AOrePickupBase::BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter)
@@ -72,6 +86,7 @@ bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 	Carrier = Character;
 	bUsePhysics = false;
 	Character->SetCarriedOre(this);
+	SetReplicateMovement(false);
 	UpdatePickupCollision();
 	UpdatePickupPhysics();
 	AttachToCarrier(Character);
@@ -93,6 +108,7 @@ bool AOrePickupBase::TryDrop(Acasino_simulatorCharacter* Character, FVector Drop
 	}
 
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	SetReplicateMovement(true);
 	SetActorLocation(DropLocation, false, nullptr, ETeleportType::TeleportPhysics);
 
 	Carrier = nullptr;
@@ -122,13 +138,13 @@ bool AOrePickupBase::TryThrow(Acasino_simulatorCharacter* Character, FVector Thr
 
 	LaunchDirection = (LaunchDirection + FVector::UpVector * ThrowUpwardBias).GetSafeNormal();
 
-	FVector ReleaseLocation = GetActorLocation();
-	if (const USkeletalMeshComponent* FirstPersonMesh = Character->GetFirstPersonMesh())
-	{
-		ReleaseLocation = FirstPersonMesh->GetSocketLocation(TEXT("hand_r"));
-	}
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	Character->GetActorEyesViewPoint(ViewLocation, ViewRotation);
+	const FVector ReleaseLocation = ViewLocation + LaunchDirection * 100.0f;
 
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	SetReplicateMovement(true);
 	SetActorLocation(ReleaseLocation, false, nullptr, ETeleportType::TeleportPhysics);
 
 	Carrier = nullptr;
@@ -138,7 +154,7 @@ bool AOrePickupBase::TryThrow(Acasino_simulatorCharacter* Character, FVector Thr
 	UpdatePickupPhysics();
 
 	OrePickupMesh->WakeRigidBody();
-	OrePickupMesh->AddImpulse(LaunchDirection * ThrowImpulse, NAME_None, true);
+	OrePickupMesh->AddImpulse(LaunchDirection * OreThrowImpulse, NAME_None, false);
 
 	ForceNetUpdate();
 	return true;
@@ -165,6 +181,7 @@ void AOrePickupBase::UpdatePickupCollision()
 void AOrePickupBase::UpdatePickupPhysics()
 {
 	const bool bShouldSimulatePhysics = Carrier == nullptr && bUsePhysics;
+	OrePickupMesh->SetMassOverrideInKg(NAME_None, FMath::Max(Weight, 1.0f), true);
 	OrePickupMesh->SetEnableGravity(bShouldSimulatePhysics);
 	OrePickupMesh->SetSimulatePhysics(bShouldSimulatePhysics);
 }
@@ -181,7 +198,7 @@ void AOrePickupBase::AttachToCarrier(Acasino_simulatorCharacter* Character)
 		);
 
 		AttachToComponent(
-			Character->GetFirstPersonMesh(),
+			Character->GetMesh(),
 			AttachmentRules,
 			TEXT("hand_r")
 		);
@@ -192,6 +209,17 @@ void AOrePickupBase::OnRep_Carrier()
 {
 	UpdatePickupCollision();
 	UpdatePickupPhysics();
+
+	if (Carrier)
+	{
+		SetReplicateMovement(false);
+		AttachToCarrier(Carrier);
+	}
+	else
+	{
+		SetReplicateMovement(true);
+		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	}
 }
 
 void AOrePickupBase::OnRep_UsePhysics()
