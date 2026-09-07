@@ -298,7 +298,8 @@ bool ABlackjackTableActor::PlaceBet(Acasino_simulatorCharacter* Player, int32 Am
 	}
 
 	FBlackjackSeatState* Seat = FindSeatForPlayer(Player);
-	if (!Seat || (RoundState != EBlackjackRoundState::WaitingForPlayers && RoundState != EBlackjackRoundState::Betting))
+	if (!Seat || !bBettingWindowOpen || Seat->BetAmount > 0
+		|| (RoundState != EBlackjackRoundState::WaitingForPlayers && RoundState != EBlackjackRoundState::Betting))
 	{
 		return false;
 	}
@@ -309,7 +310,7 @@ bool ABlackjackTableActor::PlaceBet(Acasino_simulatorCharacter* Player, int32 Am
 	}
 
 	RoundState = EBlackjackRoundState::Betting;
-	Seat->BetAmount += Amount;
+	Seat->BetAmount = Amount;
 	Seat->RoundDecision = EBlackjackRoundDecision::BetPlaced;
 	Seat->bReadyForRound = true;
 	Seat->bLeaveAfterRound = false;

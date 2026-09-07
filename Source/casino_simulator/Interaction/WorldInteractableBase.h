@@ -40,6 +40,15 @@ public:
 	/** Runs only on the initiating player's machine for LocalPredicted interactions. */
 	virtual void BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter);
 
+	UFUNCTION(BlueprintNativeEvent, Category = "World Interaction")
+	void OnLocalInteract(Acasino_simulatorCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintNativeEvent, Category = "World Interaction")
+	void OnInteractionFocusStarted(Acasino_simulatorCharacter* InteractingCharacter);
+
+	UFUNCTION(BlueprintNativeEvent, Category = "World Interaction")
+	void OnInteractionFocusEnded(Acasino_simulatorCharacter* InteractingCharacter);
+
 	UFUNCTION(BlueprintPure, Category = "World Interaction")
 	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const;
 

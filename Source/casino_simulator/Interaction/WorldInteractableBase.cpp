@@ -39,6 +39,18 @@ void AWorldInteractableBase::BeginLocalInteraction(Acasino_simulatorCharacter* I
 {
 }
 
+void AWorldInteractableBase::OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+}
+
+void AWorldInteractableBase::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+}
+
+void AWorldInteractableBase::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+}
+
 bool AWorldInteractableBase::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
 {
 	if (!InteractingCharacter)
