@@ -1,10 +1,21 @@
-#include "Mining/AbilityTask_MiningTargetData.h"
+﻿#include "Mining/AbilityTask_MiningTargetData.h"
 
 #include "Abilities/GameplayAbility.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Actor.h"
 #include "Mining/OreBase.h"
+
+UScriptStruct* FGameplayAbilityTargetData_OreThrowDirection::GetScriptStruct() const
+{
+	return StaticStruct();
+}
+
+bool FGameplayAbilityTargetData_OreThrowDirection::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+{
+	ThrowDirection.NetSerialize(Ar, Map, bOutSuccess);
+	return true;
+}
 
 UAbilityTask_WaitMiningTargetData* UAbilityTask_WaitMiningTargetData::WaitMiningTargetData(UGameplayAbility* OwningAbility, float MaxRange)
 {
@@ -106,6 +117,86 @@ void UAbilityTask_SendMiningTargetData::Activate()
 	else if (ASC->IsOwnerActorAuthoritative())
 	{
 		// 리슨 서버 호스트는 같은 프로세스의 서버 delegate를 바로 호출한다.
+		ASC->AbilityTargetDataSetDelegate(GetAbilitySpecHandle(), GetActivationPredictionKey()).Broadcast(Data, FGameplayTag());
+	}
+
+	EndTask();
+}
+
+UAbilityTask_WaitOreThrowTargetData* UAbilityTask_WaitOreThrowTargetData::WaitOreThrowTargetData(UGameplayAbility* OwningAbility)
+{
+	return NewAbilityTask<UAbilityTask_WaitOreThrowTargetData>(OwningAbility);
+}
+
+void UAbilityTask_WaitOreThrowTargetData::Activate()
+{
+	UAbilitySystemComponent* ASC = AbilitySystemComponent.Get();
+	if (!ASC || !ASC->IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	ASC->AbilityTargetDataSetDelegate(GetAbilitySpecHandle(), GetActivationPredictionKey())
+		.AddUObject(this, &UAbilityTask_WaitOreThrowTargetData::OnTargetDataReceived);
+	ASC->CallReplicatedTargetDataDelegatesIfSet(GetAbilitySpecHandle(), GetActivationPredictionKey());
+	if (IsForRemoteClient())
+	{
+		SetWaitingOnRemotePlayerData();
+	}
+}
+
+void UAbilityTask_WaitOreThrowTargetData::OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ActivationTag)
+{
+	if (UAbilitySystemComponent* ASC = AbilitySystemComponent.Get())
+	{
+		ASC->ConsumeClientReplicatedTargetData(GetAbilitySpecHandle(), GetActivationPredictionKey());
+	}
+
+	FVector ThrowDirection = FVector::ZeroVector;
+	if (Data.Num() > 0 && Data.Get(0) != nullptr && Data.Get(0)->GetScriptStruct() == FGameplayAbilityTargetData_OreThrowDirection::StaticStruct())
+	{
+		const FGameplayAbilityTargetData_OreThrowDirection* ThrowData =
+			static_cast<const FGameplayAbilityTargetData_OreThrowDirection*>(Data.Get(0));
+		ThrowDirection = ThrowData->ThrowDirection.GetSafeNormal();
+	}
+
+	if (!ThrowDirection.IsNearlyZero() && ShouldBroadcastAbilityTaskDelegates())
+	{
+		OnValidDirection.Broadcast(ThrowDirection);
+	}
+
+	EndTask();
+}
+
+UAbilityTask_SendOreThrowTargetData* UAbilityTask_SendOreThrowTargetData::SendOreThrowTargetData(UGameplayAbility* OwningAbility)
+{
+	return NewAbilityTask<UAbilityTask_SendOreThrowTargetData>(OwningAbility);
+}
+
+void UAbilityTask_SendOreThrowTargetData::Activate()
+{
+	UAbilitySystemComponent* ASC = AbilitySystemComponent.Get();
+	AActor* Avatar = GetAvatarActor();
+	if (!ASC || !Avatar || !IsLocallyControlled())
+	{
+		EndTask();
+		return;
+	}
+
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	Avatar->GetActorEyesViewPoint(ViewLocation, ViewRotation);
+
+	FGameplayAbilityTargetDataHandle Data;
+	Data.Add(new FGameplayAbilityTargetData_OreThrowDirection(ViewRotation.Vector()));
+
+	FScopedPredictionWindow PredictionWindow(ASC, IsPredictingClient());
+	if (IsPredictingClient())
+	{
+		ASC->CallServerSetReplicatedTargetData(GetAbilitySpecHandle(), GetActivationPredictionKey(), Data, FGameplayTag(), ASC->ScopedPredictionKey);
+	}
+	else if (ASC->IsOwnerActorAuthoritative())
+	{
 		ASC->AbilityTargetDataSetDelegate(GetAbilitySpecHandle(), GetActivationPredictionKey()).Broadcast(Data, FGameplayTag());
 	}
 

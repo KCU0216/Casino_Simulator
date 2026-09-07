@@ -35,6 +35,10 @@ void AWorldInteractableBase::Interact(Acasino_simulatorCharacter* InteractingCha
 {
 }
 
+void AWorldInteractableBase::BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter)
+{
+}
+
 void AWorldInteractableBase::OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
 }

@@ -19,6 +19,7 @@
 #include "casino_simulatorCharacter.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
+#include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Interaction/WorldInteractableBase.h"
@@ -406,13 +407,19 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractableBase* Target)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Target || !Target->CanInteract(PlayerCharacter))
+	if (!PlayerCharacter || !Target)
 	{
 		return;
 	}
 
 	Target->OnLocalInteract(PlayerCharacter);
 	CloseWorldInteraction();
+
+	if (Target->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
+	{
+		Target->BeginLocalInteraction(PlayerCharacter);
+		return;
+	}
 
 	if (HasAuthority())
 	{

@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "casino_simulatorCharacter.h"
 #include "Animation/AnimInstance.h"
@@ -15,6 +15,7 @@
 #include "Economy/CasinoShopComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Machine/SeatedMachineBase.h"
+#include "Net/UnrealNetwork.h"
 #include "NPC/NPC_Dice.h"
 #include "ThreeCardPoker/ThreeCardPokerTableActor.h"
 #include "casino_simulatorPlayerController.h"
@@ -70,6 +71,13 @@ Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 	ShopComponent = CreateDefaultSubobject<UCasinoShopComponent>(TEXT("ShopComponent"));
 	WorldInteractionDetector = CreateDefaultSubobject<UWorldInteractionDetectorComponent>(TEXT("WorldInteractionDetector"));
 	BlackjackPlayerComponent = CreateDefaultSubobject<UBlackjackPlayerComponent>(TEXT("BlackjackPlayerComponent"));
+}
+
+void Acasino_simulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(Acasino_simulatorCharacter, CarriedOre);
 }
 
 UAbilitySystemComponent* Acasino_simulatorCharacter::GetAbilitySystemComponent() const
@@ -149,6 +157,11 @@ void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(ASeatedMachineBase* M
 	}
 }
 
+void Acasino_simulatorCharacter::SetCarriedOre(AOrePickupBase* NewCarriedOre)
+{
+	CarriedOre = NewCarriedOre;
+}
+
 void Acasino_simulatorCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -170,8 +183,7 @@ void Acasino_simulatorCharacter::PossessedBy(AController* NewController)
 		// Every machine (server and each client) needs its own local MaxWalkSpeed/JumpZVelocity to
 		// match, since movement prediction/simulation runs locally - Nicotine/Alcohol themselves
 		// replicate, so this just needs to react to them wherever it's bound.
-		BindMoveSpeedToNicotine();
-		BindJumpSpeedToAlcohol();
+		BindMovementAttributeChanges();
 	}
 }
 
@@ -183,8 +195,7 @@ void Acasino_simulatorCharacter::OnRep_PlayerState()
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this, this);
-		BindMoveSpeedToNicotine();
-		BindJumpSpeedToAlcohol();
+		BindMovementAttributeChanges();
 	}
 }
 
@@ -263,62 +274,58 @@ void Acasino_simulatorCharacter::ApplyAttributeDecayEffect()
 	UE_LOG(Logcasino_simulator, Log, TEXT("'%s' applied attribute decay effect (active: %s)."), *GetNameSafe(this), AttributeDecayEffectHandle.IsValid() ? TEXT("true") : TEXT("false"));
 }
 
-void Acasino_simulatorCharacter::BindMoveSpeedToNicotine()
+void Acasino_simulatorCharacter::BindMovementAttributeChanges()
 {
 	if (!AbilitySystemComponent)
 	{
 		return;
 	}
 
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetNicotineAttribute())
-		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMoveSpeedFromNicotine(); });
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetMaxNicotineAttribute())
-		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMoveSpeedFromNicotine(); });
+	if (bMovementAttributeChangesBound)
+	{
+		UpdateMovementFromAttributes();
+		return;
+	}
 
-	// Apply immediately so movement speed matches the current ratio without waiting for the next change.
-	UpdateMoveSpeedFromNicotine();
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetNicotineAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMovementFromAttributes(); });
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetMaxNicotineAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMovementFromAttributes(); });
+
+
+
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetAlcoholAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMovementFromAttributes(); });
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetMaxAlcoholAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMovementFromAttributes(); });
+
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetCarryMovementMultiplierAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) {UpdateMovementFromAttributes(); });
+
+	bMovementAttributeChangesBound = true;
+	UpdateMovementFromAttributes();
+
 }
 
-void Acasino_simulatorCharacter::UpdateMoveSpeedFromNicotine() const
+void Acasino_simulatorCharacter::UpdateMovementFromAttributes() const
 {
+
 	if (!AttributeSet || !GetCharacterMovement())
 	{
 		return;
 	}
 
 	const float MaxNicotineValue = AttributeSet->GetMaxNicotine();
-	const float Ratio = (MaxNicotineValue > 0.0f) ? FMath::Clamp(AttributeSet->GetNicotine() / MaxNicotineValue, 0.0f, 1.0f) : 1.0f;
-
-	GetCharacterMovement()->MaxWalkSpeed = MaxMoveSpeed * Ratio;
-}
-
-void Acasino_simulatorCharacter::BindJumpSpeedToAlcohol()
-{
-	if (!AbilitySystemComponent)
-	{
-		return;
-	}
-
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetAlcoholAttribute())
-		.AddLambda([this](const FOnAttributeChangeData&) { UpdateJumpSpeedFromAlcohol(); });
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetMaxAlcoholAttribute())
-		.AddLambda([this](const FOnAttributeChangeData&) { UpdateJumpSpeedFromAlcohol(); });
-
-	// Apply immediately so jump speed matches the current ratio without waiting for the next change.
-	UpdateJumpSpeedFromAlcohol();
-}
-
-void Acasino_simulatorCharacter::UpdateJumpSpeedFromAlcohol() const
-{
-	if (!AttributeSet || !GetCharacterMovement())
-	{
-		return;
-	}
+	const float NicotineRatio = (MaxNicotineValue > 0.0f) ? FMath::Clamp(AttributeSet->GetNicotine() / MaxNicotineValue, 0.0f, 1.0f) : 1.0f;
 
 	const float MaxAlcoholValue = AttributeSet->GetMaxAlcohol();
-	const float Ratio = (MaxAlcoholValue > 0.0f) ? FMath::Clamp(AttributeSet->GetAlcohol() / MaxAlcoholValue, 0.0f, 1.0f) : 1.0f;
+	const float AlcoholRatio = (MaxAlcoholValue > 0.0f) ? FMath::Clamp(AttributeSet->GetAlcohol() / MaxAlcoholValue, 0.0f, 1.0f) : 1.0f;
 
-	GetCharacterMovement()->JumpZVelocity = MaxJumpSpeed * Ratio;
+	const float CarryMovementMultiplier = AttributeSet->GetCarryMovementMultiplier();
+
+	GetCharacterMovement()->MaxWalkSpeed = MaxMoveSpeed * NicotineRatio * CarryMovementMultiplier;
+	GetCharacterMovement()->JumpZVelocity = MaxJumpSpeed * AlcoholRatio * CarryMovementMultiplier;
+
 }
 
 void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

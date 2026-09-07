@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -8,6 +8,13 @@ class Acasino_simulatorCharacter;
 class USceneComponent;
 class USphereComponent;
 class UPrimitiveComponent;
+
+UENUM(BlueprintType)
+enum class EWorldInteractionExecutionType : uint8
+{
+	ServerOnly,
+	LocalPredicted
+};
 
 /**
  * Base actor for non-NPC world interactions such as machines, doors, and props.
@@ -23,6 +30,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Interaction")
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter);
+
+	/** Selects whether this interaction begins through the server RPC or a locally predicted ability. */
+	virtual EWorldInteractionExecutionType GetInteractionExecutionType() const
+	{
+		return EWorldInteractionExecutionType::ServerOnly;
+	}
+
+	/** Runs only on the initiating player's machine for LocalPredicted interactions. */
+	virtual void BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter);
 
 	UFUNCTION(BlueprintNativeEvent, Category = "World Interaction")
 	void OnLocalInteract(Acasino_simulatorCharacter* InteractingCharacter);

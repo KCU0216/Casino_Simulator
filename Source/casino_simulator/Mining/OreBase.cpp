@@ -2,6 +2,7 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Mining/OrePickupBase.h"
 
 AOreBase::AOreBase()
 {
@@ -47,6 +48,21 @@ bool AOreBase::ApplyMiningHit(const int32 Damage)
 	{
 		OnOreDepleted.Broadcast();
 		ReceiveOreDepleted();
+
+		//spawn OrePickup
+
+		if (OrePickupClass)
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+			AOrePickupBase* Pickup = GetWorld()->SpawnActor<AOrePickupBase>(
+				OrePickupClass,
+				GetActorTransform(), 
+				SpawnParams);
+		}
+		
 		Destroy();
 	}
 

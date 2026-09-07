@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+Ôªø// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -45,7 +45,7 @@ public:
 	ATTRIBUTE_ACCESSORS(Ucasino_simulatorAttributeSet, Nicotine)
 
 	UPROPERTY(BlueprintReadOnly, Category = "Nicotine", ReplicatedUsing = OnRep_NicotineDecayRate)
-	FGameplayAttributeData NicotineDecayRate;   // √ ¥Á(∂«¥¬ Period¥Á) ∞®ºË∑Æ. ±‚∫ª 1.0
+	FGameplayAttributeData NicotineDecayRate;   // Ï¥àÎãπ(ÎòêÎäî PeriodÎãπ) Í∞êÏá†Îüâ. Í∏∞Î≥∏ 1.0
 	ATTRIBUTE_ACCESSORS(Ucasino_simulatorAttributeSet, NicotineDecayRate)
 
 	/** Maximum nicotine level */
@@ -66,6 +66,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Alcohol", ReplicatedUsing = OnRep_MaxAlcohol)
 	FGameplayAttributeData MaxAlcohol;
 	ATTRIBUTE_ACCESSORS(Ucasino_simulatorAttributeSet, MaxAlcohol)
+
+	UPROPERTY(BlueprintReadOnly, Category = "Carry", ReplicatedUsing = OnRep_CarryMovementMultiplier)
+	FGameplayAttributeData CarryMovementMultiplier;
+	ATTRIBUTE_ACCESSORS(Ucasino_simulatorAttributeSet, CarryMovementMultiplier)
 
 protected:
 
@@ -88,6 +92,9 @@ protected:
 
 	UFUNCTION()
 	virtual void OnRep_MaxAlcohol(const FGameplayAttributeData& OldMaxAlcohol);
+
+	UFUNCTION()
+	virtual void OnRep_CarryMovementMultiplier(const FGameplayAttributeData& OldCarryMovementMultiplier);
 
 private:
 
