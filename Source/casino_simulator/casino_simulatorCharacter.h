@@ -28,6 +28,7 @@ struct FInputActionValue;
 class ARaceManager;
 class ANPC_Dice;
 class AThreeCardPokerTableActor;
+class AOrePickupBase;
 
 /** A startup ability and the semantic input tag used to activate it (empty for passive/event abilities). */
 USTRUCT(BlueprintType)
@@ -117,6 +118,9 @@ protected:
 	/** Prevents a repeated possession of the same pawn from granting duplicate startup abilities. */
 	bool bStartupAbilitiesGranted = false;
 
+	/** Prevents repeated possession or PlayerState replication from stacking movement delegates. */
+	bool bMovementAttributeChangesBound = false;
+
 	/** Handles cigarette/alcohol shop purchases and forwards successful recovery to GAS */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Shop", meta = (AllowPrivateAccess = "true"))
 	UCasinoShopComponent* ShopComponent;
@@ -137,6 +141,10 @@ protected:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Machine|Interaction", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ASeatedMachineBase> CurrentSeatedMachine;
+
+	/** The one ore pickup currently carried by this character. Set and cleared by the server-side pickup/drop flow. */
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<AOrePickupBase> CarriedOre;
 
 	/** The Three Card Poker table this (locally-owned) character is currently interacting with, if
 	 * any. Mirrors CurrentSeatedMachine's role now that AThreeCardPokerTableActor handles its own
@@ -246,6 +254,8 @@ protected:
 	virtual void PossessedBy(AController* NewController) override;
 	//~ End AActor interface
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 	//~ Begin APawn interface
 	virtual void OnRep_PlayerState() override;
 	//~ End APawn interface
@@ -259,17 +269,9 @@ protected:
 	/** Applies AttributeDecayEffectClass to this character's own ability system so Nicotine/Alcohol decay over time. Server-only. */
 	void ApplyAttributeDecayEffect();
 
-	/** Subscribes UpdateMoveSpeedFromNicotine to the Nicotine/MaxNicotine attribute change delegates. Call after InitAbilityActorInfo, on every machine (not authority-only) since MaxWalkSpeed needs to match locally for movement prediction/simulation. */
-	void BindMoveSpeedToNicotine();
+	void BindMovementAttributeChanges();
 
-	/** Rescales CharacterMovementComponent's MaxWalkSpeed to MaxMoveSpeed * (Nicotine / MaxNicotine). */
-	void UpdateMoveSpeedFromNicotine() const;
-
-	/** Subscribes UpdateJumpSpeedFromAlcohol to the Alcohol/MaxAlcohol attribute change delegates. Call after InitAbilityActorInfo, on every machine (not authority-only) since JumpZVelocity needs to match locally for movement prediction/simulation. */
-	void BindJumpSpeedToAlcohol();
-
-	/** Rescales CharacterMovementComponent's JumpZVelocity to MaxJumpSpeed * (Alcohol / MaxAlcohol). */
-	void UpdateJumpSpeedFromAlcohol() const;
+	void UpdateMovementFromAttributes() const;
 
 	/** Called from Input Actions for movement input */
 	void MoveInput(const FInputActionValue& Value);

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Interaction/WorldInteractable.h"
 #include "WorldInteractableBase.generated.h"
 
 class Acasino_simulatorCharacter;
@@ -19,17 +20,35 @@ enum class EWorldInteractionExecutionType : uint8
 /**
  * Base actor for non-NPC world interactions such as machines, doors, and props.
  * It owns interaction range detection; child actors own the actual interaction result.
+ *
+ * Implements IWorldInteractable (shared with ANPC_Base's family) so UWorldInteractionDetectorComponent
+ * can register/focus-resolve/interact with it through the same shared pipeline - see WorldInteractable.h.
  */
 UCLASS(Abstract, Blueprintable)
-class CASINO_SIMULATOR_API AWorldInteractableBase : public AActor
+class CASINO_SIMULATOR_API AWorldInteractableBase : public AActor, public IWorldInteractable
 {
 	GENERATED_BODY()
 
 public:
 	AWorldInteractableBase();
 
+	//~ Begin IWorldInteractable interface
 	UFUNCTION(BlueprintCallable, Category = "World Interaction")
-	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter);
+	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
+
+	UFUNCTION(BlueprintPure, Category = "World Interaction")
+	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
+
+	UFUNCTION(BlueprintPure, Category = "World Interaction")
+	virtual FText GetInteractionPromptText() const override { return InteractionPromptText; }
+
+	// OnLocalInteract/OnInteractionFocusStarted/OnInteractionFocusEnded are BlueprintNativeEvents owned
+	// by the interface itself - only override the _Implementation here, never redeclare the plain
+	// UFUNCTION (see [[unreal-interface-blueprintnativeevent-gotcha]]).
+	virtual void OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
+	virtual void OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
+	virtual void OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
+	//~ End IWorldInteractable interface
 
 	/** Selects whether this interaction begins through the server RPC or a locally predicted ability. */
 	virtual EWorldInteractionExecutionType GetInteractionExecutionType() const
@@ -39,21 +58,6 @@ public:
 
 	/** Runs only on the initiating player's machine for LocalPredicted interactions. */
 	virtual void BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter);
-
-	UFUNCTION(BlueprintNativeEvent, Category = "World Interaction")
-	void OnLocalInteract(Acasino_simulatorCharacter* InteractingCharacter);
-
-	UFUNCTION(BlueprintNativeEvent, Category = "World Interaction")
-	void OnInteractionFocusStarted(Acasino_simulatorCharacter* InteractingCharacter);
-
-	UFUNCTION(BlueprintNativeEvent, Category = "World Interaction")
-	void OnInteractionFocusEnded(Acasino_simulatorCharacter* InteractingCharacter);
-
-	UFUNCTION(BlueprintPure, Category = "World Interaction")
-	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const;
-
-	UFUNCTION(BlueprintPure, Category = "World Interaction")
-	FText GetInteractionPromptText() const { return InteractionPromptText; }
 
 	UFUNCTION(BlueprintPure, Category = "World Interaction")
 	USphereComponent* GetInteractionSphere() const { return InteractionSphere; }

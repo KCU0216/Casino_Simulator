@@ -83,11 +83,6 @@ bool AWorldInteractableBase::CanInteract(Acasino_simulatorCharacter* Interacting
 	return ToCharacter.SizeSquared() <= FMath::Square(MaxDistance);
 }
 
-FText AWorldInteractableBase::GetInteractionPromptText() const
-{
-	return InteractionPromptText;
-}
-
 void AWorldInteractableBase::OnInteractionSphereBeginOverlap(
 	UPrimitiveComponent* OverlappedComponent,
 	AActor* OtherActor,
