@@ -9,6 +9,8 @@ Ucasino_simulatorAttributeSet::Ucasino_simulatorAttributeSet()
 {
 	InitCurrency(10000.0f);
 	InitCarryMovementMultiplier(1.0f);
+	InitMiningPower(20.0f);
+	InitMiningSpeed(1.0f);
 }
 
 void Ucasino_simulatorAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -23,6 +25,8 @@ void Ucasino_simulatorAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeP
 	DOREPLIFETIME_CONDITION_NOTIFY(Ucasino_simulatorAttributeSet, AlcoholDecayRate, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(Ucasino_simulatorAttributeSet, MaxAlcohol, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(Ucasino_simulatorAttributeSet, CarryMovementMultiplier, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(Ucasino_simulatorAttributeSet, MiningPower, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(Ucasino_simulatorAttributeSet, MiningSpeed, COND_None, REPNOTIFY_Always);
 
 }
 
@@ -57,6 +61,14 @@ void Ucasino_simulatorAttributeSet::PreAttributeChange(const FGameplayAttribute&
 	{
 		AdjustAttributeForMaxChange(Alcohol, MaxAlcohol, NewValue, GetAlcoholAttribute());
 	}
+	else if (Attribute == GetMiningPowerAttribute())
+	{
+		NewValue = FMath::Max(NewValue, 1.0f);
+	}
+	else if (Attribute == GetMiningSpeedAttribute())
+	{
+		NewValue = FMath::Max(NewValue, 0.1f);
+	}
 }
 
 void Ucasino_simulatorAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
@@ -72,6 +84,14 @@ void Ucasino_simulatorAttributeSet::PostGameplayEffectExecute(const FGameplayEff
 	else if (Data.EvaluatedData.Attribute == GetAlcoholAttribute())
 	{
 		SetAlcohol(FMath::Clamp(GetAlcohol(), 0.0f, GetMaxAlcohol()));
+	}
+	else if (Data.EvaluatedData.Attribute == GetMiningPowerAttribute())
+	{
+		SetMiningPower(FMath::Max(GetMiningPower(), 1.0f));
+	}
+	else if (Data.EvaluatedData.Attribute == GetMiningSpeedAttribute())
+	{
+		SetMiningSpeed(FMath::Max(GetMiningSpeed(), 0.1f));
 	}
 }
 
@@ -128,4 +148,14 @@ void Ucasino_simulatorAttributeSet::OnRep_MaxAlcohol(const FGameplayAttributeDat
 void Ucasino_simulatorAttributeSet::OnRep_CarryMovementMultiplier(const FGameplayAttributeData& OldCarryMovementMultiplier)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(Ucasino_simulatorAttributeSet, CarryMovementMultiplier, OldCarryMovementMultiplier);
+}
+
+void Ucasino_simulatorAttributeSet::OnRep_MiningPower(const FGameplayAttributeData& OldMiningPower)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(Ucasino_simulatorAttributeSet, MiningPower, OldMiningPower);
+}
+
+void Ucasino_simulatorAttributeSet::OnRep_MiningSpeed(const FGameplayAttributeData& OldMiningSpeed)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(Ucasino_simulatorAttributeSet, MiningSpeed, OldMiningSpeed);
 }

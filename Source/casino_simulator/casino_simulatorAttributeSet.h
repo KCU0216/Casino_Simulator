@@ -71,6 +71,15 @@ public:
 	FGameplayAttributeData CarryMovementMultiplier;
 	ATTRIBUTE_ACCESSORS(Ucasino_simulatorAttributeSet, CarryMovementMultiplier)
 
+	UPROPERTY(BlueprintReadOnly, Category = "Mining", ReplicatedUsing = OnRep_MiningPower)
+	FGameplayAttributeData MiningPower;
+	ATTRIBUTE_ACCESSORS(Ucasino_simulatorAttributeSet, MiningPower)
+
+	/** Montage play-rate multiplier for mining. Add +0.2 for a 20% speed bonus, resulting in 1.2x. */
+	UPROPERTY(BlueprintReadOnly, Category = "Mining", ReplicatedUsing = OnRep_MiningSpeed)
+	FGameplayAttributeData MiningSpeed;
+	ATTRIBUTE_ACCESSORS(Ucasino_simulatorAttributeSet, MiningSpeed)
+
 protected:
 
 	UFUNCTION()
@@ -95,6 +104,12 @@ protected:
 
 	UFUNCTION()
 	virtual void OnRep_CarryMovementMultiplier(const FGameplayAttributeData& OldCarryMovementMultiplier);
+
+	UFUNCTION()
+	virtual void OnRep_MiningPower(const FGameplayAttributeData& OldMiningPower);
+
+	UFUNCTION()
+	virtual void OnRep_MiningSpeed(const FGameplayAttributeData& OldMiningSpeed);
 
 private:
 

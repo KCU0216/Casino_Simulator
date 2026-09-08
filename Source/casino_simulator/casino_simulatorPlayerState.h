@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -12,6 +12,10 @@ struct FItemData;
 
 /** Broadcast on both server and clients whenever the inventory contents change, so UI (e.g. WBP_Inventory) can refresh. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnInventoryChanged);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnMiningUpgradeLevelsChanged);
+
+
 
 /**
  * Owns the items a player is currently holding (inventory), independent of round/level.
@@ -36,6 +40,7 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Inventory")
 	FOnInventoryChanged OnInventoryChanged;
+
 
 	/** Read-only access to the current inventory entries (for UI) */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory")
@@ -69,10 +74,39 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_Inventory, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TArray<FInventoryEntry> Inventory;
 
+	UPROPERTY(ReplicatedUsing = OnRep_MiningUpgradeLevels, BlueprintReadOnly, Category = "Mining|Upgrade")
+	int32 MiningPowerUpgradeLevel = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_MiningUpgradeLevels, BlueprintReadOnly, Category = "Mining|Upgrade")
+	int32 MiningSpeedUpgradeLevel = 0;
+
+	UPROPERTY(BlueprintAssignable, Category = "Mining|Upgrade")
+	FOnMiningUpgradeLevelsChanged OnMiningUpgradeLevelsChanged;
+
+	
+
+
+	UFUNCTION()
+	void OnRep_MiningUpgradeLevels();
+
 	UFUNCTION()
 	void OnRep_Inventory();
 
 public:
+
+	UFUNCTION(BlueprintPure, Category = "Mining|Upgrade")
+	int32 GetMiningPowerUpgradeLevel() const { return MiningPowerUpgradeLevel; }
+
+	UFUNCTION(BlueprintPure, Category = "Mining|Upgrade")
+	int32 GetMiningSpeedUpgradeLevel() const { return MiningSpeedUpgradeLevel; }
+	UFUNCTION(BlueprintCallable, Category = "Mining|Upgrade")
+	void AddMiningPowerUpgradeLevel(int32 Amount);
+	//광산 상점에서 호출할 함수
+	UFUNCTION(BlueprintCallable, Category = "Mining|Upgrade")
+	void AddMiningSpeedUpgradeLevel(int32 Amount);
+
+
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NumberSlots")
 	TArray<int> NumberSlots = {0,1};
 

@@ -9,6 +9,7 @@
 #include "ActiveGameplayEffectHandle.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "GameplayTagContainer.h"
+#include "Mining/MiningShopComponent.h"
 #include "casino_simulatorCharacter.generated.h"
 
 class UInputComponent;
@@ -200,6 +201,15 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
 	void ServerClaimRaceWinnings(ARaceManager* Manager);
 
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Mining|Shop")
+	void ServerBuyMiningShopUpgrade(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType);
+
+	UFUNCTION(Client, Reliable, Category = "Mining|Shop")
+	void ClientMiningShopPurchaseCompleted(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType, int32 TotalPrice);
+
+	UFUNCTION(Client, Reliable, Category = "Mining|Shop")
+	void ClientMiningShopPurchaseFailed(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType, const FString& Reason);
+
 	/** Forwards a dice game bet placed by this (locally-owned) character to the server, since a
 	 * client can't call a Server RPC declared on DiceNPC directly (it isn't owned by that client). */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Dice Game")
@@ -247,6 +257,15 @@ UFUNCTION(BlueprintPure, Category = "OrePickup")
 
 	/** Server-side state update used by AOrePickupBase after a successful pickup or drop. */
 	void SetCarriedOre(AOrePickupBase* NewCarriedOre);
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
+	int32 GetPickaxeMiningPower() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
+	float GetPickaxeMiningSpeed() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
+	float GetPickaxeMiningMontagePlayRate() const;
 
 protected:
 

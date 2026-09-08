@@ -20,6 +20,7 @@
 #include "ThreeCardPoker/ThreeCardPokerTableActor.h"
 #include "casino_simulatorPlayerController.h"
 #include "RaceGame/RaceManager.h"
+#include "Mining/MiningShopComponent.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
 #include "Item/ItemData.h"
@@ -160,6 +161,21 @@ void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(ASeatedMachineBase* M
 void Acasino_simulatorCharacter::SetCarriedOre(AOrePickupBase* NewCarriedOre)
 {
 	CarriedOre = NewCarriedOre;
+}
+
+int32 Acasino_simulatorCharacter::GetPickaxeMiningPower() const
+{
+	return AttributeSet ? FMath::Max(FMath::RoundToInt(AttributeSet->GetMiningPower()), 1) : 1;
+}
+
+float Acasino_simulatorCharacter::GetPickaxeMiningSpeed() const
+{
+	return AttributeSet ? FMath::Max(AttributeSet->GetMiningSpeed(), 0.1f) : 1.0f;
+}
+
+float Acasino_simulatorCharacter::GetPickaxeMiningMontagePlayRate() const
+{
+	return GetPickaxeMiningSpeed();
 }
 
 void Acasino_simulatorCharacter::PossessedBy(AController* NewController)
@@ -597,6 +613,30 @@ void Acasino_simulatorCharacter::ServerClaimRaceWinnings_Implementation(ARaceMan
 	if (Manager)
 	{
 		Manager->ServerClaimWinnings(this);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerBuyMiningShopUpgrade_Implementation(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType)
+{
+	if (MiningShopComponent)
+	{
+		MiningShopComponent->ProcessUpgradePurchase(this, UpgradeType);
+	}
+}
+
+void Acasino_simulatorCharacter::ClientMiningShopPurchaseCompleted_Implementation(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType, int32 TotalPrice)
+{
+	if (MiningShopComponent)
+	{
+		MiningShopComponent->HandlePurchaseCompletedFromServer(UpgradeType, TotalPrice);
+	}
+}
+
+void Acasino_simulatorCharacter::ClientMiningShopPurchaseFailed_Implementation(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType, const FString& Reason)
+{
+	if (MiningShopComponent)
+	{
+		MiningShopComponent->HandlePurchaseFailedFromServer(UpgradeType, Reason);
 	}
 }
 

@@ -33,7 +33,8 @@ AOrePickupBase::AOrePickupBase()
 	SetRootComponent(OrePickupMesh);
 	InteractionSphere->SetupAttachment(OrePickupMesh);
 	OrePickupMesh->SetCollisionProfileName(TEXT("BlockAll"));
-	OrePickupMesh->SetGenerateOverlapEvents(false);
+	OrePickupMesh->SetCollisionObjectType(ECC_PhysicsBody);
+	OrePickupMesh->SetGenerateOverlapEvents(true);
 	OrePickupMesh->SetSimulatePhysics(false);
 	OrePickupMesh->SetEnableGravity(false);
 }
@@ -84,6 +85,7 @@ bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 	}
 
 	Carrier = Character;
+	LastCarrier = Character;
 	bUsePhysics = false;
 	Character->SetCarriedOre(this);
 	SetReplicateMovement(false);
@@ -112,6 +114,7 @@ bool AOrePickupBase::TryDrop(Acasino_simulatorCharacter* Character, FVector Drop
 	SetActorLocation(DropLocation, false, nullptr, ETeleportType::TeleportPhysics);
 
 	Carrier = nullptr;
+	LastCarrier = Character;
 	bUsePhysics = true;
 	Character->SetCarriedOre(nullptr);
 	UpdatePickupCollision();
@@ -148,6 +151,7 @@ bool AOrePickupBase::TryThrow(Acasino_simulatorCharacter* Character, FVector Thr
 	SetActorLocation(ReleaseLocation, false, nullptr, ETeleportType::TeleportPhysics);
 
 	Carrier = nullptr;
+	LastCarrier = Character;
 	bUsePhysics = true;
 	Character->SetCarriedOre(nullptr);
 	UpdatePickupCollision();

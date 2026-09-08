@@ -44,6 +44,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "OrePickup")
 	float GetCarryMovementMultiplier() const;
 
+	UFUNCTION(BlueprintPure, Category = "OrePickup")
+	UStaticMeshComponent* GetOrePickupMesh() const { return OrePickupMesh; }
+
+	UFUNCTION(BlueprintPure, Category = "OrePickup")
+	EOreType GetOreType() const { return OreType; }
+
+	UFUNCTION(BlueprintPure, Category = "OrePickup")
+	Acasino_simulatorCharacter* GetCarrier() const { return Carrier; }
+
+	UFUNCTION(BlueprintPure, Category = "OrePickup")
+	Acasino_simulatorCharacter* GetLastCarrier() const { return LastCarrier; }
+
 	/** Local presentation hook when a player tries to pick up ore while their pickaxe is equipped. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "OrePickup|Presentation")
 	void ReceivePickupBlocked(Acasino_simulatorCharacter* InteractingCharacter);
@@ -68,6 +80,9 @@ protected:
 	/** Source of truth for whether this pickup is carried, and by whom. */
 	UPROPERTY(ReplicatedUsing = OnRep_Carrier, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup")
 	TObjectPtr<Acasino_simulatorCharacter> Carrier = nullptr;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup")
+	TObjectPtr<Acasino_simulatorCharacter> LastCarrier = nullptr;
 
 	/** Physical state is separate from ownership: newly spawned pickups are static, dropped pickups simulate. */
 	UPROPERTY(ReplicatedUsing = OnRep_UsePhysics, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup")
