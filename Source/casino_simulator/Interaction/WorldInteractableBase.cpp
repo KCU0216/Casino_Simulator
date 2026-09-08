@@ -4,6 +4,7 @@
 #include "Components/SphereComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "casino_simulatorCharacter.h"
+#include "casino_simulatorPlayerController.h"
 
 AWorldInteractableBase::AWorldInteractableBase()
 {
@@ -45,10 +46,24 @@ void AWorldInteractableBase::OnLocalInteract_Implementation(Acasino_simulatorCha
 
 void AWorldInteractableBase::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
+	// Same PlayerHUDWidget dialogue-style panel ANPC_Base opens (BP_OpenInterection/BP_CloseInterection
+	// via SetWorldInteractionTargetFocused/OpenInteraction) rather than a separate corner prompt.
+	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
+		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
+		: nullptr)
+	{
+		PlayerController->SetWorldInteractionTargetFocused(true);
+	}
 }
 
 void AWorldInteractableBase::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
+	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
+		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
+		: nullptr)
+	{
+		PlayerController->SetWorldInteractionTargetFocused(false);
+	}
 }
 
 bool AWorldInteractableBase::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
@@ -58,7 +73,7 @@ bool AWorldInteractableBase::CanInteract(Acasino_simulatorCharacter* Interacting
 		return false;
 	}
 
-	const float MaxDistance = InteractionSphere ? InteractionSphere->GetScaledSphereRadius() + 50.0f : 0.0f;
+	const float MaxDistance = InteractionSphere ? InteractionSphere->GetScaledSphereRadius() + 150.0f : 0.0f;
 	if (MaxDistance <= 0.0f)
 	{
 		return false;
@@ -66,6 +81,11 @@ bool AWorldInteractableBase::CanInteract(Acasino_simulatorCharacter* Interacting
 
 	const FVector ToCharacter = InteractingCharacter->GetActorLocation() - GetActorLocation();
 	return ToCharacter.SizeSquared() <= FMath::Square(MaxDistance);
+}
+
+FText AWorldInteractableBase::GetInteractionPromptText() const
+{
+	return InteractionPromptText;
 }
 
 void AWorldInteractableBase::OnInteractionSphereBeginOverlap(

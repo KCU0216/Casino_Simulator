@@ -9,6 +9,7 @@
 #include "casino_simulatorPlayerController.h"
 #include "casino_simulatorAttributeSet.h"
 #include "casino_simulator.h"
+#include "Interaction/WorldInteractionDetectorComponent.h"
 
 ANPC_Base::ANPC_Base()
 {
@@ -104,6 +105,11 @@ void ANPC_Base::SetCanInterection(bool value)
 	}
 }
 
+bool ANPC_Base::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
+{
+	return CanInterection;
+}
+
 void ANPC_Base::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 {
 	// Interact() is now called both locally (by whichever machine the interacting player is on, for
@@ -119,16 +125,42 @@ void ANPC_Base::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 	BP_OnInteract(InteractingCharacter);
 }
 
+void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	// NPCs keep their own dialogue-style HUD panel instead of the shared corner "E Use" prompt that
+	// AWorldInteractableBase's family uses - see UWorldInteractionDetectorComponent::SetFocusedTarget.
+	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
+		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
+		: nullptr)
+	{
+		PlayerController->SetInteractionTarget(this);
+	}
+}
+
+void ANPC_Base::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
+		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
+		: nullptr)
+	{
+		PlayerController->ClearInteractionTarget(this);
+	}
+}
+
 void ANPC_Base::OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	// Only the player character (Acasino_simulatorCharacter) opens the interaction - other NPCs/objects overlapping the sphere are ignored.
+	// Only the player character (Acasino_simulatorCharacter) registers as a candidate - other
+	// NPCs/objects overlapping the sphere are ignored. Registering here (rather than opening the
+	// interaction UI directly, like before) hands "who's actually focused" off to the player's own
+	// UWorldInteractionDetectorComponent, same as AWorldInteractableBase - see OnInteractionFocusStarted
+	// above for where the UI actually opens once this NPC wins that resolution.
 	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor))
 	{
 		OverlappingPlayer = PlayerCharacter;
 
-		if (Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(PlayerCharacter->GetController()))
+		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
-			PlayerController->SetInteractionTarget(this);
+			Detector->RegisterCandidate(this);
 		}
 	}
 }
@@ -142,9 +174,9 @@ void ANPC_Base::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedCom
 			OverlappingPlayer = nullptr;
 		}
 
-		if (Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(PlayerCharacter->GetController()))
+		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
-			PlayerController->ClearInteractionTarget(this);
+			Detector->UnregisterCandidate(this);
 		}
 	}
 }

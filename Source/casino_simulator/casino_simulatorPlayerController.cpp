@@ -23,8 +23,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Interaction/WorldInteractableBase.h"
+#include "Interaction/WorldInteractable.h"
 #include "Machine/SeatedMachineBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Camera/CameraComponent.h"
 #include "NPC/NPC_Base.h"
 
 Acasino_simulatorPlayerController::Acasino_simulatorPlayerController()
@@ -321,59 +323,11 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 		return;
 	}
 
-	if (CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection())
-	{
-		FVector Location = PlayerCharacter->GetActorLocation();
-		FVector Direction = PlayerCharacter->GetActorForwardVector();
-
-		if (UCameraComponent* Camera = PlayerCharacter->GetFirstPersonCameraComponent())
-		{
-			Location = Camera->GetComponentLocation();
-			Direction = Camera->GetForwardVector();
-		}
-
-		FVector LineLocation = Location + Direction * 1000.f;
-
-		FHitResult OutHit;
-		FCollisionQueryParams Params;
-		Params.AddIgnoredActor(PlayerCharacter);
-
-		GetWorld()->LineTraceSingleByChannel(OutHit, Location, LineLocation, ECollisionChannel::ECC_Visibility, Params);
-
-		ANPC_Base* HitNPC = Cast<ANPC_Base>(OutHit.GetActor());
-
-		if (HitNPC)
-		{
-			CloseInteraction();
-
-			//Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-			if (!PlayerCharacter || !HitNPC || !HitNPC->GetCanInterection())
-			{
-				return;
-			}
-
-			//HitNPC->Interact(PlayerCharacter);
-
-			// Always run locally so BP_OnInteract (opening the UI, playing local effects, etc.)
-			// fires immediately on this player's own machine. On a client this only touches that
-			// client's non-authoritative copy of the NPC though, so also tell the server to run
-			// the same Interact() on its authoritative copy (e.g. so NPC_Dice's InteractingPlayer
-			// is set server-side too) - skip it on the server/host, which already just ran it above.
-			CurrentInteractionTarget->Interact(PlayerCharacter);
-			if (!HasAuthority())
-			{
-				Server_InteractWithNPC(CurrentInteractionTarget);
-			}
-
-			UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement();
-			if (HitNPC->GetNPCType() != ENPCType::Shop && MovementComponent)
-			{
-				MovementComponent->DisableMovement();
-			}
-			return;
-		}
-	}
-
+	// NPCs and world props/machines/tables now share one detection pipeline
+	// (UWorldInteractionDetectorComponent, driven by IWorldInteractable) instead of this method also
+	// running its own separate line trace for NPCs: whichever family the detector's per-tick trace
+	// resolved as FocusedTarget gets routed to RequestWorldInteraction or RequestNPCInteraction from
+	// inside TryInteract.
 	if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 	{
 		Detector->TryInteract();
@@ -412,7 +366,10 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 		return;
 	}
 
-	Target->OnLocalInteract(PlayerCharacter);
+	// OnLocalInteract is BlueprintNativeEvent (so a Blueprint-graph-only override still runs), which
+	// requires going through Execute_ rather than a direct call - see IWorldInteractable's class
+	// comment. CanInteract/Interact are plain virtual, so they're called directly below.
+	IWorldInteractable::Execute_OnLocalInteract(Target, PlayerCharacter);
 	CloseWorldInteraction();
 
 	if (Target->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
@@ -440,6 +397,36 @@ void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implement
 	}
 
 	Target->Interact(PlayerCharacter);
+}
+
+void Acasino_simulatorPlayerController::RequestNPCInteraction(ANPC_Base* Target)
+{
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+	if (!PlayerCharacter || !Target || !Target->CanInteract(PlayerCharacter))
+	{
+		return;
+	}
+
+	CloseInteraction();
+
+	// Always run locally so BP_OnInteract (opening the UI, playing local effects, etc.) fires
+	// immediately on this player's own machine. On a client this only touches that client's
+	// non-authoritative copy of the NPC though, so also tell the server to run the same Interact()
+	// on its authoritative copy (e.g. so NPC_Dice's InteractingPlayer is set server-side too) - skip
+	// it on the server/host, which already just ran it above.
+	Target->Interact(PlayerCharacter);
+	if (!HasAuthority())
+	{
+		Server_InteractWithNPC(Target);
+	}
+
+	if (Target->GetNPCType() != ENPCType::Shop)
+	{
+		if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
+		{
+			MovementComponent->DisableMovement();
+		}
+	}
 }
 
 void Acasino_simulatorPlayerController::Server_InteractWithNPC_Implementation(ANPC_Base* Target)
@@ -491,7 +478,7 @@ void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSup
 		return;
 	}
 
-	if (CurrentInteractionTarget && !bInteractionUIOpen)
+	if ((CurrentInteractionTarget || bWorldInteractionTargetFocused) && !bInteractionUIOpen)
 	{
 		OpenInteraction();
 	}
@@ -548,7 +535,7 @@ void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 
 	SetLocalPawnMeshesHiddenForInteraction(false);
 
-	if (CurrentInteractionTarget)
+	if (CurrentInteractionTarget || bWorldInteractionTargetFocused)
 	{
 		OpenInteraction();
 	}
@@ -614,7 +601,8 @@ void Acasino_simulatorPlayerController::SetLocalPawnMeshesHiddenForInteraction(b
 
 void Acasino_simulatorPlayerController::OpenInteraction()
 {
-	if (!CurrentInteractionTarget || bInteractionUIOpen || bInteractionPromptSuppressed || !CurrentInteractionTarget->GetCanInterection())
+	const bool bHasNPCTarget = CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection();
+	if ((!bHasNPCTarget && !bWorldInteractionTargetFocused) || bInteractionUIOpen || bInteractionPromptSuppressed)
 	{
 		return;
 	}
@@ -633,6 +621,20 @@ void Acasino_simulatorPlayerController::CloseInteraction()
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->BP_CloseInterection();
+	}
+}
+
+void Acasino_simulatorPlayerController::SetWorldInteractionTargetFocused(bool bFocused)
+{
+	bWorldInteractionTargetFocused = bFocused;
+
+	if (bFocused)
+	{
+		OpenInteraction();
+	}
+	else
+	{
+		CloseInteraction();
 	}
 }
 

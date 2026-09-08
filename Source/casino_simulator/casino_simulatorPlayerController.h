@@ -128,6 +128,15 @@ protected:
 	UPROPERTY(BlueprintReadOnly)
 	TObjectPtr<ANPC_Base> CurrentInteractionTarget;
 
+	/** True while a World-type target (machine/table/prop - AWorldInteractableBase's family) is what
+	 * the player is currently focused on. Mirrors CurrentInteractionTarget's role for NPCs: both now
+	 * open the same PlayerHUDWidget dialogue-style panel (BP_OpenInterection/BP_CloseInterection) via
+	 * OpenInteraction/CloseInteraction, instead of World using a separate corner "E Use" prompt. Kept
+	 * as its own bool rather than widening CurrentInteractionTarget's type because
+	 * WBP_DiceBetting/WBP_ThreeCardPokerBetting read that property directly in their Blueprint graphs. */
+	UPROPERTY(BlueprintReadOnly, Category="Interaction", meta=(AllowPrivateAccess="true"))
+	bool bWorldInteractionTargetFocused = false;
+
 	/** True while an interaction UI (shop/dialogue/exchange, etc.) owns input. */
 	UPROPERTY(BlueprintReadOnly, Category="Interaction", meta=(AllowPrivateAccess="true"))
 	bool bInteractionUIOpen = false;
@@ -194,6 +203,12 @@ public:
 
 	void RequestWorldInteraction(AWorldInteractableBase* Target);
 
+	/** NPC counterpart to RequestWorldInteraction, called from UWorldInteractionDetectorComponent::TryInteract
+	 * once it resolves an ANPC_Base as the focused target. Runs Interact() locally, forwards to the
+	 * server via Server_InteractWithNPC on a client, and disables movement for non-Shop NPCs - same
+	 * behavior this used to run from inline inside InteractWithCurrentTarget. */
+	void RequestNPCInteraction(ANPC_Base* Target);
+
 	UFUNCTION(BlueprintCallable, Category="Interaction")
 	bool OpenWorldInteraction(const FText& PromptText);
 
@@ -222,6 +237,12 @@ public:
 	void OpenInteraction();
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void CloseInteraction();
+
+	/** World-type counterpart to SetInteractionTarget/ClearInteractionTarget - called from
+	 * AWorldInteractableBase::OnInteractionFocusStarted/Ended_Implementation so machines/tables/props
+	 * open the same PlayerHUDWidget panel NPCs do. */
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void SetWorldInteractionTargetFocused(bool bFocused);
 
 	UFUNCTION(BlueprintCallable, Category="Inventory")
 	void RefreshInventroy();

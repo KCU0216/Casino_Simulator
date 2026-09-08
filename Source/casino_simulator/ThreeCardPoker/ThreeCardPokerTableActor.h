@@ -3,8 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
 #include "TimerManager.h"
+#include "Interaction/WorldInteractableBase.h"
 #include "ThreeCardPoker/ThreeCardPokerTypes.h"
 #include "ThreeCardPokerTableActor.generated.h"
 
@@ -21,10 +21,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FThreeCardPokerCardDealt, const FBla
 /**
  * Server-owned Three Card Poker table state — 1 dealer vs. 1 player at a time.
  *
- * Mirrors ADiceGame/ANPC_Dice's split (see NPC/NPC_Dice.h): ANPC_ThreeCardPoker spawns and owns
- * one of these, and hands it a player via SetInteractingPlayer whenever someone interacts. Unlike
- * ADiceGame this actor also holds the actual rules (deck, dealing, hand evaluation, payouts)
- * since Three Card Poker's rules are too heavy to belong on the thin NPC shell.
+ * Like ASeatedMachineBase, this actor owns both its own world interaction (walk up, press E) and
+ * the actual game rules (deck, dealing, hand evaluation, payouts) — there's no separate dealer NPC
+ * anymore; this table IS what the player interacts with directly (see Interact() below).
  *
  * Client -> server calls can't be RPCs declared directly on this actor: SetInteractingPlayer does
  * SetOwner(Player) (same trick as NPC_Dice), but the actual entry points below still route a
@@ -32,7 +31,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FThreeCardPokerCardDealt, const FBla
  * etc.), which is what NPC_Dice::PlaceBet does too — see the comment there for why.
  */
 UCLASS()
-class CASINO_SIMULATOR_API AThreeCardPokerTableActor : public AActor
+class CASINO_SIMULATOR_API AThreeCardPokerTableActor : public AWorldInteractableBase
 {
 	GENERATED_BODY()
 
@@ -40,6 +39,12 @@ public:
 	AThreeCardPokerTableActor();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	//~ Begin AWorldInteractableBase interface
+	/** Server-only entry point (RequestWorldInteraction/Server_RequestWorldInteraction already
+	 * guarantee that). Assigns InteractingCharacter as this table's player via SetInteractingPlayer. */
+	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
+	//~ End AWorldInteractableBase interface
 
 	/** Server-only. Assigns (or clears, with nullptr) who this table is currently playing with,
 	 * and hands ownership to that player's connection so relevance/priority follow them. Resets
@@ -126,15 +131,27 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	/** Kept as a plain child of the inherited SceneRoot (AWorldInteractableBase) purely so it still
+	 * exists by name: BP_ThreeCardPokerTable has BP-added card visual components (PlayerCard0-2,
+	 * DealerCard0-2, Cube) parented to 'TableRoot' in its Simple Construction Script, and removing
+	 * this attach point outright orphans them (USimpleConstructionScript::FixupRootNodeParentReferences
+	 * warns "Couldn't find native parent component 'TableRoot'" and drops the reparent). No longer
+	 * the actor's root component - SceneRoot is - but everything below still hangs off it exactly as
+	 * before. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USceneComponent> TableRoot;
 
-	/** The physical table prop (e.g. sm_pokertable). Assign the mesh per-Blueprint (BP_ThreeCardPokerTable). */
+	/** The physical table prop (e.g. sm_pokertable). Assign the mesh per-Blueprint (BP_ThreeCardPokerTable).
+	 * Also the line-trace target the player's world interaction detector needs to hit for this table
+	 * to become focused. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UStaticMeshComponent> TableMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ThreeCardPoker|Layout")
 	TObjectPtr<USceneComponent> DeckPoint;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ThreeCardPoker|Layout")
+	TObjectPtr<USceneComponent> ViewPoint;
 
 	/** Shows the round result (e.g. "승리!") in-world above the table, mirroring what
 	 * UThreeCardPokerBlueprintLibrary::GetThreeCardPokerResultText feeds the betting UI. Kept in
@@ -237,6 +254,15 @@ private:
 	 * show the wrong/masked cards. */
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_DealerHandRevealed(const TArray<FBlackjackCard>& RevealedHand);
+
+	/** Mirrors ASeatedMachineBase's Multicast_MachineUseStarted/Released: keeps
+	 * Player->GetCurrentThreeCardPokerTable() in sync on every machine (not just the server), since
+	 * InteractingPlayer itself isn't replicated. Called from SetInteractingPlayer. */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_ThreeCardPokerInteractionStarted(Acasino_simulatorCharacter* Player);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_ThreeCardPokerInteractionEnded(Acasino_simulatorCharacter* Player);
 
 	void StartRound();
 	void DealNextRoundCard();

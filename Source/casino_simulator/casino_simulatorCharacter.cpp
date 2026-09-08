@@ -647,3 +647,16 @@ void Acasino_simulatorCharacter::ServerLeaveThreeCardPokerTable_Implementation(A
 		Table->ExecuteLeaveTable(this);
 	}
 }
+
+void Acasino_simulatorCharacter::SetCurrentThreeCardPokerTable(AThreeCardPokerTableActor* NewTable)
+{
+	CurrentThreeCardPokerTable = NewTable;
+}
+
+void Acasino_simulatorCharacter::ClearCurrentThreeCardPokerTable(AThreeCardPokerTableActor* TableToClear)
+{
+	if (!TableToClear || CurrentThreeCardPokerTable == TableToClear)
+	{
+		CurrentThreeCardPokerTable = nullptr;
+	}
+}

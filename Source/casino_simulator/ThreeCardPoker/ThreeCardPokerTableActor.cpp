@@ -15,8 +15,20 @@ AThreeCardPokerTableActor::AThreeCardPokerTableActor()
 	bReplicates = true;
 	SetReplicateMovement(false);
 
+	InteractionPromptText = FText::FromString(TEXT("E Play"));
+
+	// Tighter than AWorldInteractableBase's 500cm default (sized for a big machine) - closer to the
+	// old dealer NPC's 150cm InteractionSphere (ANPC_Base), since a player should be standing at the
+	// table to play, not just in the same room.
+	if (InteractionSphere)
+	{
+		InteractionSphere->SetSphereRadius(50.0f);
+	}
+
+	// Kept by name (not as the actor's root anymore - SceneRoot is) so the BP-added card visual
+	// components already parented to it in BP_ThreeCardPokerTable's SCS don't get orphaned.
 	TableRoot = CreateDefaultSubobject<USceneComponent>(TEXT("TableRoot"));
-	SetRootComponent(TableRoot);
+	TableRoot->SetupAttachment(SceneRoot);
 
 	TableMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TableMesh"));
 	TableMesh->SetupAttachment(TableRoot);
@@ -25,7 +37,9 @@ AThreeCardPokerTableActor::AThreeCardPokerTableActor()
 
 	DeckPoint = CreateDefaultSubobject<USceneComponent>(TEXT("DeckPoint"));
 	DeckPoint->SetupAttachment(TableRoot);
-	DeckPoint->SetRelativeLocation(FVector(30.0f, 95.0f, 8.0f));
+
+	ViewPoint = CreateDefaultSubobject<USceneComponent>(TEXT("ViewPoint"));
+	ViewPoint->SetupAttachment(TableRoot);
 
 	ResultText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ResultText"));
 	ResultText->SetupAttachment(TableRoot);
@@ -78,11 +92,14 @@ void AThreeCardPokerTableActor::SetInteractingPlayer(Acasino_simulatorCharacter*
 		return;
 	}
 
-	if (InteractingPlayer.Get() != Player)
+	Acasino_simulatorCharacter* PreviousPlayer = InteractingPlayer.Get();
+	if (PreviousPlayer == Player)
 	{
-		// Switching players (or clearing) mid-round would leave stale bets/cards behind otherwise.
-		ResetRound();
+		return;
 	}
+
+	// Switching players (or clearing) mid-round would leave stale bets/cards behind otherwise.
+	ResetRound();
 
 	InteractingPlayer = Player;
 
@@ -90,6 +107,30 @@ void AThreeCardPokerTableActor::SetInteractingPlayer(Acasino_simulatorCharacter*
 	// player's client only (same trick as ANPC_Dice::SetInteractingPlayer). Reverts to
 	// DefaultOwner once nobody's interacting.
 	SetOwner(Player ? static_cast<AActor*>(Player) : DefaultOwner.Get());
+
+	// Keep each affected player's GetCurrentThreeCardPokerTable() in sync on every machine, not just
+	// the server — same reasoning as ASeatedMachineBase's Multicast_MachineUseStarted/Released.
+	if (PreviousPlayer)
+	{
+		Multicast_ThreeCardPokerInteractionEnded(PreviousPlayer);
+	}
+	if (Player)
+	{
+		Multicast_ThreeCardPokerInteractionStarted(Player);
+	}
+}
+
+void AThreeCardPokerTableActor::Interact(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	// RequestWorldInteraction/Server_RequestWorldInteraction (casino_simulatorPlayerController) only
+	// ever call Interact() with authority - either directly on a listen server/host, or via the
+	// Server RPC's Implementation - so no client-side forwarding branch is needed here.
+	if (!HasAuthority() || !InteractingCharacter)
+	{
+		return;
+	}
+
+	SetInteractingPlayer(InteractingCharacter);
 }
 
 bool AThreeCardPokerTableActor::PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount)
@@ -423,23 +464,28 @@ void AThreeCardPokerTableActor::DealCardToDealer(bool bFaceUp)
 
 void AThreeCardPokerTableActor::Multicast_PlayerCardDealt_Implementation(const FBlackjackCard& Card)
 {
-	// Temporary diagnostic: read the raw (Replicated) properties directly here, bypassing OnRep
-	// entirely, to tell apart "the values never actually replicated to this client" from "the values
-	// are here but OnRep_TableState just never runs". This RPC is confirmed to already reach clients.
-	const FString DiagMsg = FString::Printf(TEXT("[3CP] Multicast_PlayerCardDealt: HasAuthority=%d PlayerCards.Num=%d RoundState=%d"),
-		HasAuthority(), PlayerCards.Num(), static_cast<int32>(RoundState));
-	UE_LOG(LogTemp, Warning, TEXT("%s"), *DiagMsg);
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Yellow, DiagMsg);
-	}
-
 	OnPlayerCardDealt.Broadcast(Card);
 }
 
 void AThreeCardPokerTableActor::Multicast_DealerCardDealt_Implementation(const FBlackjackCard& Card)
 {
 	OnDealerCardDealt.Broadcast(Card);
+}
+
+void AThreeCardPokerTableActor::Multicast_ThreeCardPokerInteractionStarted_Implementation(Acasino_simulatorCharacter* Player)
+{
+	if (Player)
+	{
+		Player->SetCurrentThreeCardPokerTable(this);
+	}
+}
+
+void AThreeCardPokerTableActor::Multicast_ThreeCardPokerInteractionEnded_Implementation(Acasino_simulatorCharacter* Player)
+{
+	if (Player)
+	{
+		Player->ClearCurrentThreeCardPokerTable(this);
+	}
 }
 
 void AThreeCardPokerTableActor::Multicast_DealerHandRevealed_Implementation(const TArray<FBlackjackCard>& RevealedHand)

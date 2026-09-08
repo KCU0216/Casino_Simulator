@@ -3,25 +3,13 @@
 #include "ThreeCardPoker/ThreeCardPokerBlueprintLibrary.h"
 
 #include "ThreeCardPoker/ThreeCardPokerTableActor.h"
-#include "NPC/NPC_ThreeCardPoker.h"
 #include "casino_simulatorCharacter.h"
-#include "casino_simulatorPlayerController.h"
 
 AThreeCardPokerTableActor* UThreeCardPokerBlueprintLibrary::GetThreeCardPokerTableForPlayer(Acasino_simulatorCharacter* Player)
 {
-	if (!Player)
-	{
-		return nullptr;
-	}
-
-	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(Player->GetController());
-	if (!PC)
-	{
-		return nullptr;
-	}
-
-	ANPC_ThreeCardPoker* NPC = Cast<ANPC_ThreeCardPoker>(PC->GetCurrentInteractionTarget());
-	return NPC ? NPC->GetThreeCardPokerTable() : nullptr;
+	// AThreeCardPokerTableActor now handles its own world interaction directly (no more separate
+	// dealer NPC to resolve through CurrentInteractionTarget) - see its class comment.
+	return Player ? Player->GetCurrentThreeCardPokerTable() : nullptr;
 }
 
 FText UThreeCardPokerBlueprintLibrary::GetThreeCardPokerHandRankText(AThreeCardPokerTableActor* Table)
@@ -56,7 +44,14 @@ FText UThreeCardPokerBlueprintLibrary::GetThreeCardPokerResultText(AThreeCardPok
 	case EThreeCardPokerHandResult::DealerNotQualified:
 		return FText::FromString(TEXT("Dealer Miss"));
 	default:
-		return FText::GetEmpty();
+		// GetHandRank indexes its Cards argument assuming exactly 3 (see its declaration comment), and
+		// this default case is also hit before any cards are dealt (LastResult still None), so guard
+		// it the same way GetThreeCardPokerHandRankText does above.
+		if (Table->GetPlayerCards().Num() != 3)
+		{
+			return FText::GetEmpty();
+		}
+		return GetThreeCardPokerHandRankDisplayName(Table->GetHandRank(Table->GetPlayerCards()));
 	}
 }
 

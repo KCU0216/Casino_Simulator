@@ -2,11 +2,18 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Interaction/WorldInteractable.h"
 #include "WorldInteractionDetectorComponent.generated.h"
 
 class Acasino_simulatorCharacter;
-class AWorldInteractableBase;
 
+/**
+ * Owned by Acasino_simulatorCharacter. Tracks every IWorldInteractable candidate currently overlapping
+ * the character (registered/unregistered by each candidate's own overlap sphere - see
+ * AWorldInteractableBase and ANPC_Base), resolves which one the player is actually aiming at via a
+ * per-tick line trace, and routes E-press input (TryInteract) to it. One shared pipeline for both
+ * world props/machines and NPCs - see IWorldInteractable's class comment.
+ */
 UCLASS(ClassGroup = (Interaction), meta = (BlueprintSpawnableComponent))
 class CASINO_SIMULATOR_API UWorldInteractionDetectorComponent : public UActorComponent
 {
@@ -16,16 +23,16 @@ public:
 	UWorldInteractionDetectorComponent();
 
 	UFUNCTION(BlueprintCallable, Category = "World Interaction")
-	void RegisterCandidate(AWorldInteractableBase* Candidate);
+	void RegisterCandidate(TScriptInterface<IWorldInteractable> Candidate);
 
 	UFUNCTION(BlueprintCallable, Category = "World Interaction")
-	void UnregisterCandidate(AWorldInteractableBase* Candidate);
+	void UnregisterCandidate(TScriptInterface<IWorldInteractable> Candidate);
 
 	UFUNCTION(BlueprintCallable, Category = "World Interaction")
 	bool TryInteract();
 
 	UFUNCTION(BlueprintPure, Category = "World Interaction")
-	AWorldInteractableBase* GetFocusedTarget() const { return FocusedTarget; }
+	TScriptInterface<IWorldInteractable> GetFocusedTarget() const { return FocusedTarget; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -37,14 +44,11 @@ private:
 	TObjectPtr<Acasino_simulatorCharacter> OwnerCharacter;
 
 	UPROPERTY()
-	TArray<TObjectPtr<AWorldInteractableBase>> NearbyTargets;
+	TArray<TScriptInterface<IWorldInteractable>> NearbyTargets;
 
 	UPROPERTY()
-	TObjectPtr<AWorldInteractableBase> FocusedTarget;
-
-	bool bWorldPromptOpen = false;
+	TScriptInterface<IWorldInteractable> FocusedTarget;
 
 	void UpdateFocusedTarget();
-	void SetFocusedTarget(AWorldInteractableBase* NewFocusedTarget);
-	void CloseWorldPrompt();
+	void SetFocusedTarget(const TScriptInterface<IWorldInteractable>& NewFocusedTarget);
 };

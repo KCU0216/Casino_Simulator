@@ -1,6 +1,7 @@
 #include "Interaction/WorldInteractionDetectorComponent.h"
 
 #include "Interaction/WorldInteractableBase.h"
+#include "NPC/NPC_Base.h"
 #include "casino_simulatorCharacter.h"
 #include "casino_simulatorPlayerController.h"
 #include "Camera/CameraComponent.h"
@@ -20,9 +21,11 @@ void UWorldInteractionDetectorComponent::BeginPlay()
 
 void UWorldInteractionDetectorComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	CloseWorldPrompt();
+	// Routes through SetFocusedTarget (rather than just clearing FocusedTarget directly) so whichever
+	// panel is currently open - NPC's or a world target's, both drive the same PlayerHUDWidget now -
+	// gets its OnInteractionFocusEnded and closes properly.
+	SetFocusedTarget(TScriptInterface<IWorldInteractable>());
 	NearbyTargets.Reset();
-	FocusedTarget = nullptr;
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -39,41 +42,69 @@ void UWorldInteractionDetectorComponent::TickComponent(float DeltaTime, ELevelTi
 	UpdateFocusedTarget();
 }
 
-void UWorldInteractionDetectorComponent::RegisterCandidate(AWorldInteractableBase* Candidate)
+void UWorldInteractionDetectorComponent::RegisterCandidate(TScriptInterface<IWorldInteractable> Candidate)
 {
-	if (!Candidate)
+	UObject* CandidateObject = Candidate.GetObject();
+	if (!CandidateObject)
 	{
 		return;
 	}
 
-	NearbyTargets.AddUnique(Candidate);
+	const bool bAlreadyRegistered = NearbyTargets.ContainsByPredicate([CandidateObject](const TScriptInterface<IWorldInteractable>& Existing)
+	{
+		return Existing.GetObject() == CandidateObject;
+	});
+
+	if (!bAlreadyRegistered)
+	{
+		NearbyTargets.Add(Candidate);
+	}
 }
 
-void UWorldInteractionDetectorComponent::UnregisterCandidate(AWorldInteractableBase* Candidate)
+void UWorldInteractionDetectorComponent::UnregisterCandidate(TScriptInterface<IWorldInteractable> Candidate)
 {
-	if (!Candidate)
+	UObject* CandidateObject = Candidate.GetObject();
+	if (!CandidateObject)
 	{
 		return;
 	}
 
-	NearbyTargets.Remove(Candidate);
-
-	if (FocusedTarget == Candidate)
+	NearbyTargets.RemoveAll([CandidateObject](const TScriptInterface<IWorldInteractable>& Existing)
 	{
-		SetFocusedTarget(nullptr);
+		return Existing.GetObject() == CandidateObject;
+	});
+
+	if (FocusedTarget.GetObject() == CandidateObject)
+	{
+		SetFocusedTarget(TScriptInterface<IWorldInteractable>());
 	}
 }
 
 bool UWorldInteractionDetectorComponent::TryInteract()
 {
-	if (!OwnerCharacter || !FocusedTarget || !FocusedTarget->CanInteract(OwnerCharacter))
+	if (!OwnerCharacter || !FocusedTarget.GetObject() || !FocusedTarget->CanInteract(OwnerCharacter))
 	{
 		return false;
 	}
 
-	if (Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(OwnerCharacter->GetController()))
+	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(OwnerCharacter->GetController());
+	if (!PlayerController)
 	{
-		PlayerController->RequestWorldInteraction(FocusedTarget);
+		return false;
+	}
+
+	// The interface only carries the shared discovery/focus/CanInteract contract - each family still
+	// goes through its own existing RPC-forwarding entry point on the controller (see
+	// RequestWorldInteraction/RequestNPCInteraction), since those differ in game-specific concerns
+	// (e.g. disabling movement for non-shop NPCs) that aren't part of the shared plumbing.
+	UObject* FocusedObject = FocusedTarget.GetObject();
+	if (AWorldInteractableBase* WorldTarget = Cast<AWorldInteractableBase>(FocusedObject))
+	{
+		PlayerController->RequestWorldInteraction(WorldTarget);
+	}
+	else if (ANPC_Base* NPCTarget = Cast<ANPC_Base>(FocusedObject))
+	{
+		PlayerController->RequestNPCInteraction(NPCTarget);
 	}
 
 	return true;
@@ -83,16 +114,16 @@ void UWorldInteractionDetectorComponent::UpdateFocusedTarget()
 {
 	if (!OwnerCharacter)
 	{
-		SetFocusedTarget(nullptr);
+		SetFocusedTarget(TScriptInterface<IWorldInteractable>());
 		return;
 	}
 
-	NearbyTargets.RemoveAll([](const AWorldInteractableBase* Candidate)
+	NearbyTargets.RemoveAll([](const TScriptInterface<IWorldInteractable>& Candidate)
 	{
-		return !IsValid(Candidate);
+		return !IsValid(Candidate.GetObject());
 	});
 
-	AWorldInteractableBase* BestTarget = nullptr;
+	TScriptInterface<IWorldInteractable> BestTarget;
 
 	FVector TraceStart = OwnerCharacter->GetActorLocation();
 	FVector TraceDirection = OwnerCharacter->GetActorForwardVector();
@@ -117,14 +148,15 @@ void UWorldInteractionDetectorComponent::UpdateFocusedTarget()
 
 	AActor* HitActor = Hit.GetActor();
 
-	for (AWorldInteractableBase* Candidate : NearbyTargets)
+	for (const TScriptInterface<IWorldInteractable>& Candidate : NearbyTargets)
 	{
-		if (!Candidate || !Candidate->CanInteract(OwnerCharacter))
+		UObject* CandidateObject = Candidate.GetObject();
+		if (!CandidateObject || !Candidate->CanInteract(OwnerCharacter))
 		{
 			continue;
 		}
 
-		if (HitActor == Candidate)
+		if (HitActor == CandidateObject)
 		{
 			BestTarget = Candidate;
 			break;
@@ -134,60 +166,31 @@ void UWorldInteractionDetectorComponent::UpdateFocusedTarget()
 	SetFocusedTarget(BestTarget);
 }
 
-void UWorldInteractionDetectorComponent::SetFocusedTarget(AWorldInteractableBase* NewFocusedTarget)
+void UWorldInteractionDetectorComponent::SetFocusedTarget(const TScriptInterface<IWorldInteractable>& NewFocusedTarget)
 {
-	if (FocusedTarget == NewFocusedTarget)
+	UObject* CurrentObject = FocusedTarget.GetObject();
+	UObject* NewObject = NewFocusedTarget.GetObject();
+
+	if (CurrentObject == NewObject)
 	{
-		if (FocusedTarget && !bWorldPromptOpen)
-		{
-			if (Acasino_simulatorPlayerController* PlayerController = OwnerCharacter
-				? Cast<Acasino_simulatorPlayerController>(OwnerCharacter->GetController())
-				: nullptr)
-			{
-				bWorldPromptOpen = PlayerController->OpenWorldInteraction(FocusedTarget->GetInteractionPromptText());
-			}
-		}
 		return;
 	}
 
-	if (FocusedTarget)
+	// OnInteractionFocusStarted/Ended stay BlueprintNativeEvent (unchanged from before this pipeline
+	// was shared with NPCs), so they're invoked via Execute_ rather than a direct call - see
+	// IWorldInteractable's class comment. Both AWorldInteractableBase and ANPC_Base now react by
+	// opening/closing the same PlayerHUDWidget panel (via SetWorldInteractionTargetFocused /
+	// SetInteractionTarget-ClearInteractionTarget respectively) - the detector itself no longer needs
+	// to know which family it's looking at.
+	if (CurrentObject)
 	{
-		FocusedTarget->OnInteractionFocusEnded(OwnerCharacter);
+		IWorldInteractable::Execute_OnInteractionFocusEnded(CurrentObject, OwnerCharacter);
 	}
-	CloseWorldPrompt();
 
 	FocusedTarget = NewFocusedTarget;
 
-	Acasino_simulatorPlayerController* PlayerController = OwnerCharacter
-		? Cast<Acasino_simulatorPlayerController>(OwnerCharacter->GetController())
-		: nullptr;
-	if (!PlayerController)
+	if (NewObject)
 	{
-		return;
+		IWorldInteractable::Execute_OnInteractionFocusStarted(NewObject, OwnerCharacter);
 	}
-
-	if (FocusedTarget)
-	{
-		FocusedTarget->OnInteractionFocusStarted(OwnerCharacter);
-		bWorldPromptOpen = PlayerController->OpenWorldInteraction(FocusedTarget->GetInteractionPromptText());
-	}
-	else
-	{
-		CloseWorldPrompt();
-	}
-}
-
-void UWorldInteractionDetectorComponent::CloseWorldPrompt()
-{
-	if (!bWorldPromptOpen || !OwnerCharacter)
-	{
-		return;
-	}
-
-	if (Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(OwnerCharacter->GetController()))
-	{
-		PlayerController->CloseWorldInteraction();
-	}
-
-	bWorldPromptOpen = false;
 }
