@@ -30,7 +30,7 @@ void ABlackjackTableInteractionActor::Interact(Acasino_simulatorCharacter* Inter
 {
 	ABlackjackTableActor* Table = ResolveBlackjackTable();
 	UBlackjackPlayerComponent* BlackjackPlayerComponent = GetPlayerBlackjackComponent(InteractingCharacter);
-	if (!Table || !BlackjackPlayerComponent)
+	if (!Table || !BlackjackPlayerComponent || !CanInteract(InteractingCharacter))
 	{
 		BP_OnBlackjackInteractionRejected(InteractingCharacter, Table, InteractionAction);
 		return;
@@ -77,6 +77,13 @@ void ABlackjackTableInteractionActor::Interact(Acasino_simulatorCharacter* Inter
 		bHandled = true;
 		break;
 
+	case EBlackjackTableInteractionAction::PlaceInsurance:
+		bHandled = BlackjackPlayerComponent->PlaceInsurance(FixedBetAmount);
+		break;
+	case EBlackjackTableInteractionAction::SkipInsurance:
+		bHandled = BlackjackPlayerComponent->SkipInsurance();
+		break;
+
 	default:
 		break;
 	}
@@ -105,20 +112,32 @@ bool ABlackjackTableInteractionActor::CanInteract(Acasino_simulatorCharacter* In
 		return false;
 	}
 
-	const EBlackjackRoundState RoundState = Table->GetRoundState();
+	const int32 PlayerSeat = Table->GetSeatIndexForPlayer(InteractingCharacter);
+	if (PlayerSeat == INDEX_NONE || (AllowedSeatIndex != INDEX_NONE && AllowedSeatIndex != PlayerSeat))
+	{
+		return false;
+	}
 	switch (InteractionAction)
 	{
 	case EBlackjackTableInteractionAction::OpenBetting:
+		return Table->CanOpenBetting(InteractingCharacter);
 	case EBlackjackTableInteractionAction::BetFixedAmount:
+		return Table->CanPlaceBet(InteractingCharacter, FixedBetAmount);
 	case EBlackjackTableInteractionAction::SitOut:
-		return Table->IsBettingWindowOpen()
-			&& (RoundState == EBlackjackRoundState::WaitingForPlayers || RoundState == EBlackjackRoundState::Betting);
+		return Table->CanSitOut(InteractingCharacter);
 
 	case EBlackjackTableInteractionAction::Hit:
+		return Table->CanHit(InteractingCharacter);
 	case EBlackjackTableInteractionAction::Stand:
+		return Table->CanStand(InteractingCharacter);
 	case EBlackjackTableInteractionAction::DoubleDown:
+		return Table->CanDoubleDown(InteractingCharacter);
 	case EBlackjackTableInteractionAction::Split:
-		return Table->IsPlayerTurn(InteractingCharacter);
+		return Table->CanSplit(InteractingCharacter);
+	case EBlackjackTableInteractionAction::PlaceInsurance:
+		return Table->CanPlaceInsurance(InteractingCharacter, FixedBetAmount);
+	case EBlackjackTableInteractionAction::SkipInsurance:
+		return Table->CanSkipInsurance(InteractingCharacter);
 
 	case EBlackjackTableInteractionAction::ExitSeat:
 	case EBlackjackTableInteractionAction::InspectCards:
@@ -131,7 +150,10 @@ bool ABlackjackTableInteractionActor::CanInteract(Acasino_simulatorCharacter* In
 
 void ABlackjackTableInteractionActor::OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	BP_OnLocalBlackjackInteract(InteractingCharacter, ResolveBlackjackTable(), InteractionAction);
+	if (CanInteract(InteractingCharacter))
+	{
+		BP_OnLocalBlackjackInteract(InteractingCharacter, ResolveBlackjackTable(), InteractionAction);
+	}
 }
 
 ABlackjackTableActor* ABlackjackTableInteractionActor::GetBlackjackTable() const
@@ -181,6 +203,10 @@ FText ABlackjackTableInteractionActor::GetActionPromptText() const
 		return FText::FromString(TEXT("E Leave"));
 	case EBlackjackTableInteractionAction::InspectCards:
 		return FText::FromString(TEXT("E Inspect"));
+	case EBlackjackTableInteractionAction::PlaceInsurance:
+		return FText::FromString(TEXT("E Insurance"));
+	case EBlackjackTableInteractionAction::SkipInsurance:
+		return FText::FromString(TEXT("E Skip Insurance"));
 	default:
 		return FText::FromString(TEXT("E Use"));
 	}

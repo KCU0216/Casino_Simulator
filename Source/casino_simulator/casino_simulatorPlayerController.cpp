@@ -2,6 +2,7 @@
 
 
 #include "casino_simulatorPlayerController.h"
+#include "Camera/CameraComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 #include "Engine/LocalPlayer.h"

@@ -17,8 +17,8 @@ void UBlackjackPlayerComponent::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME(UBlackjackPlayerComponent, CurrentBlackjackTable);
-	DOREPLIFETIME(UBlackjackPlayerComponent, CurrentSeatIndex);
+	DOREPLIFETIME(UBlackjackPlayerComponent, SeatSession);
+
 }
 
 void UBlackjackPlayerComponent::EnterBlackjackSeatMode(ABlackjackTableActor* Table, int32 SeatIndex)
@@ -108,7 +108,7 @@ bool UBlackjackPlayerComponent::ToggleLeaveAfterRound()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecuteToggleLeaveAfterRound();
+		return ExecuteAction(EBlackjackRequestAction::ToggleLeaveAfterRound);
 	}
 
 	ServerToggleLeaveAfterRound();
@@ -124,7 +124,7 @@ bool UBlackjackPlayerComponent::ToggleSitOut()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecuteToggleSitOut();
+		return ExecuteAction(EBlackjackRequestAction::ToggleSitOut);
 	}
 
 	ServerToggleSitOut();
@@ -170,7 +170,7 @@ bool UBlackjackPlayerComponent::PlaceBet(int32 Amount)
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecutePlaceBet(Amount);
+		return ExecuteAction(EBlackjackRequestAction::PlaceBet, Amount);
 	}
 
 	ServerPlaceBet(Amount);
@@ -186,7 +186,7 @@ bool UBlackjackPlayerComponent::NotifyBettingInteractionStarted()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecuteNotifyBettingInteractionStarted();
+		return ExecuteAction(EBlackjackRequestAction::NotifyBettingInteraction);
 	}
 
 	ServerNotifyBettingInteractionStarted();
@@ -202,7 +202,7 @@ bool UBlackjackPlayerComponent::StartRound()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecuteStartRound();
+		return ExecuteAction(EBlackjackRequestAction::StartRound);
 	}
 
 	ServerStartRound();
@@ -218,7 +218,7 @@ bool UBlackjackPlayerComponent::Hit()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecuteHit();
+		return ExecuteAction(EBlackjackRequestAction::Hit);
 	}
 
 	ServerHit();
@@ -234,7 +234,7 @@ bool UBlackjackPlayerComponent::Stand()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecuteStand();
+		return ExecuteAction(EBlackjackRequestAction::Stand);
 	}
 
 	ServerStand();
@@ -250,7 +250,7 @@ bool UBlackjackPlayerComponent::DoubleDown()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecuteDoubleDown();
+		return ExecuteAction(EBlackjackRequestAction::DoubleDown);
 	}
 
 	ServerDoubleDown();
@@ -266,7 +266,7 @@ bool UBlackjackPlayerComponent::Split()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecuteSplit();
+		return ExecuteAction(EBlackjackRequestAction::Split);
 	}
 
 	ServerSplit();
@@ -282,7 +282,7 @@ bool UBlackjackPlayerComponent::PlaceInsurance(int32 Amount)
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecutePlaceInsurance(Amount);
+		return ExecuteAction(EBlackjackRequestAction::PlaceInsurance, Amount);
 	}
 
 	ServerPlaceInsurance(Amount);
@@ -298,7 +298,7 @@ bool UBlackjackPlayerComponent::SkipInsurance()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		return ExecuteSkipInsurance();
+		return ExecuteAction(EBlackjackRequestAction::SkipInsurance);
 	}
 
 	ServerSkipInsurance();
@@ -328,64 +328,81 @@ void UBlackjackPlayerComponent::ServerCompleteExitBlackjackSeat_Implementation()
 
 void UBlackjackPlayerComponent::ServerToggleLeaveAfterRound_Implementation()
 {
-	ExecuteToggleLeaveAfterRound();
+	ExecuteAction(EBlackjackRequestAction::ToggleLeaveAfterRound);
 }
 
 void UBlackjackPlayerComponent::ServerToggleSitOut_Implementation()
 {
-	ExecuteToggleSitOut();
+	ExecuteAction(EBlackjackRequestAction::ToggleSitOut);
 }
 
 void UBlackjackPlayerComponent::ServerPlaceBet_Implementation(int32 Amount)
 {
-	ExecutePlaceBet(Amount);
+	ExecuteAction(EBlackjackRequestAction::PlaceBet, Amount);
 }
 
 void UBlackjackPlayerComponent::ServerNotifyBettingInteractionStarted_Implementation()
 {
-	ExecuteNotifyBettingInteractionStarted();
+	ExecuteAction(EBlackjackRequestAction::NotifyBettingInteraction);
 }
 
 void UBlackjackPlayerComponent::ServerStartRound_Implementation()
 {
-	ExecuteStartRound();
+	ExecuteAction(EBlackjackRequestAction::StartRound);
 }
 
 void UBlackjackPlayerComponent::ServerHit_Implementation()
 {
-	ExecuteHit();
+	ExecuteAction(EBlackjackRequestAction::Hit);
 }
 
 void UBlackjackPlayerComponent::ServerStand_Implementation()
 {
-	ExecuteStand();
+	ExecuteAction(EBlackjackRequestAction::Stand);
 }
 
 void UBlackjackPlayerComponent::ServerDoubleDown_Implementation()
 {
-	ExecuteDoubleDown();
+	ExecuteAction(EBlackjackRequestAction::DoubleDown);
 }
 
 void UBlackjackPlayerComponent::ServerSplit_Implementation()
 {
-	ExecuteSplit();
+	ExecuteAction(EBlackjackRequestAction::Split);
 }
 
 void UBlackjackPlayerComponent::ServerPlaceInsurance_Implementation(int32 Amount)
 {
-	ExecutePlaceInsurance(Amount);
+	ExecuteAction(EBlackjackRequestAction::PlaceInsurance, Amount);
 }
 
 void UBlackjackPlayerComponent::ServerSkipInsurance_Implementation()
 {
-	ExecuteSkipInsurance();
+	ExecuteAction(EBlackjackRequestAction::SkipInsurance);
 }
 
 void UBlackjackPlayerComponent::OnRep_BlackjackSeatMode()
 {
+	CurrentBlackjackTable = SeatSession.Table;
+	CurrentSeatIndex = SeatSession.SeatIndex;
+	RefreshSeatNotifications();
+}
+
+void UBlackjackPlayerComponent::RefreshSeatNotifications()
+{
+	if (NotifiedTable == CurrentBlackjackTable && NotifiedSeatIndex == CurrentSeatIndex) { return; }
+	ABlackjackTableActor* PreviousTable = NotifiedTable;
+	const int32 PreviousIndex = NotifiedSeatIndex;
+	NotifiedTable = CurrentBlackjackTable;
+	NotifiedSeatIndex = CurrentSeatIndex;
+	if (PreviousTable && PreviousIndex != INDEX_NONE)
+	{
+		OnBlackjackSeatModeEnded.Broadcast(PreviousTable, PreviousIndex);
+	}
 	if (IsInBlackjackSeat())
 	{
 		ApplyMovementLock();
+		OnBlackjackSeatModeStarted.Broadcast(CurrentBlackjackTable, CurrentSeatIndex);
 	}
 	else
 	{
@@ -398,32 +415,72 @@ Acasino_simulatorCharacter* UBlackjackPlayerComponent::GetOwnerCharacter() const
 	return Cast<Acasino_simulatorCharacter>(GetOwner());
 }
 
+bool UBlackjackPlayerComponent::ExecuteAction(EBlackjackRequestAction Action, int32 Amount)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) { return false; }
+	ABlackjackTableActor* RequestTable = CurrentBlackjackTable;
+	EBlackjackRequestResult Result = EBlackjackRequestResult::Rejected;
+	bool bAccepted = false;
+	if (!IsInBlackjackSeat() || !GetOwnerCharacter()
+		|| RequestTable->GetSeatIndexForPlayer(GetOwnerCharacter()) != CurrentSeatIndex)
+	{
+		Result = EBlackjackRequestResult::NotSeated;
+	}
+	else if ((Action == EBlackjackRequestAction::PlaceBet || Action == EBlackjackRequestAction::PlaceInsurance) && Amount <= 0)
+	{
+		Result = EBlackjackRequestResult::InvalidAmount;
+	}
+	else
+	{
+		switch (Action)
+		{
+		case EBlackjackRequestAction::PlaceBet: bAccepted = ExecutePlaceBet(Amount); break;
+		case EBlackjackRequestAction::NotifyBettingInteraction: bAccepted = ExecuteNotifyBettingInteractionStarted(); break;
+		case EBlackjackRequestAction::StartRound: bAccepted = ExecuteStartRound(); break;
+		case EBlackjackRequestAction::Hit: bAccepted = ExecuteHit(); break;
+		case EBlackjackRequestAction::Stand: bAccepted = ExecuteStand(); break;
+		case EBlackjackRequestAction::DoubleDown: bAccepted = ExecuteDoubleDown(); break;
+		case EBlackjackRequestAction::Split: bAccepted = ExecuteSplit(); break;
+		case EBlackjackRequestAction::PlaceInsurance: bAccepted = ExecutePlaceInsurance(Amount); break;
+		case EBlackjackRequestAction::SkipInsurance: bAccepted = ExecuteSkipInsurance(); break;
+		case EBlackjackRequestAction::ToggleLeaveAfterRound: bAccepted = ExecuteToggleLeaveAfterRound(); break;
+		case EBlackjackRequestAction::ToggleSitOut: bAccepted = ExecuteToggleSitOut(); break;
+		default: break;
+		}
+		if (bAccepted) { Result = EBlackjackRequestResult::Success; }
+	}
+	ClientActionCompleted(RequestTable, Action, Result);
+	return bAccepted;
+}
+
+void UBlackjackPlayerComponent::ClientActionCompleted_Implementation(ABlackjackTableActor* Table,
+	EBlackjackRequestAction Action, EBlackjackRequestResult Result)
+{
+	OnActionCompleted.Broadcast(Table, Action, Result);
+}
+
 void UBlackjackPlayerComponent::SetBlackjackSeatMode(ABlackjackTableActor* Table, int32 SeatIndex)
 {
-	if (!Table || SeatIndex == INDEX_NONE)
+	Acasino_simulatorCharacter* Character = GetOwnerCharacter();
+	if (!Character || !Table || SeatIndex == INDEX_NONE || Table->GetSeatIndexForPlayer(Character) != SeatIndex
+		|| (IsInBlackjackSeat() && (CurrentBlackjackTable != Table || CurrentSeatIndex != SeatIndex)))
 	{
 		return;
 	}
 
 	CurrentBlackjackTable = Table;
 	CurrentSeatIndex = SeatIndex;
-	ApplyMovementLock();
-	OnBlackjackSeatModeStarted.Broadcast(CurrentBlackjackTable, CurrentSeatIndex);
+	SeatSession.Table = Table;
+	SeatSession.SeatIndex = SeatIndex;
+	RefreshSeatNotifications();
 }
 
 void UBlackjackPlayerComponent::ClearBlackjackSeatMode()
 {
-	ABlackjackTableActor* PreviousTable = CurrentBlackjackTable;
-	const int32 PreviousSeatIndex = CurrentSeatIndex;
-
 	CurrentBlackjackTable = nullptr;
 	CurrentSeatIndex = INDEX_NONE;
-	ClearMovementLock();
-
-	if (PreviousTable && PreviousSeatIndex != INDEX_NONE)
-	{
-		OnBlackjackSeatModeEnded.Broadcast(PreviousTable, PreviousSeatIndex);
-	}
+	SeatSession = FBlackjackSeatSession();
+	RefreshSeatNotifications();
 }
 
 void UBlackjackPlayerComponent::ApplyMovementLock()

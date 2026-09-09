@@ -20,7 +20,9 @@ enum class EBlackjackTableInteractionAction : uint8
 	DoubleDown UMETA(DisplayName="Double Down"),
 	Split UMETA(DisplayName="Split"),
 	ExitSeat UMETA(DisplayName="Exit Seat"),
-	InspectCards UMETA(DisplayName="Inspect Cards")
+	InspectCards UMETA(DisplayName="Inspect Cards"),
+	PlaceInsurance UMETA(DisplayName="Place Insurance"),
+	SkipInsurance UMETA(DisplayName="Skip Insurance")
 };
 
 /**
@@ -48,6 +50,10 @@ public:
 	EBlackjackTableInteractionAction GetInteractionAction() const { return InteractionAction; }
 
 protected:
+	/** -1 allows any seated player. Otherwise only this seat can use the target. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Interaction", meta=(ClampMin="-1"))
+	int32 AllowedSeatIndex = INDEX_NONE;
+
 	virtual void BeginPlay() override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Interaction")

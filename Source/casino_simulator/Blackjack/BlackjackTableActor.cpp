@@ -7,6 +7,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
+#include "EngineUtils.h"
 
 ABlackjackTableActor::ABlackjackTableActor()
 {
@@ -82,6 +83,54 @@ void ABlackjackTableActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(ABlackjackTableActor, BettingWindowMaxEndsAtServerTime);
 }
 
+void ABlackjackTableActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	for (const FBlackjackSeatState& Seat : Seats)
+	{
+		if (IsValid(Seat.Occupant))
+		{
+			Seat.Occupant->OnDestroyed.RemoveDynamic(this, &ABlackjackTableActor::HandleOccupantDestroyed);
+		}
+	}
+	ClearBettingWindowTimer();
+	Super::EndPlay(EndPlayReason);
+}
+
+void ABlackjackTableActor::HandleOccupantDestroyed(AActor* Actor)
+{
+	// Do not resolve or pay out during world shutdown / level transition.
+	if (!HasAuthority()) { return; }
+	for (int32 Index = 0; Index < Seats.Num(); ++Index)
+	{
+		if (Seats[Index].Occupant != Actor) { continue; }
+		const bool bWasActive = ActiveSeatIndex == Index;
+		// Committed wagers are forfeited on disconnect, never refunded by leaving.
+		Seats[Index] = FBlackjackSeatState();
+		Seats[Index].SeatIndex = Index;
+		BroadcastSeat(Index);
+		if (RoundState == EBlackjackRoundState::Insurance)
+		{
+			FinishInsuranceIfReady();
+		}
+		else if (RoundState == EBlackjackRoundState::PlayerTurns && bWasActive)
+		{
+			AdvanceTurnAfterSeat(Index);
+		}
+		else
+		{
+			if (bBettingWindowOpen && !HasAnyBettingPlayer())
+			{
+				ClearBettingWindowTimer();
+				BettingWindowEndsAtServerTime = 0.0f;
+				BettingWindowMaxEndsAtServerTime = 0.0f;
+			}
+			TryStartRoundFromBettingWindow();
+			OnTableChanged.Broadcast();
+		}
+		return;
+	}
+}
+
 bool ABlackjackTableActor::TryClaimSeat(Acasino_simulatorCharacter* Player, int32 SeatIndex)
 {
 	if (!HasAuthority() || GetSeatClaimResult(Player, SeatIndex) != EBlackjackSeatClaimResult::Accepted)
@@ -90,6 +139,7 @@ bool ABlackjackTableActor::TryClaimSeat(Acasino_simulatorCharacter* Player, int3
 	}
 
 	Seats[SeatIndex].Occupant = Player;
+	Player->OnDestroyed.AddUniqueDynamic(this, &ABlackjackTableActor::HandleOccupantDestroyed);
 	Seats[SeatIndex].SeatIndex = SeatIndex;
 	BroadcastSeat(SeatIndex);
 	OnTableChanged.Broadcast();
@@ -118,6 +168,13 @@ EBlackjackSeatClaimResult ABlackjackTableActor::GetSeatClaimResult(Acasino_simul
 		return EBlackjackSeatClaimResult::PlayerAlreadySeated;
 	}
 
+	for (TActorIterator<ABlackjackTableActor> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && It->GetSeatIndexForPlayer(Player) != INDEX_NONE)
+		{
+			return EBlackjackSeatClaimResult::PlayerAlreadySeated;
+		}
+	}
 	return EBlackjackSeatClaimResult::Accepted;
 }
 
@@ -144,6 +201,7 @@ void ABlackjackTableActor::LeaveSeat(Acasino_simulatorCharacter* Player)
 		return;
 	}
 
+	Player->OnDestroyed.RemoveDynamic(this, &ABlackjackTableActor::HandleOccupantDestroyed);
 	Seats[SeatIndex] = FBlackjackSeatState();
 	Seats[SeatIndex].SeatIndex = SeatIndex;
 	BroadcastSeat(SeatIndex);
@@ -260,7 +318,7 @@ bool ABlackjackTableActor::IsLeaveAfterRoundRequested(Acasino_simulatorCharacter
 
 bool ABlackjackTableActor::ToggleSitOut(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || !Player || (RoundState != EBlackjackRoundState::WaitingForPlayers && RoundState != EBlackjackRoundState::Betting))
+	if (!HasAuthority() || !CanSitOut(Player))
 	{
 		return false;
 	}
@@ -292,6 +350,69 @@ bool ABlackjackTableActor::IsSeatAvailable(int32 SeatIndex) const
 	return IsValidSeatIndex(SeatIndex) && !Seats[SeatIndex].IsOccupied();
 }
 
+bool ABlackjackTableActor::CanOpenBetting(Acasino_simulatorCharacter* Player) const
+{
+	const FBlackjackSeatState* Seat = Player ? FindSeatForPlayer(Player) : nullptr;
+	return Seat && Seat->BetAmount == 0 && bBettingWindowOpen
+		&& (RoundState == EBlackjackRoundState::WaitingForPlayers || RoundState == EBlackjackRoundState::Betting)
+		&& (!IsBettingCountdownActive() || GetBettingRemainingTime() > 0.0f)
+		&& Player->GetCurrency() >= 1.0f;
+}
+
+bool ABlackjackTableActor::CanPlaceBet(Acasino_simulatorCharacter* Player, int32 Amount) const
+{
+	return CanOpenBetting(Player) && Amount > 0 && Player->GetCurrency() >= static_cast<float>(Amount);
+}
+
+bool ABlackjackTableActor::CanHit(Acasino_simulatorCharacter* Player) const
+{
+	const FBlackjackSeatState* Seat = Player ? FindSeatForPlayer(Player) : nullptr;
+	return Seat && IsPlayerTurn(Player) && Seat->Hands.IsValidIndex(Seat->ActiveHandIndex)
+		&& !IsHandComplete(Seat->Hands[Seat->ActiveHandIndex]);
+}
+
+bool ABlackjackTableActor::CanStand(Acasino_simulatorCharacter* Player) const
+{
+	return CanHit(Player);
+}
+
+bool ABlackjackTableActor::CanDoubleDown(Acasino_simulatorCharacter* Player) const
+{
+	if (!CanHit(Player)) { return false; }
+	const FBlackjackSeatState* Seat = FindSeatForPlayer(Player);
+	const FBlackjackHand& Hand = Seat->Hands[Seat->ActiveHandIndex];
+	return Hand.Cards.Num() == 2 && Hand.BetAmount > 0
+		&& Player->GetCurrency() >= static_cast<float>(Hand.BetAmount);
+}
+
+bool ABlackjackTableActor::CanSplit(Acasino_simulatorCharacter* Player) const
+{
+	if (!CanHit(Player)) { return false; }
+	const FBlackjackSeatState* Seat = FindSeatForPlayer(Player);
+	return CanSplitSeat(Seat->SeatIndex) && Player->GetCurrency() >= static_cast<float>(Seat->BetAmount);
+}
+
+bool ABlackjackTableActor::CanSkipInsurance(Acasino_simulatorCharacter* Player) const
+{
+	const FBlackjackSeatState* Seat = Player ? FindSeatForPlayer(Player) : nullptr;
+	return Seat && CanOfferInsurance() && Seat->BetAmount > 0 && !Seat->bInsuranceDecisionMade;
+}
+
+bool ABlackjackTableActor::CanPlaceInsurance(Acasino_simulatorCharacter* Player, int32 Amount) const
+{
+	if (!CanSkipInsurance(Player) || Amount <= 0) { return false; }
+	const FBlackjackSeatState* Seat = FindSeatForPlayer(Player);
+	return Seat->InsuranceBetAmount == 0 && Amount <= Seat->BetAmount / 2
+		&& Player->GetCurrency() >= static_cast<float>(Amount);
+}
+
+bool ABlackjackTableActor::CanSitOut(Acasino_simulatorCharacter* Player) const
+{
+	const FBlackjackSeatState* Seat = Player ? FindSeatForPlayer(Player) : nullptr;
+	return Seat && Seat->BetAmount == 0
+		&& (RoundState == EBlackjackRoundState::WaitingForPlayers || RoundState == EBlackjackRoundState::Betting);
+}
+
 bool ABlackjackTableActor::PlaceBet(Acasino_simulatorCharacter* Player, int32 Amount)
 {
 	if (!HasAuthority() || !Player || Amount <= 0)
@@ -313,7 +434,7 @@ bool ABlackjackTableActor::PlaceBet(Acasino_simulatorCharacter* Player, int32 Am
 		return false;
 	}
 
-	if (!Player->TrySpendCurrency(static_cast<float>(Amount)))
+	if (!CanPlaceBet(Player, Amount) || !Player->TrySpendCurrency(static_cast<float>(Amount)))
 	{
 		return false;
 	}
@@ -404,7 +525,22 @@ bool ABlackjackTableActor::StartRound()
 	if (DealerHand.Cards.Num() >= 1 && DealerHand.Cards[0].Rank == EBlackjackRank::Ace)
 	{
 		RoundState = EBlackjackRoundState::Insurance;
-		OnTableChanged.Broadcast();
+		// Insurance uses whole currency units. Players who cannot place even the
+		// minimum wager must not hold up everyone else's insurance decision.
+		for (FBlackjackSeatState& Seat : Seats)
+		{
+			if (!Seat.IsOccupied() || Seat.BetAmount <= 0)
+			{
+				continue;
+			}
+			const Acasino_simulatorCharacter* Player = Cast<Acasino_simulatorCharacter>(Seat.Occupant);
+			if (Seat.BetAmount / 2 < 1 || !Player || Player->GetCurrency() < 1.0f)
+			{
+				Seat.bInsuranceDecisionMade = true;
+				BroadcastSeat(Seat.SeatIndex);
+			}
+		}
+		FinishInsuranceIfReady();
 		return true;
 	}
 
@@ -424,7 +560,7 @@ bool ABlackjackTableActor::StartRound()
 
 bool ABlackjackTableActor::PlayerHit(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || RoundState != EBlackjackRoundState::PlayerTurns)
+	if (!HasAuthority() || !CanHit(Player))
 	{
 		return false;
 	}
@@ -436,15 +572,16 @@ bool ABlackjackTableActor::PlayerHit(Acasino_simulatorCharacter* Player)
 	}
 
 	FBlackjackHand& Hand = Seat->Hands[Seat->ActiveHandIndex];
-	if (Hand.bStood || IsHandBust(Hand) || IsNaturalBlackjack(Hand))
+	if (IsHandComplete(Hand))
 	{
 		return false;
 	}
 
 	Hand.Cards.Add(DrawCard());
+	OnPlayerHandCardDealt.Broadcast(Seat->SeatIndex, Seat->ActiveHandIndex, Hand.Cards.Num() - 1, Hand.Cards.Last());
 	OnPlayerCardDealt.Broadcast(Seat->SeatIndex, Hand.Cards.Last());
 
-	if (IsHandBust(Hand))
+	if (IsHandComplete(Hand))
 	{
 		Hand.bStood = true;
 		AdvanceTurnAfterSeat(Seat->SeatIndex);
@@ -460,7 +597,7 @@ bool ABlackjackTableActor::PlayerHit(Acasino_simulatorCharacter* Player)
 
 bool ABlackjackTableActor::PlayerStand(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || RoundState != EBlackjackRoundState::PlayerTurns)
+	if (!HasAuthority() || !CanStand(Player))
 	{
 		return false;
 	}
@@ -478,7 +615,7 @@ bool ABlackjackTableActor::PlayerStand(Acasino_simulatorCharacter* Player)
 
 bool ABlackjackTableActor::PlayerDoubleDown(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || RoundState != EBlackjackRoundState::PlayerTurns)
+	if (!HasAuthority() || !CanDoubleDown(Player))
 	{
 		return false;
 	}
@@ -490,7 +627,7 @@ bool ABlackjackTableActor::PlayerDoubleDown(Acasino_simulatorCharacter* Player)
 	}
 
 	FBlackjackHand& Hand = Seat->Hands[Seat->ActiveHandIndex];
-	if (Hand.Cards.Num() != 2 || Hand.BetAmount <= 0 || IsNaturalBlackjack(Hand) || !Player->TrySpendCurrency(static_cast<float>(Hand.BetAmount)))
+	if (Hand.Cards.Num() != 2 || Hand.BetAmount <= 0 || IsHandComplete(Hand) || !Player->TrySpendCurrency(static_cast<float>(Hand.BetAmount)))
 	{
 		return false;
 	}
@@ -499,6 +636,7 @@ bool ABlackjackTableActor::PlayerDoubleDown(Acasino_simulatorCharacter* Player)
 	Hand.bDoubledDown = true;
 	Hand.Cards.Add(DrawCard());
 	Hand.bStood = true;
+	OnPlayerHandCardDealt.Broadcast(Seat->SeatIndex, Seat->ActiveHandIndex, Hand.Cards.Num() - 1, Hand.Cards.Last());
 	OnPlayerCardDealt.Broadcast(Seat->SeatIndex, Hand.Cards.Last());
 	AdvanceTurnAfterSeat(Seat->SeatIndex);
 	return true;
@@ -506,7 +644,7 @@ bool ABlackjackTableActor::PlayerDoubleDown(Acasino_simulatorCharacter* Player)
 
 bool ABlackjackTableActor::PlayerSplit(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || RoundState != EBlackjackRoundState::PlayerTurns)
+	if (!HasAuthority() || !CanSplit(Player))
 	{
 		return false;
 	}
@@ -532,9 +670,16 @@ bool ABlackjackTableActor::PlayerSplit(Acasino_simulatorCharacter* Player)
 	Seat->bHasSplitThisRound = true;
 	Seat->ActiveHandIndex = 0;
 
-	FirstHand.Cards.Add(DrawCard());
+	// Adding SecondHand may reallocate Hands and invalidate FirstHand.
+	Seat->Hands[0].Cards.Add(DrawCard());
 	Seat->Hands[1].Cards.Add(DrawCard());
 
+	OnPlayerHandsSplit.Broadcast(Seat->SeatIndex, *Seat);
+	if (IsHandComplete(Seat->Hands[0]))
+	{
+		AdvanceTurnAfterSeat(Seat->SeatIndex);
+		return true;
+	}
 	BroadcastSeat(Seat->SeatIndex);
 	OnTableChanged.Broadcast();
 	return true;
@@ -542,14 +687,14 @@ bool ABlackjackTableActor::PlayerSplit(Acasino_simulatorCharacter* Player)
 
 bool ABlackjackTableActor::PlaceInsurance(Acasino_simulatorCharacter* Player, int32 Amount)
 {
-	if (!HasAuthority() || !CanOfferInsurance() || !Player || Amount <= 0)
+	if (!HasAuthority() || !CanPlaceInsurance(Player, Amount))
 	{
 		return false;
 	}
 
 	FBlackjackSeatState* Seat = FindSeatForPlayer(Player);
 	const int32 MaxInsurance = Seat ? Seat->BetAmount / 2 : 0;
-	if (!Seat || Amount > MaxInsurance || Seat->InsuranceBetAmount > 0)
+	if (!Seat || Seat->bInsuranceDecisionMade || Amount > MaxInsurance || Seat->InsuranceBetAmount > 0)
 	{
 		return false;
 	}
@@ -568,7 +713,7 @@ bool ABlackjackTableActor::PlaceInsurance(Acasino_simulatorCharacter* Player, in
 
 bool ABlackjackTableActor::SkipInsurance(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || RoundState != EBlackjackRoundState::Insurance || !Player)
+	if (!HasAuthority() || !CanSkipInsurance(Player))
 	{
 		return false;
 	}
@@ -690,7 +835,7 @@ bool ABlackjackTableActor::ExtendBettingWindow(float MinRemainingSeconds)
 
 bool ABlackjackTableActor::NotifyBettingInteractionStarted(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || !bBettingWindowOpen || !Player || GetSeatIndexForPlayer(Player) == INDEX_NONE)
+	if (!HasAuthority() || !CanOpenBetting(Player))
 	{
 		return false;
 	}
@@ -902,6 +1047,7 @@ void ABlackjackTableActor::DealCardToSeat(int32 SeatIndex, bool bFaceUp)
 
 	FBlackjackHand& Hand = Seats[SeatIndex].Hands[0];
 	Hand.Cards.Add(DrawCard(bFaceUp));
+	OnPlayerHandCardDealt.Broadcast(SeatIndex, 0, Hand.Cards.Num() - 1, Hand.Cards.Last());
 	OnPlayerCardDealt.Broadcast(SeatIndex, Hand.Cards.Last());
 	BroadcastSeat(SeatIndex);
 }
@@ -1036,7 +1182,7 @@ bool ABlackjackTableActor::MoveToNextPlayableHand(int32 CurrentSeatIndex)
 
 bool ABlackjackTableActor::IsHandComplete(const FBlackjackHand& Hand) const
 {
-	return Hand.bStood || IsHandBust(Hand) || IsNaturalBlackjack(Hand);
+	return Hand.bStood || GetHandBestValue(Hand) >= 21;
 }
 
 bool ABlackjackTableActor::HasAnyNonBustPlayerHand() const
