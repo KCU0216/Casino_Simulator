@@ -267,6 +267,10 @@ UFUNCTION(BlueprintPure, Category = "OrePickup")
 	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
 	float GetPickaxeMiningMontagePlayRate() const;
 
+	/** Lets Blueprint-owned equipment meshes restore their visibility after shared UI/camera flows. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment")
+	void RefreshEquipmentVisuals();
+
 protected:
 
 	//~ Begin AActor interface

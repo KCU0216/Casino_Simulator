@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 
 #include "casino_simulatorPlayerController.h"
@@ -534,6 +534,11 @@ void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 	}
 
 	SetLocalPawnMeshesHiddenForInteraction(false);
+
+	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
+	{
+		PlayerCharacter->RefreshEquipmentVisuals();
+	}
 
 	if (CurrentInteractionTarget || bWorldInteractionTargetFocused)
 	{
