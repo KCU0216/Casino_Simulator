@@ -129,10 +129,10 @@ protected:
 	TObjectPtr<ANPC_Base> CurrentInteractionTarget;
 
 	/** True while a World-type target (machine/table/prop - AWorldInteractableBase's family) is what
-	 * the player is currently focused on. Mirrors CurrentInteractionTarget's role for NPCs: both now
-	 * open the same PlayerHUDWidget dialogue-style panel (BP_OpenInterection/BP_CloseInterection) via
-	 * OpenInteraction/CloseInteraction, instead of World using a separate corner "E Use" prompt. Kept
-	 * as its own bool rather than widening CurrentInteractionTarget's type because
+	 * the player is currently focused on. Mirrors CurrentInteractionTarget's role for NPCs: both use
+	 * the same PlayerHUDWidget prompt flow (BP_OpenInterection/BP_CloseInterection) via
+	 * OpenInteraction/CloseInteraction. Kept as its own bool rather than widening
+	 * CurrentInteractionTarget's type because
 	 * WBP_DiceBetting/WBP_ThreeCardPokerBetting read that property directly in their Blueprint graphs. */
 	UPROPERTY(BlueprintReadOnly, Category="Interaction", meta=(AllowPrivateAccess="true"))
 	bool bWorldInteractionTargetFocused = false;
@@ -174,6 +174,9 @@ protected:
 	/** Bound to ToggleInventoryAction; toggles the inventory widget on/off */
 	void ToggleInventoryInput();
 
+	/** Uses the existing DropOre ability when E is pressed while carrying ore. */
+	bool TryDropCarriedOre(class Acasino_simulatorCharacter* PlayerCharacter);
+
 public:
 
 	/** Shows the inventory widget if hidden, hides it if shown. Spawns it from InventoryWidgetClass on first use. */
@@ -203,8 +206,8 @@ public:
 
 	void RequestWorldInteraction(AWorldInteractableBase* Target);
 
-	/** NPC counterpart to RequestWorldInteraction, called from UWorldInteractionDetectorComponent::TryInteract
-	 * once it resolves an ANPC_Base as the focused target. Runs Interact() locally, forwards to the
+	/** NPC counterpart to RequestWorldInteraction, called after the detector resolves an ANPC_Base
+	 * as the focused target. Runs Interact() locally, forwards to the
 	 * server via Server_InteractWithNPC on a client, and disables movement for non-Shop NPCs - same
 	 * behavior this used to run from inline inside InteractWithCurrentTarget. */
 	void RequestNPCInteraction(ANPC_Base* Target);
@@ -227,6 +230,7 @@ public:
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	bool IsInteractionPromptSuppressed() const { return bInteractionPromptSuppressed; }
 
+	// TODO: Consolidate interaction prompt display into one state-driven refresh path.
 	UFUNCTION(BlueprintCallable, Category="Interaction")
 	void EnterInteractionUIMode(AActor* CameraTarget, float BlendTime = 0.35f);
 
@@ -237,6 +241,9 @@ public:
 	void OpenInteraction();
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void CloseInteraction();
+
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void OpenCarriedOreInteraction();
 
 	/** World-type counterpart to SetInteractionTarget/ClearInteractionTarget - called from
 	 * AWorldInteractableBase::OnInteractionFocusStarted/Ended_Implementation so machines/tables/props

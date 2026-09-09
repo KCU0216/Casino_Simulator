@@ -1,9 +1,6 @@
 #include "Interaction/WorldInteractionDetectorComponent.h"
 
-#include "Interaction/WorldInteractableBase.h"
-#include "NPC/NPC_Base.h"
 #include "casino_simulatorCharacter.h"
-#include "casino_simulatorPlayerController.h"
 #include "Camera/CameraComponent.h"
 
 UWorldInteractionDetectorComponent::UWorldInteractionDetectorComponent()
@@ -80,39 +77,15 @@ void UWorldInteractionDetectorComponent::UnregisterCandidate(TScriptInterface<IW
 	}
 }
 
-bool UWorldInteractionDetectorComponent::TryInteract()
-{
-	if (!OwnerCharacter || !FocusedTarget.GetObject() || !FocusedTarget->CanInteract(OwnerCharacter))
-	{
-		return false;
-	}
-
-	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(OwnerCharacter->GetController());
-	if (!PlayerController)
-	{
-		return false;
-	}
-
-	// The interface only carries the shared discovery/focus/CanInteract contract - each family still
-	// goes through its own existing RPC-forwarding entry point on the controller (see
-	// RequestWorldInteraction/RequestNPCInteraction), since those differ in game-specific concerns
-	// (e.g. disabling movement for non-shop NPCs) that aren't part of the shared plumbing.
-	UObject* FocusedObject = FocusedTarget.GetObject();
-	if (AWorldInteractableBase* WorldTarget = Cast<AWorldInteractableBase>(FocusedObject))
-	{
-		PlayerController->RequestWorldInteraction(WorldTarget);
-	}
-	else if (ANPC_Base* NPCTarget = Cast<ANPC_Base>(FocusedObject))
-	{
-		PlayerController->RequestNPCInteraction(NPCTarget);
-	}
-
-	return true;
-}
-
 void UWorldInteractionDetectorComponent::UpdateFocusedTarget()
 {
 	if (!OwnerCharacter)
+	{
+		SetFocusedTarget(TScriptInterface<IWorldInteractable>());
+		return;
+	}
+
+	if (OwnerCharacter->GetCarriedOre())
 	{
 		SetFocusedTarget(TScriptInterface<IWorldInteractable>());
 		return;

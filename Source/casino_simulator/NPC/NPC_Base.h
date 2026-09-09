@@ -32,10 +32,9 @@ enum class ENPCType : uint8
  *  collision for interaction/detection use.
  *
  *  Implements IWorldInteractable (shared with AWorldInteractableBase's machine/table family) so
- *  UWorldInteractionDetectorComponent registers, focus-resolves (aim-based, same as machines/tables -
- *  see the class comment there), and interacts with NPCs through the same pipeline. NPCs keep their
- *  own dialogue-style HUD panel (OpenInteraction/CloseInteraction) rather than the shared corner
- *  prompt - see OnInteractionFocusStarted/Ended_Implementation below.
+ *  UWorldInteractionDetectorComponent registers and focus-resolves NPCs through the same aim-based
+ *  pipeline as machines/tables. NPCs use the shared PlayerHUDWidget prompt flow through
+ *  OpenInteraction/CloseInteraction - see OnInteractionFocusStarted/Ended_Implementation below.
  */
 UCLASS(abstract)
 class CASINO_SIMULATOR_API ANPC_Base : public ACharacter, public IAbilitySystemInterface, public IWorldInteractable
@@ -95,8 +94,7 @@ public:
 	//~ Begin IWorldInteractable interface
 	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
-	// GetInteractionPromptText not overridden - NPCs use the interface's default empty prompt text
-	// (see the class comment above).
+	// GetInteractionPromptText not overridden - NPCs use the default HUD prompt text.
 	virtual void OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
 	virtual void OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
 	//~ End IWorldInteractable interface

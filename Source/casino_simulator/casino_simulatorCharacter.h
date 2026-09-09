@@ -144,7 +144,7 @@ protected:
 	TObjectPtr<ASeatedMachineBase> CurrentSeatedMachine;
 
 	/** The one ore pickup currently carried by this character. Set and cleared by the server-side pickup/drop flow. */
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(ReplicatedUsing = OnRep_CarriedOre, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AOrePickupBase> CarriedOre;
 
 	/** The Three Card Poker table this (locally-owned) character is currently interacting with, if
@@ -295,6 +295,11 @@ protected:
 	void BindMovementAttributeChanges();
 
 	void UpdateMovementFromAttributes() const;
+
+	UFUNCTION()
+	void OnRep_CarriedOre();
+
+	void UpdateCarriedOreInteractionPrompt() const;
 
 	/** Called from Input Actions for movement input */
 	void MoveInput(const FInputActionValue& Value);

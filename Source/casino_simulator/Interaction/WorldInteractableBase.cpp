@@ -46,8 +46,7 @@ void AWorldInteractableBase::OnLocalInteract_Implementation(Acasino_simulatorCha
 
 void AWorldInteractableBase::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	// Same PlayerHUDWidget dialogue-style panel ANPC_Base opens (BP_OpenInterection/BP_CloseInterection
-	// via SetWorldInteractionTargetFocused/OpenInteraction) rather than a separate corner prompt.
+	// Same PlayerHUDWidget prompt flow ANPC_Base uses.
 	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
 		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
 		: nullptr)

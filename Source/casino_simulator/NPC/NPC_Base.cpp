@@ -127,8 +127,7 @@ void ANPC_Base::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 
 void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	// NPCs keep their own dialogue-style HUD panel instead of the shared corner "E Use" prompt that
-	// AWorldInteractableBase's family uses - see UWorldInteractionDetectorComponent::SetFocusedTarget.
+	// NPCs use the same PlayerHUDWidget prompt flow as world interactables.
 	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
 		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
 		: nullptr)

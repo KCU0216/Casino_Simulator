@@ -161,6 +161,7 @@ void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(ASeatedMachineBase* M
 void Acasino_simulatorCharacter::SetCarriedOre(AOrePickupBase* NewCarriedOre)
 {
 	CarriedOre = NewCarriedOre;
+	UpdateCarriedOreInteractionPrompt();
 }
 
 int32 Acasino_simulatorCharacter::GetPickaxeMiningPower() const
@@ -342,6 +343,33 @@ void Acasino_simulatorCharacter::UpdateMovementFromAttributes() const
 	GetCharacterMovement()->MaxWalkSpeed = MaxMoveSpeed * NicotineRatio * CarryMovementMultiplier;
 	GetCharacterMovement()->JumpZVelocity = MaxJumpSpeed * AlcoholRatio * CarryMovementMultiplier;
 
+}
+
+void Acasino_simulatorCharacter::OnRep_CarriedOre()
+{
+	UpdateCarriedOreInteractionPrompt();
+}
+
+void Acasino_simulatorCharacter::UpdateCarriedOreInteractionPrompt() const
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
+	if (!PC)
+	{
+		return;
+	}
+
+	if (CarriedOre)
+	{
+		PC->OpenCarriedOreInteraction();
+		return;
+	}
+
+	PC->CloseInteraction();
 }
 
 void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

@@ -17,6 +17,7 @@
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
 #include "casino_simulatorCharacter.h"
+#include "casino_simulatorAbilitySystemComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "Camera/CameraComponent.h"
@@ -28,6 +29,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Camera/CameraComponent.h"
 #include "NPC/NPC_Base.h"
+#include "NativeGameplayTags.h"
+
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_DropOre, "Input.DropOre");
 
 Acasino_simulatorPlayerController::Acasino_simulatorPlayerController()
 {
@@ -294,6 +298,16 @@ void Acasino_simulatorPlayerController::ClearInteractionTarget(ANPC_Base* Intera
 	}
 
 	CurrentInteractionTarget = nullptr;
+
+	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
+	{
+		if (PlayerCharacter->GetCarriedOre())
+		{
+			OpenCarriedOreInteraction();
+			return;
+		}
+	}
+
 	CloseInteraction();
 }
 
@@ -306,6 +320,11 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter)
+	{
+		return;
+	}
+
+	if (TryDropCarriedOre(PlayerCharacter))
 	{
 		return;
 	}
@@ -323,15 +342,43 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 		return;
 	}
 
-	// NPCs and world props/machines/tables now share one detection pipeline
-	// (UWorldInteractionDetectorComponent, driven by IWorldInteractable) instead of this method also
-	// running its own separate line trace for NPCs: whichever family the detector's per-tick trace
-	// resolved as FocusedTarget gets routed to RequestWorldInteraction or RequestNPCInteraction from
-	// inside TryInteract.
 	if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 	{
-		Detector->TryInteract();
+		TScriptInterface<IWorldInteractable> FocusedTarget = Detector->GetFocusedTarget();
+		if (!FocusedTarget.GetObject() || !FocusedTarget->CanInteract(PlayerCharacter))
+		{
+			return;
+		}
+
+		UObject* FocusedObject = FocusedTarget.GetObject();
+		if (AWorldInteractableBase* WorldTarget = Cast<AWorldInteractableBase>(FocusedObject))
+		{
+			RequestWorldInteraction(WorldTarget);
+		}
+		else if (ANPC_Base* NPCTarget = Cast<ANPC_Base>(FocusedObject))
+		{
+			RequestNPCInteraction(NPCTarget);
+		}
 	}
+}
+
+bool Acasino_simulatorPlayerController::TryDropCarriedOre(Acasino_simulatorCharacter* PlayerCharacter)
+{
+	if (!PlayerCharacter || !PlayerCharacter->GetCarriedOre())
+	{
+		return false;
+	}
+
+	Ucasino_simulatorAbilitySystemComponent* CasinoAbilitySystem =
+		Cast<Ucasino_simulatorAbilitySystemComponent>(PlayerCharacter->GetAbilitySystemComponent());
+	if (!CasinoAbilitySystem)
+	{
+		return false;
+	}
+
+	CasinoAbilitySystem->PressInputTag(TAG_Input_DropOre);
+	CasinoAbilitySystem->ReleaseInputTag(TAG_Input_DropOre);
+	return true;
 }
 
 void Acasino_simulatorPlayerController::ExitCurrentMachine()
@@ -606,6 +653,15 @@ void Acasino_simulatorPlayerController::SetLocalPawnMeshesHiddenForInteraction(b
 
 void Acasino_simulatorPlayerController::OpenInteraction()
 {
+	if (const Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
+	{
+		if (PlayerCharacter->GetCarriedOre())
+		{
+			CloseInteraction();
+			return;
+		}
+	}
+
 	const bool bHasNPCTarget = CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection();
 	if ((!bHasNPCTarget && !bWorldInteractionTargetFocused) || bInteractionUIOpen || bInteractionPromptSuppressed)
 	{
@@ -617,6 +673,24 @@ void Acasino_simulatorPlayerController::OpenInteraction()
 
 	if (PlayerHUDWidget)
 	{
+		FText PromptText = FText::FromString(TEXT("E Interact"));
+		if (const Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
+		{
+			if (const UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
+			{
+				if (TScriptInterface<IWorldInteractable> FocusedTarget = Detector->GetFocusedTarget();
+					FocusedTarget.GetObject())
+				{
+					const FText FocusedPromptText = FocusedTarget->GetInteractionPromptText();
+					if (!FocusedPromptText.IsEmpty())
+					{
+						PromptText = FocusedPromptText;
+					}
+				}
+			}
+		}
+
+		PlayerHUDWidget->BP_SetInteractionPromptText(PromptText);
 		PlayerHUDWidget->BP_OpenInterection();
 	}
 }
@@ -626,6 +700,22 @@ void Acasino_simulatorPlayerController::CloseInteraction()
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->BP_CloseInterection();
+	}
+}
+
+void Acasino_simulatorPlayerController::OpenCarriedOreInteraction()
+{
+	if (bInteractionUIOpen || bInteractionPromptSuppressed)
+	{
+		return;
+	}
+
+	CloseWorldInteraction();
+
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->BP_SetInteractionPromptText(FText::FromString(TEXT("E Drop")));
+		PlayerHUDWidget->BP_OpenInterection();
 	}
 }
 
@@ -639,6 +729,15 @@ void Acasino_simulatorPlayerController::SetWorldInteractionTargetFocused(bool bF
 	}
 	else
 	{
+		if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
+		{
+			if (PlayerCharacter->GetCarriedOre())
+			{
+				OpenCarriedOreInteraction();
+				return;
+			}
+		}
+
 		CloseInteraction();
 	}
 }

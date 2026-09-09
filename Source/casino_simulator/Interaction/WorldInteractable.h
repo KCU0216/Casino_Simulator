@@ -19,11 +19,12 @@ class CASINO_SIMULATOR_API UWorldInteractable : public UInterface
  * (AWorldInteractableBase and its children: ASeatedMachineBase, AThreeCardPokerTableActor,
  * ABlackjackTableInteractionActor, ...) and NPCs (ANPC_Base and its children) alike.
  *
- * UWorldInteractionDetectorComponent drives candidate registration, line-trace focus resolution, and
- * TryInteract purely through this interface, so both families share one detection/input pipeline
- * instead of maintaining two parallel ones. Each family still owns its own focus reaction (e.g.
- * AWorldInteractableBase shows the corner "E Use" prompt; ANPC_Base opens its dialogue-style HUD
- * panel instead) - only the plumbing that discovers a target and calls into it is shared.
+ * UWorldInteractionDetectorComponent drives candidate registration and line-trace focus resolution
+ * through this interface, so both families share one detection pipeline instead of maintaining two
+ * parallel ones. The player controller reads the focused target when E is pressed and routes it to
+ * the matching interaction request. Each family still owns its own focus reaction (e.g.
+ * AWorldInteractableBase and ANPC_Base both route to the player's HUD prompt flow) - only the
+ * plumbing that discovers a target is shared.
  *
  * CanInteract/Interact/GetInteractionPromptText are plain virtual (not BlueprintNativeEvent, matching
  * what they were directly on AWorldInteractableBase before this interface existed) - callable directly
@@ -47,9 +48,8 @@ public:
 	/** Server-authoritative interaction entry point. */
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) = 0;
 
-	/** Prompt text shown while this target is focused (e.g. "E Use"). Only consumed by the shared
-	 * corner-prompt UI that AWorldInteractableBase's family uses - see UWorldInteractionDetectorComponent.
-	 * Defaults to empty, which is exactly what ANPC_Base wants (it doesn't use this prompt at all). */
+	/** Prompt text shown in the shared PlayerHUDWidget prompt while this target is focused.
+	 * Defaults to empty, which lets the player controller use its generic interaction text. */
 	virtual FText GetInteractionPromptText() const { return FText::GetEmpty(); }
 
 	/** Local-only cosmetic hook, run on the interacting player's own machine before the server call lands. */

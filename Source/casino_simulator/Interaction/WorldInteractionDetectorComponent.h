@@ -10,9 +10,9 @@ class Acasino_simulatorCharacter;
 /**
  * Owned by Acasino_simulatorCharacter. Tracks every IWorldInteractable candidate currently overlapping
  * the character (registered/unregistered by each candidate's own overlap sphere - see
- * AWorldInteractableBase and ANPC_Base), resolves which one the player is actually aiming at via a
- * per-tick line trace, and routes E-press input (TryInteract) to it. One shared pipeline for both
- * world props/machines and NPCs - see IWorldInteractable's class comment.
+ * AWorldInteractableBase and ANPC_Base), then resolves which one the player is actually aiming at
+ * via a per-tick line trace. The player controller reads the focused target when E is pressed and
+ * routes the interaction request.
  */
 UCLASS(ClassGroup = (Interaction), meta = (BlueprintSpawnableComponent))
 class CASINO_SIMULATOR_API UWorldInteractionDetectorComponent : public UActorComponent
@@ -27,9 +27,6 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Interaction")
 	void UnregisterCandidate(TScriptInterface<IWorldInteractable> Candidate);
-
-	UFUNCTION(BlueprintCallable, Category = "World Interaction")
-	bool TryInteract();
 
 	UFUNCTION(BlueprintPure, Category = "World Interaction")
 	TScriptInterface<IWorldInteractable> GetFocusedTarget() const { return FocusedTarget; }
