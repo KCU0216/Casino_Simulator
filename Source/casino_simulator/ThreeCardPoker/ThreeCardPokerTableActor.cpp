@@ -562,6 +562,7 @@ void AThreeCardPokerTableActor::Multicast_ThreeCardPokerInteractionStarted_Imple
 	if (Player)
 	{
 		Player->SetCurrentThreeCardPokerTable(this);
+		//BP_OnLocalThreeCardPokerInteract(Player);
 	}
 }
 
