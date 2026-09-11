@@ -319,6 +319,16 @@ protected:
 	/** Called from Input Actions for slot 2 input */
 	void Slot2Input(const FInputActionValue& Value);
 
+	/** Shared Slot1Input/Slot2Input handler: routes to the server if we're not the authority, then refreshes local inventory UI. */
+	void UseNumberSlotItem(int32 SlotIndex);
+
+	/** Server RPC: a remote client isn't the authority, so it can't apply GameplayEffects/modify PlayerState itself - this asks the server to do it. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory")
+	void ServerUseNumberSlotItem(int32 SlotIndex);
+
+	/** Server-authoritative: consumes the item in PlayerState's NumberSlots[SlotIndex] and applies its OnUseEffect. */
+	void ApplyNumberSlotItemEffect(int32 SlotIndex);
+
 	void MachineExitInput();
 
 	/** Handles aim inputs from either controls or UI interfaces */

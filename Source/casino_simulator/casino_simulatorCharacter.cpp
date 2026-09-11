@@ -465,56 +465,30 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 
 void Acasino_simulatorCharacter::Slot1Input(const FInputActionValue& Value)
 {
-	Acasino_simulatorPlayerState* State = GetPlayerState<Acasino_simulatorPlayerState>();
+	UseNumberSlotItem(0);
+}
 
-	if (!State|| !State->NumberSlots.IsValidIndex(0))
+void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
+{
+	UseNumberSlotItem(1);
+}
+
+void Acasino_simulatorCharacter::UseNumberSlotItem(int32 SlotIndex)
+{
+	// GameplayEffects/PlayerState item removal must happen on the authority. A remote client
+	// (pure client, not a listen server host) never has authority over its own pawn, so calling
+	// ApplyNumberSlotItemEffect directly there silently does nothing - route it through a Server RPC instead.
+	if (HasAuthority())
 	{
-		return;
+		ApplyNumberSlotItemEffect(SlotIndex);
+	}
+	else
+	{
+		ServerUseNumberSlotItem(SlotIndex);
 	}
 
-	const int32 ItemID = State->NumberSlots[0];
-
-	FItemData ItemData;
-	if (!State->FindItemData(ItemID, ItemData) || State->GetItemQuantity(ItemID) <= 0)
-	{
-		return;
-	}
-
-	if (!ItemData.bConsumeOnUse || !ItemData.OnUseEffect || !AbilitySystemComponent)
-	{
-		return;
-	}
-
-	// GameplayEffects should only ever be applied on the authority (see PossessedBy/InitializeDefaultAttributes).
-	// On a remote client this input is handled locally but won't have authority - a Server RPC would be
-	// needed there to actually apply the effect; out of scope for this pass.
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
-	EffectContext.AddSourceObject(this);
-
-	const FGameplayEffectSpecHandle SpecHandle = AbilitySystemComponent->MakeOutgoingSpec(ItemData.OnUseEffect, 1.0f, EffectContext);
-	if (!SpecHandle.IsValid())
-	{
-		return;
-	}
-
-	// ItemData.ItemCategory doubles as the SetByCaller tag the item's OnUseEffect modifier should be
-	// configured to read (Magnitude Calculation Type = Set by Caller, Data Tag = that item's category).
-	// EffectMagnitude is per-item (e.g. how much Nicotine/Alcohol this specific item restores), so it's
-	// supplied here rather than baked into the GameplayEffect asset itself.
-	SpecHandle.Data->SetSetByCallerMagnitude(ItemData.ItemCategory, ItemData.EffectMagnitude);
-
-	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-
-	if(State)
-	{
-		State->RemoveItem(ItemID, 1);
-	}
-
+	// UI refresh is purely local (this client's own inventory widget), so it's fine to run
+	// regardless of network role - it doesn't touch replicated state.
 	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
 	if (PC && PC->IsInventoryOpen())
 	{
@@ -522,17 +496,21 @@ void Acasino_simulatorCharacter::Slot1Input(const FInputActionValue& Value)
 	}
 }
 
-void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
+void Acasino_simulatorCharacter::ServerUseNumberSlotItem_Implementation(int32 SlotIndex)
 {
-	// TODO: quick-use the item in PlayerState's NumberSlots[1] once that use-item flow exists.
+	ApplyNumberSlotItemEffect(SlotIndex);
+}
+
+void Acasino_simulatorCharacter::ApplyNumberSlotItemEffect(int32 SlotIndex)
+{
 	Acasino_simulatorPlayerState* State = GetPlayerState<Acasino_simulatorPlayerState>();
 
-	if (!State || !State->NumberSlots.IsValidIndex(1))
+	if (!State || !State->NumberSlots.IsValidIndex(SlotIndex))
 	{
 		return;
 	}
 
-	const int32 ItemID = State->NumberSlots[1];
+	const int32 ItemID = State->NumberSlots[SlotIndex];
 
 	FItemData ItemData;
 	if (!State->FindItemData(ItemID, ItemData) || State->GetItemQuantity(ItemID) <= 0)
@@ -541,14 +519,6 @@ void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
 	}
 
 	if (!ItemData.bConsumeOnUse || !ItemData.OnUseEffect || !AbilitySystemComponent)
-	{
-		return;
-	}
-
-	// GameplayEffects should only ever be applied on the authority (see PossessedBy/InitializeDefaultAttributes).
-	// On a remote client this input is handled locally but won't have authority - a Server RPC would be
-	// needed there to actually apply the effect; out of scope for this pass.
-	if (!HasAuthority())
 	{
 		return;
 	}
@@ -570,16 +540,7 @@ void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
 
 	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 
-	if (State)
-	{
-		State->RemoveItem(ItemID, 1);
-	}
-
-	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
-	if (PC && PC->IsInventoryOpen())
-	{
-		PC->RefreshInventroy();
-	}
+	State->RemoveItem(ItemID, 1);
 }
 
 void Acasino_simulatorCharacter::MachineExitInput()
