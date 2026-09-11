@@ -8,6 +8,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
+#include "casino_simulatorPlayerController.h"
 #include "ThreeCardPoker/ThreeCardPokerBlueprintLibrary.h"
 
 AThreeCardPokerTableActor::AThreeCardPokerTableActor()
@@ -99,9 +100,10 @@ void AThreeCardPokerTableActor::SetInteractingPlayer(Acasino_simulatorCharacter*
 	}
 
 	// Switching players (or clearing) mid-round would leave stale bets/cards behind otherwise.
+	InteractingPlayer = Player;
+
 	ResetRound();
 
-	InteractingPlayer = Player;
 
 	// Owning the table while a specific player is using it gives ROLE_AutonomousProxy to that
 	// player's client only (same trick as ANPC_Dice::SetInteractingPlayer). Reverts to
@@ -125,6 +127,7 @@ void AThreeCardPokerTableActor::Interact(Acasino_simulatorCharacter* Interacting
 	// RequestWorldInteraction/Server_RequestWorldInteraction (casino_simulatorPlayerController) only
 	// ever call Interact() with authority - either directly on a listen server/host, or via the
 	// Server RPC's Implementation - so no client-side forwarding branch is needed here.
+	Super::Interact(InteractingCharacter);
 	if (!HasAuthority() || !InteractingCharacter)
 	{
 		return;
@@ -133,7 +136,84 @@ void AThreeCardPokerTableActor::Interact(Acasino_simulatorCharacter* Interacting
 	SetInteractingPlayer(InteractingCharacter);
 }
 
-bool AThreeCardPokerTableActor::PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount)
+void AThreeCardPokerTableActor::OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	// If the player already has an NPC dialogue or a seated machine open, walking up and pressing E
+	// on this table shouldn't leave that other panel's PlayerHUDWidget dialogue-style prompt lingering
+	// on screen underneath the betting UI - close it out first, same as RequestWorldInteraction/
+	// RequestNPCInteraction already do via CloseInteraction() when switching between interaction targets.
+	if (InteractingCharacter)
+	{
+		if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController()))
+		{
+			if (PC->GetCurrentInteractionTarget() || InteractingCharacter->GetCurrentSeatedMachine())
+			{
+				PC->CloseInteraction();
+			}
+		}
+	}
+
+	BP_OnLocalThreeCardPokerInteract(InteractingCharacter);
+}
+
+bool AThreeCardPokerTableActor::PlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount)
+{
+	if (!Player || AnteAmount < MinAnteBet || AnteAmount+ PairBetAmount > Player->GetCurrency())
+	{
+		return false;
+	}
+	
+	if (PairBetAmount > 0 && PairBetAmount < MinPairPlusBet)
+	{
+		return false;
+	}
+
+	if (HasAuthority())
+	{
+		return ExecutePlacePlayGame(Player, AnteAmount, PairBetAmount);
+	}
+
+	// This table isn't owned by any player's connection, so a Server RPC declared on it would just
+	// be dropped if called from a client. Route through Player's own Character instead, which IS
+	// owned by the calling client's connection (same forwarding trick as ANPC_Dice::PlaceBet).
+	Player->ServerPlaceThreeCardPokerPlay(this, AnteAmount, PairBetAmount);
+	return true;
+}
+
+bool AThreeCardPokerTableActor::ExecutePlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount)
+{
+	if (!Player || AnteAmount < MinAnteBet || AnteAmount + PairBetAmount > Player->GetCurrency())
+	{
+		return false;
+	}
+
+	if (PairBetAmount > 0 && PairBetAmount < MinPairPlusBet)
+	{
+		return false;
+	}
+
+	if (InteractingPlayer.Get() != Player || RoundState != EThreeCardPokerRoundState::WaitingForBet || AnteBet > 0 || PairPlusBet > 0)
+	{
+		return false;
+	}
+	
+	float TotalAmount = AnteAmount + PairBetAmount;
+
+	if (!Player->TrySpendCurrency(static_cast<float>(TotalAmount)))
+	{
+		return false;
+	}
+
+	AnteBet = AnteAmount;
+	PairPlusBet = PairBetAmount;
+	OnTableChanged.Broadcast();
+
+	// No other seat to wait for — the Ante alone starts the round.
+	StartRound();
+	return true;
+}
+
+bool AThreeCardPokerTableActor::PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount)
 {
 	if (!Player || Amount < MinAnteBet)
 	{
@@ -142,17 +222,17 @@ bool AThreeCardPokerTableActor::PlaceAnte(Acasino_simulatorCharacter* Player, in
 
 	if (HasAuthority())
 	{
-		return ExecutePlaceAnte(Player, Amount);
+		return ExecutePlaceAnte(Player, Amount, PairBetAmount);
 	}
 
 	// This table isn't owned by any player's connection, so a Server RPC declared on it would just
 	// be dropped if called from a client. Route through Player's own Character instead, which IS
 	// owned by the calling client's connection (same forwarding trick as ANPC_Dice::PlaceBet).
-	Player->ServerPlaceThreeCardPokerAnte(this, Amount);
+	Player->ServerPlaceThreeCardPokerAnte(this, Amount, PairBetAmount);
 	return true;
 }
 
-bool AThreeCardPokerTableActor::ExecutePlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount)
+bool AThreeCardPokerTableActor::ExecutePlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount)
 {
 	if (!HasAuthority() || !Player || Amount < MinAnteBet)
 	{
@@ -166,6 +246,11 @@ bool AThreeCardPokerTableActor::ExecutePlaceAnte(Acasino_simulatorCharacter* Pla
 	}
 
 	if (!Player->TrySpendCurrency(static_cast<float>(Amount)))
+	{
+		return false;
+	}
+
+	if (!PlacePairPlus(Player, PairBetAmount))
 	{
 		return false;
 	}

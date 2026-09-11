@@ -12,7 +12,6 @@
 #include "casino_simulator.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "UI/casino_simulatorPlayerHUD.h"
-#include "UI/WorldInteractionPromptWidget.h"
 #include "UI/InventoryWidget.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
@@ -27,8 +26,8 @@
 #include "Interaction/WorldInteractable.h"
 #include "Machine/SeatedMachineBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Camera/CameraComponent.h"
 #include "NPC/NPC_Base.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "NativeGameplayTags.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_DropOre, "Input.DropOre");
@@ -61,20 +60,6 @@ void Acasino_simulatorPlayerController::BeginPlay()
 
 		}
 
-	}
-
-	if (IsLocalPlayerController() && WorldInteractionPromptWidgetClass)
-	{
-		WorldInteractionPromptWidget = CreateWidget<UWorldInteractionPromptWidget>(this, WorldInteractionPromptWidgetClass);
-		if (WorldInteractionPromptWidget)
-		{
-			WorldInteractionPromptWidget->AddToPlayerScreen(120);
-			WorldInteractionPromptWidget->SetVisibility(ESlateVisibility::Hidden);
-		}
-		else
-		{
-			UE_LOG(Logcasino_simulator, Error, TEXT("Could not spawn world interaction prompt widget."));
-		}
 	}
 
 	// only spawn the player HUD on local player controllers
@@ -286,7 +271,6 @@ void Acasino_simulatorPlayerController::SetInteractionTarget(ANPC_Base* NewInter
 	}
 
 	CurrentInteractionTarget = NewInteractionTarget;
-	CloseWorldInteraction();
 	OpenInteraction();
 }
 
@@ -417,7 +401,12 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 	// requires going through Execute_ rather than a direct call - see IWorldInteractable's class
 	// comment. CanInteract/Interact are plain virtual, so they're called directly below.
 	IWorldInteractable::Execute_OnLocalInteract(Target, PlayerCharacter);
-	CloseWorldInteraction();
+	CloseInteraction();
+
+	if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
+	{
+		MovementComponent->DisableMovement();
+	}
 
 	if (Target->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
 	{
@@ -521,7 +510,6 @@ void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSup
 	if (bInteractionPromptSuppressed)
 	{
 		CloseInteraction();
-		CloseWorldInteraction();
 		return;
 	}
 
@@ -750,73 +738,6 @@ void Acasino_simulatorPlayerController::RefreshInventroy()
 	}
 }
 
-bool Acasino_simulatorPlayerController::OpenWorldInteraction(const FText& PromptText)
-{
-	if (bInteractionUIOpen || bInteractionPromptSuppressed || (CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection()))
-	{
-		return false;
-	}
-
-	if (const Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
-	{
-		if (PlayerCharacter->IsUsingSeatedMachine())
-		{
-			return false;
-		}
-	}
-
-	if (!WorldInteractionPromptWidget && WorldInteractionPromptWidgetClass && IsLocalPlayerController())
-	{
-		WorldInteractionPromptWidget = CreateWidget<UWorldInteractionPromptWidget>(this, WorldInteractionPromptWidgetClass);
-		if (WorldInteractionPromptWidget)
-		{
-			WorldInteractionPromptWidget->AddToPlayerScreen(120);
-		}
-	}
-
-	if (!WorldInteractionPromptWidget)
-	{
-		return false;
-	}
-
-	WorldInteractionPromptWidget->BP_SetPromptText(PromptText);
-	WorldInteractionPromptWidget->BP_SetPrimaryPromptVisible(true);
-	WorldInteractionPromptWidget->BP_SetExitPromptVisible(false);
-	WorldInteractionPromptWidget->SetVisibility(ESlateVisibility::Visible);
-	return true;
-}
-
-void Acasino_simulatorPlayerController::CloseWorldInteraction()
-{
-	if (WorldInteractionPromptWidget)
-	{
-		WorldInteractionPromptWidget->SetVisibility(ESlateVisibility::Hidden);
-	}
-}
-
-void Acasino_simulatorPlayerController::SetWorldInteractionPromptControls(bool bPrimaryVisible, bool bExitVisible)
-{
-	if (!WorldInteractionPromptWidget && WorldInteractionPromptWidgetClass && IsLocalPlayerController())
-	{
-		WorldInteractionPromptWidget = CreateWidget<UWorldInteractionPromptWidget>(this, WorldInteractionPromptWidgetClass);
-		if (WorldInteractionPromptWidget)
-		{
-			WorldInteractionPromptWidget->AddToPlayerScreen(120);
-		}
-	}
-
-	if (!WorldInteractionPromptWidget)
-	{
-		return;
-	}
-
-	WorldInteractionPromptWidget->BP_SetPrimaryPromptVisible(bPrimaryVisible);
-	WorldInteractionPromptWidget->BP_SetExitPromptVisible(bExitVisible);
-
-	const bool bShouldShowPrompt = bPrimaryVisible || bExitVisible;
-	WorldInteractionPromptWidget->SetVisibility(bShouldShowPrompt ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
-}
-
 void Acasino_simulatorPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -891,6 +812,7 @@ void Acasino_simulatorPlayerController::ToggleInventory()
 	}
 	SetShowMouseCursor(InventoryWidget->GetVisibility() == ESlateVisibility::SelfHitTestInvisible);
 }
+
 bool Acasino_simulatorPlayerController::IsInventoryOpen() const
 {
 	return InventoryWidget && InventoryWidget->IsInViewport();

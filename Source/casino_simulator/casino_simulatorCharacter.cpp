@@ -676,11 +676,19 @@ void Acasino_simulatorCharacter::ServerPlaceDiceBet_Implementation(ANPC_Dice* Di
 	}
 }
 
-void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerAnte_Implementation(AThreeCardPokerTableActor* Table, int32 Amount)
+void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerPlay_Implementation(AThreeCardPokerTableActor* Table, int32 AnteAmount, int32 PairBetAmount)
 {
 	if (Table)
 	{
-		Table->ExecutePlaceAnte(this, Amount);
+		Table->ExecutePlacePlayGame(this, AnteAmount, PairBetAmount);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerAnte_Implementation(AThreeCardPokerTableActor* Table, int32 Amount, int32 PairBetAmout)
+{
+	if (Table)
+	{
+		Table->ExecutePlaceAnte(this, Amount, PairBetAmout);
 	}
 }
 

@@ -220,7 +220,10 @@ public:
 	 * by that client's connection - see AThreeCardPokerTableActor's class comment). Same forwarding
 	 * trick as ServerPlaceDiceBet. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
-	void ServerPlaceThreeCardPokerAnte(AThreeCardPokerTableActor* Table, int32 Amount);
+	void ServerPlaceThreeCardPokerPlay(AThreeCardPokerTableActor* Table, int32 AnteAmount, int32 PairBetAmount);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
+	void ServerPlaceThreeCardPokerAnte(AThreeCardPokerTableActor* Table, int32 Amount, int32 PairBetAmount);
 
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
 	void ServerPlaceThreeCardPokerPairPlus(AThreeCardPokerTableActor* Table, int32 Amount);

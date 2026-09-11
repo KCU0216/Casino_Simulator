@@ -44,7 +44,21 @@ public:
 	/** Server-only entry point (RequestWorldInteraction/Server_RequestWorldInteraction already
 	 * guarantee that). Assigns InteractingCharacter as this table's player via SetInteractingPlayer. */
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
+
+	/** Runs on the interacting player's own machine before the server call lands (see
+	 * IWorldInteractable::OnLocalInteract). Just forwards to BP_OnLocalThreeCardPokerInteract so
+	 * BP_ThreeCardPokerTable can open the WBP_ThreeCardPokerBetting widget immediately - same
+	 * pattern as ABlackjackTableInteractionActor::OnLocalInteract_Implementation ->
+	 * BP_OnLocalBlackjackInteract. */
+	virtual void OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
 	//~ End AWorldInteractableBase interface
+
+	/** Blueprint hook for opening the betting UI locally as soon as the player presses E on this
+	 * table - fired from OnLocalInteract_Implementation, before the server has even processed the
+	 * interaction. 'this' is the table itself, so BP_ThreeCardPokerTable doesn't need it passed
+	 * separately (unlike Blackjack's version, which targets a separate interaction actor). */
+	UFUNCTION(BlueprintImplementableEvent, Category="ThreeCardPoker|Interaction", meta=(DisplayName="On Local Three Card Poker Interact"))
+	void BP_OnLocalThreeCardPokerInteract(Acasino_simulatorCharacter* InteractingCharacter);
 
 	/** Server-only. Assigns (or clears, with nullptr) who this table is currently playing with,
 	 * and hands ownership to that player's connection so relevance/priority follow them. Resets
@@ -57,12 +71,17 @@ public:
 	/** Entry point: places the mandatory Ante and, once it lands, immediately deals both hands
 	 * (there's no other seat to wait for). Routes through a Server RPC on Player when called from
 	 * a client, same as ANPC_Dice::PlaceBet. */
+	UFUNCTION(BlueprintCallable, Category = "ThreeCardPoker|Round")
+	bool PlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount);
+
+	bool ExecutePlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount);
+
 	UFUNCTION(BlueprintCallable, Category="ThreeCardPoker|Round")
-	bool PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount);
+	bool PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount);
 
 	/** Authoritative half of PlaceAnte. Server-only; validates Player is the one currently
 	 * interacting with this table. */
-	bool ExecutePlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount);
+	bool ExecutePlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount);
 
 	UFUNCTION(BlueprintCallable, Category="ThreeCardPoker|Round")
 	bool PlacePairPlus(Acasino_simulatorCharacter* Player, int32 Amount);

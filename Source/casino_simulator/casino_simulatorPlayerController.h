@@ -10,7 +10,6 @@ class UInputMappingContext;
 class UInputAction;
 class UUserWidget;
 class Ucasino_simulatorPlayerHUD;
-class UWorldInteractionPromptWidget;
 class UAbilitySystemComponent;
 class ANPC_Base;
 class ASeatedMachineBase;
@@ -74,12 +73,6 @@ protected:
 	/** Pointer to the spawned player HUD widget */
 	UPROPERTY()
 	TObjectPtr<Ucasino_simulatorPlayerHUD> PlayerHUDWidget;
-
-	UPROPERTY(EditAnywhere, Category="HUD")
-	TSubclassOf<UWorldInteractionPromptWidget> WorldInteractionPromptWidgetClass;
-
-	UPROPERTY()
-	TObjectPtr<UWorldInteractionPromptWidget> WorldInteractionPromptWidget;
 
 	/** Ability system component we're currently listening to for attribute changes, so we can unbind cleanly when the pawn changes */
 	UPROPERTY()
@@ -211,15 +204,6 @@ public:
 	 * server via Server_InteractWithNPC on a client, and disables movement for non-Shop NPCs - same
 	 * behavior this used to run from inline inside InteractWithCurrentTarget. */
 	void RequestNPCInteraction(ANPC_Base* Target);
-
-	UFUNCTION(BlueprintCallable, Category="Interaction")
-	bool OpenWorldInteraction(const FText& PromptText);
-
-	UFUNCTION(BlueprintCallable, Category="Interaction")
-	void CloseWorldInteraction();
-
-	UFUNCTION(BlueprintCallable, Category="Interaction")
-	void SetWorldInteractionPromptControls(bool bPrimaryVisible, bool bExitVisible);
 
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	bool IsInteractionUIOpen() const { return bInteractionUIOpen; }
