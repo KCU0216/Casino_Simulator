@@ -40,7 +40,7 @@ struct FStartupAbilityDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	TSubclassOf<UGameplayAbility> AbilityClass;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities", meta = (Categories = "Input"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	FGameplayTag InputTag;
 };
 
