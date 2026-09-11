@@ -714,7 +714,7 @@ void Acasino_simulatorPlayerController::OpenCarriedOreInteraction()
 
 	if (PlayerHUDWidget)
 	{
-		PlayerHUDWidget->BP_SetInteractionPromptText(FText::FromString(TEXT("E Drop")));
+		PlayerHUDWidget->BP_SetInteractionPromptText(FText::FromString(TEXT("Drop")));
 		PlayerHUDWidget->BP_OpenInterection();
 	}
 }

@@ -21,10 +21,14 @@
 #include "casino_simulatorPlayerController.h"
 #include "RaceGame/RaceManager.h"
 #include "Mining/MiningShopComponent.h"
+#include "Mining/OrePickupBase.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
 #include "Item/ItemData.h"
 #include "casino_simulator.h"
+#include "NativeGameplayTags.h"
+
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Carry, "Ability.Ore.Carry");
 
 Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 {
@@ -161,7 +165,7 @@ void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(ASeatedMachineBase* M
 void Acasino_simulatorCharacter::SetCarriedOre(AOrePickupBase* NewCarriedOre)
 {
 	CarriedOre = NewCarriedOre;
-	UpdateCarriedOreInteractionPrompt();
+	HandleCarriedOreChanged();
 }
 
 int32 Acasino_simulatorCharacter::GetPickaxeMiningPower() const
@@ -347,7 +351,7 @@ void Acasino_simulatorCharacter::UpdateMovementFromAttributes() const
 
 void Acasino_simulatorCharacter::OnRep_CarriedOre()
 {
-	UpdateCarriedOreInteractionPrompt();
+	HandleCarriedOreChanged();
 }
 
 void Acasino_simulatorCharacter::UpdateCarriedOreInteractionPrompt() const
@@ -370,6 +374,44 @@ void Acasino_simulatorCharacter::UpdateCarriedOreInteractionPrompt() const
 	}
 
 	PC->CloseInteraction();
+}
+
+void Acasino_simulatorCharacter::HandleCarriedOreChanged() const
+{
+	UpdateCarriedOreInteractionPrompt();
+
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (CarriedOre)
+	{
+		StartOreCarryAbility();
+		return;
+	}
+
+	StopOreCarryAbility();
+}
+
+void Acasino_simulatorCharacter::StartOreCarryAbility() const
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	AbilitySystemComponent->TryActivateAbilityByTag(TAG_Ability_Ore_Carry);
+}
+
+void Acasino_simulatorCharacter::StopOreCarryAbility() const
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	AbilitySystemComponent->CancelAbilitiesByTag(TAG_Ability_Ore_Carry);
 }
 
 void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -665,6 +707,13 @@ void Acasino_simulatorCharacter::ClientMiningShopPurchaseFailed_Implementation(U
 	if (MiningShopComponent)
 	{
 		MiningShopComponent->HandlePurchaseFailedFromServer(UpgradeType, Reason);
+	}
+}
+void Acasino_simulatorCharacter::ServerUpdateCarriedOreTargetLocation_Implementation(FVector TargetLocation)
+{
+	if (CarriedOre)
+	{
+		CarriedOre->UpdateCarryTargetLocation(this, TargetLocation);
 	}
 }
 

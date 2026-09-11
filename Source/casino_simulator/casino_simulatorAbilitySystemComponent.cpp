@@ -96,3 +96,51 @@ void Ucasino_simulatorAbilitySystemComponent::ReleaseInputTag(FGameplayTag Input
 		);
 	}
 }
+
+bool Ucasino_simulatorAbilitySystemComponent::TryActivateAbilityByTag(FGameplayTag AbilityTag)
+{
+	if (!AbilityTag.IsValid())
+	{
+		return false;
+	}
+
+	bool bActivated = false;
+
+	ABILITYLIST_SCOPE_LOCK();
+	for (FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		if (!Spec.Ability || !Spec.Ability->GetAssetTags().HasTagExact(AbilityTag))
+		{
+			continue;
+		}
+
+		if (Spec.IsActive())
+		{
+			bActivated = true;
+			continue;
+		}
+
+		bActivated |= TryActivateAbility(Spec.Handle);
+	}
+
+	return bActivated;
+}
+
+void Ucasino_simulatorAbilitySystemComponent::CancelAbilitiesByTag(FGameplayTag AbilityTag)
+{
+	if (!AbilityTag.IsValid())
+	{
+		return;
+	}
+
+	ABILITYLIST_SCOPE_LOCK();
+	for (FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		if (!Spec.Ability || !Spec.IsActive() || !Spec.Ability->GetAssetTags().HasTagExact(AbilityTag))
+		{
+			continue;
+		}
+
+		CancelAbilityHandle(Spec.Handle);
+	}
+}

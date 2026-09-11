@@ -26,6 +26,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Gameplay Abilities|Input")
 	void ReleaseInputTag(FGameplayTag InputTag);
 
+	UFUNCTION(BlueprintCallable, Category = "Gameplay Abilities|Tags")
+	bool TryActivateAbilityByTag(FGameplayTag AbilityTag);
+
+	UFUNCTION(BlueprintCallable, Category = "Gameplay Abilities|Tags")
+	void CancelAbilitiesByTag(FGameplayTag AbilityTag);
+
 private:
 	/** Pressed Input Tag -> exact specs that should receive its matching release. */
 	TMap<FGameplayTag, TArray<FGameplayAbilitySpecHandle>> PressedInputHandles;

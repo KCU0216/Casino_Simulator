@@ -210,6 +210,9 @@ public:
 	UFUNCTION(Client, Reliable, Category = "Mining|Shop")
 	void ClientMiningShopPurchaseFailed(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType, const FString& Reason);
 
+	UFUNCTION(Server, Unreliable, BlueprintCallable, Category = "Mining|Data")
+	void ServerUpdateCarriedOreTargetLocation(FVector TargetLocation);
+
 	/** Forwards a dice game bet placed by this (locally-owned) character to the server, since a
 	 * client can't call a Server RPC declared on DiceNPC directly (it isn't owned by that client). */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Dice Game")
@@ -300,6 +303,9 @@ protected:
 	void OnRep_CarriedOre();
 
 	void UpdateCarriedOreInteractionPrompt() const;
+	void HandleCarriedOreChanged() const;
+	void StartOreCarryAbility() const;
+	void StopOreCarryAbility() const;
 
 	/** Called from Input Actions for movement input */
 	void MoveInput(const FInputActionValue& Value);
