@@ -18,8 +18,6 @@ namespace
 {
 	constexpr float WeightForFullPenalty = 100.0f;
 	constexpr float MinimumCarryMovementMultiplier = 0.1f;
-	constexpr float OreThrowImpulse = 900.0f;
-	constexpr float ThrowUpwardBias = 0.15f;
 }
 
 // Sets default values
@@ -27,7 +25,7 @@ AOrePickupBase::AOrePickupBase()
 {
 	bReplicates = true;
 	SetReplicateMovement(true);
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	OrePickupMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OrePickupMesh"));
 	SetRootComponent(OrePickupMesh);
@@ -35,22 +33,22 @@ AOrePickupBase::AOrePickupBase()
 	OrePickupMesh->SetCollisionProfileName(TEXT("BlockAll"));
 	OrePickupMesh->SetCollisionObjectType(ECC_PhysicsBody);
 	OrePickupMesh->SetGenerateOverlapEvents(true);
-	OrePickupMesh->SetSimulatePhysics(false);
-	OrePickupMesh->SetEnableGravity(false);
+	OrePickupMesh->SetSimulatePhysics(true);
+	OrePickupMesh->SetEnableGravity(true);
 }
-
+//상호작용 할 수 있는지 검사
 bool AOrePickupBase::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
 {
 	return Super::CanInteract(InteractingCharacter)
-		&& Carrier == nullptr;
+		&& Carriers.Num() < MaxCarryCount;
 }
-
+//무게에 따른 속도 변화량 가져오기
 float AOrePickupBase::GetCarryMovementMultiplier() const
 {
 	const float WeightRatio = FMath::Clamp(Weight / WeightForFullPenalty, 0.0f, 1.0f);
 	return FMath::Clamp(1.0f - WeightRatio, MinimumCarryMovementMultiplier, 1.0f);
 }
-
+//로컬에서 시작 (예측)
 void AOrePickupBase::BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter)
 {
 	if (!InteractingCharacter)
@@ -76,7 +74,7 @@ void AOrePickupBase::BeginLocalInteraction(Acasino_simulatorCharacter* Interacti
 		Payload
 	);
 }
-
+//주워보기
 bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 {
 	if (!HasAuthority() || !CanInteract(Character) || Character->GetCarriedOre())
@@ -84,84 +82,121 @@ bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 		return false;
 	}
 
-	Carrier = Character;
-	LastCarrier = Character;
-	bUsePhysics = false;
+	if (!CanJoinCarry(Character))
+	{
+		return false;
+	}
+
+	if (Carriers.Num() == 0)
+	{
+		OrePickupMesh->SetEnableGravity(false);
+	}
+	
+
+	Carriers.AddUnique(Character);
+	LastCarriers.AddUnique(Character);
+	CarrierTargetLocations.FindOrAdd(Character) = GetActorLocation();
 	Character->SetCarriedOre(this);
-	SetReplicateMovement(false);
-	UpdatePickupCollision();
-	UpdatePickupPhysics();
-	AttachToCarrier(Character);
 	ForceNetUpdate();
 	return true;
 }
-
-bool AOrePickupBase::TryDrop(Acasino_simulatorCharacter* Character, FVector DropLocation)
+//놓아보기
+bool AOrePickupBase::TryDrop(Acasino_simulatorCharacter* Character)
 {
-	constexpr float MaxDropDistance = 300.0f;
-
 	if (!HasAuthority()
 		|| !Character
-		|| Carrier != Character
 		|| Character->GetCarriedOre() != this
-		|| FVector::DistSquared(Character->GetActorLocation(), DropLocation) > FMath::Square(MaxDropDistance))
+		)
 	{
 		return false;
 	}
 
-	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	SetReplicateMovement(true);
-	SetActorLocation(DropLocation, false, nullptr, ETeleportType::TeleportPhysics);
-
-	Carrier = nullptr;
-	LastCarrier = Character;
-	bUsePhysics = true;
+	Carriers.Remove(Character);
+	CarrierTargetLocations.Remove(Character);
+	if (Carriers.Num() == 0)
+	{
+		OrePickupMesh->SetEnableGravity(true);
+	}
 	Character->SetCarriedOre(nullptr);
-	UpdatePickupCollision();
-	UpdatePickupPhysics();
 	ForceNetUpdate();
 	return true;
 }
-
-bool AOrePickupBase::TryThrow(Acasino_simulatorCharacter* Character, FVector ThrowDirection)
+//나도 참여 가능하냐
+bool AOrePickupBase::CanJoinCarry(Acasino_simulatorCharacter* Character)
 {
-	if (!HasAuthority()
-		|| !Character
-		|| Carrier != Character
-		|| Character->GetCarriedOre() != this)
+	if (!Character)
+	{
+		return false;
+	}
+	if (Carriers.Num() >= MaxCarryCount)
+	{
+		return false;
+	}
+	if (Carriers.Contains(Character))
+	{
+		return false;
+	}
+	return true;
+}
+
+//움직일 수 있냐
+bool AOrePickupBase::CanMoveCarry()
+{
+	return Carriers.Num() >= MinCarryCount && Carriers.Num() <= MaxCarryCount;
+}
+
+bool AOrePickupBase::UpdateCarryTargetLocation(Acasino_simulatorCharacter* Character, FVector TargetLocation)
+{
+	if (!HasAuthority() || !IsValid(Character) || !Carriers.Contains(Character) || TargetLocation.ContainsNaN())
 	{
 		return false;
 	}
 
-	FVector LaunchDirection = ThrowDirection.GetSafeNormal();
-	if (LaunchDirection.IsNearlyZero())
+	if (FVector::DistSquared(Character->GetActorLocation(), TargetLocation) > FMath::Square(MaxCarryTargetDistance))
 	{
-		LaunchDirection = Character->GetActorForwardVector();
+		return false;
 	}
 
-	LaunchDirection = (LaunchDirection + FVector::UpVector * ThrowUpwardBias).GetSafeNormal();
-
-	FVector ViewLocation;
-	FRotator ViewRotation;
-	Character->GetActorEyesViewPoint(ViewLocation, ViewRotation);
-	const FVector ReleaseLocation = ViewLocation + LaunchDirection * 100.0f;
-
-	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	SetReplicateMovement(true);
-	SetActorLocation(ReleaseLocation, false, nullptr, ETeleportType::TeleportPhysics);
-
-	Carrier = nullptr;
-	LastCarrier = Character;
-	bUsePhysics = true;
-	Character->SetCarriedOre(nullptr);
-	UpdatePickupCollision();
-	UpdatePickupPhysics();
-
-	OrePickupMesh->WakeRigidBody();
-	OrePickupMesh->AddImpulse(LaunchDirection * OreThrowImpulse, NAME_None, false);
-
-	ForceNetUpdate();
+	CarrierTargetLocations.FindOrAdd(Character) = TargetLocation;
 	return true;
+}
+
+void AOrePickupBase::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (!CanMoveCarry() || !HasAuthority())
+	{
+		return;
+	}
+
+	FVector TotalSpringForce = FVector::ZeroVector;
+	for (const TObjectPtr<Acasino_simulatorCharacter>& Carrier : Carriers)
+	{
+		if (!IsValid(Carrier))
+		{
+			continue;
+		}
+
+		const FVector* TargetLocation = CarrierTargetLocations.Find(Carrier);
+		if (!TargetLocation || TargetLocation->ContainsNaN())
+		{
+			continue;
+		}
+
+		if (FVector::DistSquared(Carrier->GetActorLocation(), *TargetLocation) > FMath::Square(MaxCarryTargetDistance))
+		{
+			continue;
+		}
+
+		TotalSpringForce += (*TargetLocation - GetActorLocation()) * CarrySpringStrength;
+	}
+
+	const FVector CurrentVelocity = OrePickupMesh->GetPhysicsLinearVelocity();
+	const FVector DampingForce = -CurrentVelocity * CarryDampingStrength;
+	const FVector CarryForce = (TotalSpringForce + DampingForce).GetClampedToMaxSize(MaxCarryForce);
+
+	OrePickupMesh->AddForce(CarryForce);
 }
 
 // Called when the game starts or when spawned
@@ -169,66 +204,17 @@ void AOrePickupBase::BeginPlay()
 {
 	Super::BeginPlay();
 
-
+	OrePickupMesh->SetMassOverrideInKg(NAME_None, FMath::Max(Weight, 1.0f), true);
 	
 }
 
-void AOrePickupBase::UpdatePickupCollision()
+void AOrePickupBase::OnRep_Carriers()
 {
-	OrePickupMesh->SetCollisionEnabled(
-		Carrier != nullptr
-		? ECollisionEnabled::NoCollision
-		: ECollisionEnabled::QueryAndPhysics
+	ReceiveCarrierCountChanged(
+		Carriers.Num(),
+		MinCarryCount,
+		MaxCarryCount
 	);
-}
-
-void AOrePickupBase::UpdatePickupPhysics()
-{
-	const bool bShouldSimulatePhysics = Carrier == nullptr && bUsePhysics;
-	OrePickupMesh->SetMassOverrideInKg(NAME_None, FMath::Max(Weight, 1.0f), true);
-	OrePickupMesh->SetEnableGravity(bShouldSimulatePhysics);
-	OrePickupMesh->SetSimulatePhysics(bShouldSimulatePhysics);
-}
-
-void AOrePickupBase::AttachToCarrier(Acasino_simulatorCharacter* Character)
-{
-	if (Character && Character->GetFirstPersonMesh())
-	{
-		const FAttachmentTransformRules AttachmentRules(
-			EAttachmentRule::SnapToTarget,
-			EAttachmentRule::SnapToTarget,
-			EAttachmentRule::KeepRelative,
-			false
-		);
-
-		AttachToComponent(
-			Character->GetMesh(),
-			AttachmentRules,
-			TEXT("hand_r")
-		);
-	}
-}
-
-void AOrePickupBase::OnRep_Carrier()
-{
-	UpdatePickupCollision();
-	UpdatePickupPhysics();
-
-	if (Carrier)
-	{
-		SetReplicateMovement(false);
-		AttachToCarrier(Carrier);
-	}
-	else
-	{
-		SetReplicateMovement(true);
-		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	}
-}
-
-void AOrePickupBase::OnRep_UsePhysics()
-{
-	UpdatePickupPhysics();
 }
 
 void AOrePickupBase::GetLifetimeReplicatedProps(
@@ -236,7 +222,5 @@ void AOrePickupBase::GetLifetimeReplicatedProps(
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME(AOrePickupBase, Carrier);
-	DOREPLIFETIME(AOrePickupBase, bUsePhysics);
+	DOREPLIFETIME(AOrePickupBase, Carriers);
 }
-

@@ -47,13 +47,15 @@ bool AMiningSellZone::TrySellOre(AOrePickupBase* OrePickup)
 		return false;
 	}
 
-	if (bRequireDroppedOre && OrePickup->GetCarrier())
+	if (bRequireDroppedOre && OrePickup->IsBeingCarried())
 	{
 		return false;
 	}
 
-	Acasino_simulatorCharacter* Seller = OrePickup->GetLastCarrier();
-	if (!Seller)
+	const TArray<TObjectPtr<Acasino_simulatorCharacter>>& Participants =
+		OrePickup->GetSaleParticipants();
+
+	if (Participants.Num() <= 0)
 	{
 		return false;
 	}
@@ -64,12 +66,26 @@ bool AMiningSellZone::TrySellOre(AOrePickupBase* OrePickup)
 		return false;
 	}
 
-	Seller->AddCurrency(static_cast<float>(SalePrice));
-	ReceiveOreSold(OrePickup, Seller, SalePrice);
+	const int32 Share = SalePrice / Participants.Num();
+	const int32 Remainder = SalePrice % Participants.Num();
+
+	for (int32 Index = 0; Index < Participants.Num(); ++Index)
+	{
+		Acasino_simulatorCharacter* Participant = Participants[Index];
+		if (!IsValid(Participant))
+		{
+			continue;
+		}
+
+		const int32 Payout = Share + (Index < Remainder ? 1 : 0);
+		Participant->AddCurrency(static_cast<float>(Payout));
+	}
+
+	//ReceiveOreSold(OrePickup, nullptr, SalePrice);
 	OrePickup->Destroy();
 	return true;
 }
-
+//판매존에 들어온다면 ? 
 void AMiningSellZone::OnSellSphereBeginOverlap(
 	UPrimitiveComponent* OverlappedComponent,
 	AActor* OtherActor,
@@ -93,7 +109,7 @@ void AMiningSellZone::OnSellSphereBeginOverlap(
 	TrySellOre(OrePickup);
 	StartSellRetryTimer();
 }
-
+//판매존에서 나가면 목록에서 제외
 void AMiningSellZone::OnSellSphereEndOverlap(
 	UPrimitiveComponent* OverlappedComponent,
 	AActor* OtherActor,
@@ -114,7 +130,7 @@ void AMiningSellZone::OnSellSphereEndOverlap(
 	OverlappingOres.Remove(OrePickup);
 	StopSellRetryTimerIfIdle();
 }
-
+//다시 팔아보기 (타이머 타고 들어옴)
 void AMiningSellZone::RetrySellOverlappingOres()
 {
 	for (int32 Index = OverlappingOres.Num() - 1; Index >= 0; --Index)
@@ -122,19 +138,20 @@ void AMiningSellZone::RetrySellOverlappingOres()
 		AOrePickupBase* OrePickup = OverlappingOres[Index];
 		if (!IsValid(OrePickup))
 		{
-			OverlappingOres.RemoveAtSwap(Index);
+			OverlappingOres.Remove(OrePickup);
 			continue;
 		}
 
 		if (TrySellOre(OrePickup))
 		{
-			OverlappingOres.RemoveAtSwap(Index);
+			OverlappingOres.Remove(OrePickup);
 		}
 	}
 
 	StopSellRetryTimerIfIdle();
 }
 
+//다시팔기 타이머 시작
 void AMiningSellZone::StartSellRetryTimer()
 {
 	if (!GetWorld() || GetWorldTimerManager().IsTimerActive(SellRetryTimerHandle))
@@ -151,6 +168,7 @@ void AMiningSellZone::StartSellRetryTimer()
 	);
 }
 
+//다시팔기 타이머 멈춤
 void AMiningSellZone::StopSellRetryTimerIfIdle()
 {
 	if (OverlappingOres.IsEmpty())
@@ -158,7 +176,7 @@ void AMiningSellZone::StopSellRetryTimerIfIdle()
 		GetWorldTimerManager().ClearTimer(SellRetryTimerHandle);
 	}
 }
-
+//광물 잡힌거 있냐
 bool AMiningSellZone::IsValidSellOverlap(AOrePickupBase* OrePickup, const UPrimitiveComponent* OtherComp) const
 {
 	return OrePickup && OtherComp == OrePickup->GetOrePickupMesh();
