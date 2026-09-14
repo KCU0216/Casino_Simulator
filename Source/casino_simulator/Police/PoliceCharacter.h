@@ -1,17 +1,12 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
-
+// ACharacter를 상속받는다.
+// 캡슐 충돌, 스켈레탈 메시, CharacterMovementComponent를 기본으로 가진다.
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Enemy/EnemyBaseCharacter.h"
 #include "PoliceCharacter.generated.h"
 
-/**
- * Base character for the police AI.
- *
- * The character owns the physical representation and movement component. Target selection and
- * navigation requests belong to APoliceAIController so that the day system can control them later.
- */
 UCLASS(Blueprintable)
 class CASINO_SIMULATOR_API APoliceCharacter : public AEnemyBaseCharacter
 {
@@ -20,3 +15,5 @@ class CASINO_SIMULATOR_API APoliceCharacter : public AEnemyBaseCharacter
 public:
 	APoliceCharacter();
 };
+
+

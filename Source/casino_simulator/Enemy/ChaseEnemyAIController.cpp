@@ -4,6 +4,7 @@
 
 #include "AI/Navigation/NavigationTypes.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "TimerManager.h"
 #include "casino_simulator.h"
@@ -30,6 +31,11 @@ bool AChaseEnemyAIController::StartChase(APawn* InTarget)
 	bIsChasing = true;
 	ScheduleChaseRetry();
 
+	if (TryCompleteChase())
+	{
+		return true;
+	}
+
 	return RequestChaseMove(false);
 }
 
@@ -37,18 +43,61 @@ void AChaseEnemyAIController::StopChase()
 {
 	bIsChasing = false;
 	ClearChaseRetry();
+	ChaseTarget = nullptr;
 
+	// AbortMove may synchronously call OnMoveCompleted, so clear chase state first.
 	if (UPathFollowingComponent* ActivePathFollowing = GetPathFollowingComponent())
 	{
 		ActivePathFollowing->AbortMove(*this, FPathFollowingResultFlags::UserAbort);
 	}
+}
 
-	ChaseTarget = nullptr;
+bool AChaseEnemyAIController::HasReachedChaseTarget() const
+{
+	const APawn* ControlledPawn = GetPawn();
+	const APawn* TargetPawn = GetChaseTarget();
+	if (!IsValid(ControlledPawn) || !IsValid(TargetPawn))
+	{
+		return false;
+	}
+
+	const UPathFollowingComponent* ActivePathFollowing = GetPathFollowingComponent();
+	return ActivePathFollowing && ActivePathFollowing->HasReached(
+		*TargetPawn,
+		EPathFollowingReachMode::OverlapAgentAndGoal,
+		ChaseAcceptanceRadius
+	);
+}
+
+bool AChaseEnemyAIController::TryCompleteChase()
+{
+	if (!HasAuthority() || !bIsChasing || !IsValid(GetPawn()) || !IsValid(ChaseTarget)
+		|| !HasReachedChaseTarget())
+	{
+		return false;
+	}
+
+	APawn* ReachedTarget = ChaseTarget.Get();
+	UE_LOG(
+		Logcasino_simulator,
+		Log,
+		TEXT("Enemy '%s' reached chase target '%s'. Distance=%.1f."),
+		*GetNameSafe(GetPawn()),
+		*GetNameSafe(ReachedTarget),
+		GetPawn()->GetDistanceTo(ReachedTarget)
+	);
+
+	StopChase();
+	if (IsValid(ReachedTarget))
+	{
+		OnChaseReachedTarget.Broadcast(ReachedTarget);
+	}
+	return true;
 }
 
 bool AChaseEnemyAIController::RequestChaseMove(bool bIsRetry)
 {
-	if (!bIsChasing || !IsValid(ChaseTarget) || !GetPawn())
+	if (!bIsChasing || !IsValid(ChaseTarget) || !IsValid(GetPawn()))
 	{
 		return false;
 	}
@@ -105,9 +154,15 @@ void AChaseEnemyAIController::ScheduleChaseRetry()
 
 void AChaseEnemyAIController::RetryChase()
 {
-	if (!HasAuthority() || !bIsChasing || !IsValid(ChaseTarget) || !GetPawn())
+	if (!HasAuthority() || !bIsChasing || !IsValid(ChaseTarget) || !IsValid(GetPawn()))
 	{
 		StopChase();
+		return;
+	}
+
+	// Check the reach condition even while the existing movement is still active.
+	if (TryCompleteChase())
+	{
 		return;
 	}
 
@@ -134,12 +189,16 @@ void AChaseEnemyAIController::OnMoveCompleted(FAIRequestID RequestID, const FPat
 {
 	Super::OnMoveCompleted(RequestID, Result);
 
-	if (!bIsChasing)
+	if (!HasAuthority() || !bIsChasing)
 	{
 		return;
 	}
 
-	const bool bReachedTarget = Result.IsSuccess() && IsValid(ChaseTarget);
+	if (!IsValid(ChaseTarget) || !IsValid(GetPawn()))
+	{
+		StopChase();
+		return;
+	}
 
 	UE_LOG(
 		Logcasino_simulator,
@@ -151,11 +210,9 @@ void AChaseEnemyAIController::OnMoveCompleted(FAIRequestID RequestID, const FPat
 		*GetNameSafe(ChaseTarget.Get())
 	);
 
-	if (bReachedTarget)
+	// A finished path alone does not prove that the actual target was reached.
+	if (TryCompleteChase())
 	{
-		bIsChasing = false;
-		ClearChaseRetry();
-		OnChaseReachedTarget.Broadcast(ChaseTarget.Get());
 		return;
 	}
 

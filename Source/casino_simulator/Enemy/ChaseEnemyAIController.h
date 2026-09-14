@@ -20,6 +20,7 @@ class CASINO_SIMULATOR_API AChaseEnemyAIController : public AEnemyBaseAIControll
 public:
 	AChaseEnemyAIController();
 
+	/** False can still leave a valid chase waiting for a movement retry. */
 	UFUNCTION(BlueprintCallable, Category="Enemy|Chase")
 	bool StartChase(APawn* InTarget);
 
@@ -49,10 +50,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Enemy|Chase", meta=(ClampMin="0.05"))
 	float ChaseRetryInterval = 0.25f;
 
+	/** Children can specialize the reach condition without duplicating movement. */
+	virtual bool HasReachedChaseTarget() const;
+
 	virtual void OnMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result) override;
 	virtual void OnUnPossess() override;
 
 private:
+	bool TryCompleteChase();
 	bool RequestChaseMove(bool bIsRetry);
 	void ScheduleChaseRetry();
 	void RetryChase();

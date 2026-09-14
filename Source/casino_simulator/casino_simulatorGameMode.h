@@ -6,6 +6,11 @@
 #include "GameFramework/GameModeBase.h"
 #include "casino_simulatorGameMode.generated.h"
 
+
+class APawn;
+class AACtor;
+
+
 /**
  *  Simple GameMode for a first person game
  */
@@ -16,6 +21,13 @@ class Acasino_simulatorGameMode : public AGameModeBase
 
 public:
 	Acasino_simulatorGameMode();
+
+	UFUNCTION(BlueprintCallable, Category = "Police")
+	void ArrestPlayer(APawn* TargetPlayer, AActor* PoliceActor, AActor* JailPoint);
+
+	UFUNCTION(BlueprintCallable, Category = "Police|Jail")
+	bool PayBail(APawn* Player, float BailAmount);
+
 };
 
 
