@@ -86,6 +86,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine|Seat")
 	bool bMoveUserToSeatOnUse = true;
 
+	// SeatPoint 위치에서 위로(Z) 추가로 띄울 높이
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine|Seat")
+	float SeatHeightOffset = 50.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine|Seat")
 	bool bDisableUserMovementOnUse = true;
 

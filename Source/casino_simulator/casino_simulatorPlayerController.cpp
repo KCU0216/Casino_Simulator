@@ -403,6 +403,11 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 	IWorldInteractable::Execute_OnLocalInteract(Target, PlayerCharacter);
 	CloseInteraction();
 
+	FGameplayTagContainer TagContainer;
+	TagContainer.AddTag(FGameplayTag::RequestGameplayTag(FName("State.Sit")));
+
+	PlayerCharacter->GetAbilitySystemComponent()->TryActivateAbilitiesByTag(TagContainer, true);
+
 	if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
 	{
 		MovementComponent->DisableMovement();
