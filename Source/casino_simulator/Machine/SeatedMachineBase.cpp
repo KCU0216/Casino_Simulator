@@ -9,6 +9,7 @@
 #include "GameplayTagContainer.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
+#include "AbilitySystemComponent.h"
 
 ASeatedMachineBase::ASeatedMachineBase()
 {
@@ -216,6 +217,11 @@ void ASeatedMachineBase::EnterMachineUseView(Acasino_simulatorCharacter* Request
 
 	if (bMoveUserToSeatOnUse && SeatPoint)
 	{
+		FGameplayTagContainer TagContainer;
+		TagContainer.AddTag(FGameplayTag::RequestGameplayTag(FName("State.Sit")));
+	
+		RequestingCharacter->GetAbilitySystemComponent()->TryActivateAbilitiesByTag(TagContainer, true);
+
 		FVector SeatLocation = SeatPoint->GetComponentLocation();
 		SeatLocation.Z += SeatHeightOffset;
 		SeatLocation.Y += SeatHeightOffset/2;
