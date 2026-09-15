@@ -41,6 +41,8 @@ public:
 	void BP_OpenInterection();
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD", meta = (DisplayName = "Close Interection"))
 	void BP_CloseInterection();
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD", meta = (DisplayName = "Set Interaction Prompt Text"))
+	void BP_SetInteractionPromptText(const FText& PromptText);
 
 	/** Passes the full current inventory to Blueprint whenever PlayerState's inventory changes, so item slot widgets (e.g. WBP_ItemSlot) can be rebuilt/refreshed. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD", meta = (DisplayName = "Inventory Updated"))

@@ -10,7 +10,6 @@ class UInputMappingContext;
 class UInputAction;
 class UUserWidget;
 class Ucasino_simulatorPlayerHUD;
-class UWorldInteractionPromptWidget;
 class UAbilitySystemComponent;
 class ANPC_Base;
 class ASeatedMachineBase;
@@ -75,12 +74,6 @@ protected:
 	UPROPERTY()
 	TObjectPtr<Ucasino_simulatorPlayerHUD> PlayerHUDWidget;
 
-	UPROPERTY(EditAnywhere, Category="HUD")
-	TSubclassOf<UWorldInteractionPromptWidget> WorldInteractionPromptWidgetClass;
-
-	UPROPERTY()
-	TObjectPtr<UWorldInteractionPromptWidget> WorldInteractionPromptWidget;
-
 	/** Ability system component we're currently listening to for attribute changes, so we can unbind cleanly when the pawn changes */
 	UPROPERTY()
 	TObjectPtr<UAbilitySystemComponent> BoundAbilitySystemComponent;
@@ -128,6 +121,15 @@ protected:
 	UPROPERTY(BlueprintReadOnly)
 	TObjectPtr<ANPC_Base> CurrentInteractionTarget;
 
+	/** True while a World-type target (machine/table/prop - AWorldInteractableBase's family) is what
+	 * the player is currently focused on. Mirrors CurrentInteractionTarget's role for NPCs: both use
+	 * the same PlayerHUDWidget prompt flow (BP_OpenInterection/BP_CloseInterection) via
+	 * OpenInteraction/CloseInteraction. Kept as its own bool rather than widening
+	 * CurrentInteractionTarget's type because
+	 * WBP_DiceBetting/WBP_ThreeCardPokerBetting read that property directly in their Blueprint graphs. */
+	UPROPERTY(BlueprintReadOnly, Category="Interaction", meta=(AllowPrivateAccess="true"))
+	bool bWorldInteractionTargetFocused = false;
+
 	/** True while an interaction UI (shop/dialogue/exchange, etc.) owns input. */
 	UPROPERTY(BlueprintReadOnly, Category="Interaction", meta=(AllowPrivateAccess="true"))
 	bool bInteractionUIOpen = false;
@@ -165,6 +167,9 @@ protected:
 	/** Bound to ToggleInventoryAction; toggles the inventory widget on/off */
 	void ToggleInventoryInput();
 
+	/** Uses the existing DropOre ability when E is pressed while carrying ore. */
+	bool TryDropCarriedOre(class Acasino_simulatorCharacter* PlayerCharacter);
+
 public:
 
 	/** Shows the inventory widget if hidden, hides it if shown. Spawns it from InventoryWidgetClass on first use. */
@@ -194,14 +199,11 @@ public:
 
 	void RequestWorldInteraction(AWorldInteractableBase* Target);
 
-	UFUNCTION(BlueprintCallable, Category="Interaction")
-	bool OpenWorldInteraction(const FText& PromptText);
-
-	UFUNCTION(BlueprintCallable, Category="Interaction")
-	void CloseWorldInteraction();
-
-	UFUNCTION(BlueprintCallable, Category="Interaction")
-	void SetWorldInteractionPromptControls(bool bPrimaryVisible, bool bExitVisible);
+	/** NPC counterpart to RequestWorldInteraction, called after the detector resolves an ANPC_Base
+	 * as the focused target. Runs Interact() locally, forwards to the
+	 * server via Server_InteractWithNPC on a client, and disables movement for non-Shop NPCs - same
+	 * behavior this used to run from inline inside InteractWithCurrentTarget. */
+	void RequestNPCInteraction(ANPC_Base* Target);
 
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	bool IsInteractionUIOpen() const { return bInteractionUIOpen; }
@@ -212,6 +214,7 @@ public:
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	bool IsInteractionPromptSuppressed() const { return bInteractionPromptSuppressed; }
 
+	// TODO: Consolidate interaction prompt display into one state-driven refresh path.
 	UFUNCTION(BlueprintCallable, Category="Interaction")
 	void EnterInteractionUIMode(AActor* CameraTarget, float BlendTime = 0.35f);
 
@@ -222,6 +225,15 @@ public:
 	void OpenInteraction();
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void CloseInteraction();
+
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void OpenCarriedOreInteraction();
+
+	/** World-type counterpart to SetInteractionTarget/ClearInteractionTarget - called from
+	 * AWorldInteractableBase::OnInteractionFocusStarted/Ended_Implementation so machines/tables/props
+	 * open the same PlayerHUDWidget panel NPCs do. */
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void SetWorldInteractionTargetFocused(bool bFocused);
 
 	UFUNCTION(BlueprintCallable, Category="Inventory")
 	void RefreshInventroy();

@@ -7,6 +7,7 @@
 #include "Engine/HitResult.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "Interaction/WorldInteractable.h"
 #include "NPC_Base.generated.h"
 
 class USphereComponent;
@@ -29,9 +30,14 @@ enum class ENPCType : uint8
  *  Base class for all NPCs. ACharacter with its own AbilitySystemComponent/AttributeSet (the
  *  NPC is both owner and avatar - there's no PlayerState to host the ASC) and a sphere
  *  collision for interaction/detection use.
+ *
+ *  Implements IWorldInteractable (shared with AWorldInteractableBase's machine/table family) so
+ *  UWorldInteractionDetectorComponent registers and focus-resolves NPCs through the same aim-based
+ *  pipeline as machines/tables. NPCs use the shared PlayerHUDWidget prompt flow through
+ *  OpenInteraction/CloseInteraction - see OnInteractionFocusStarted/Ended_Implementation below.
  */
 UCLASS(abstract)
-class CASINO_SIMULATOR_API ANPC_Base : public ACharacter, public IAbilitySystemInterface
+class CASINO_SIMULATOR_API ANPC_Base : public ACharacter, public IAbilitySystemInterface, public IWorldInteractable
 {
 	GENERATED_BODY()
 
@@ -85,8 +91,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void SetCanInterection(bool value);
 
-	UFUNCTION(BlueprintCallable, Category="Interaction")
-	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter);
+	//~ Begin IWorldInteractable interface
+	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
+	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
+	// GetInteractionPromptText not overridden - NPCs use the default HUD prompt text.
+	virtual void OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
+	virtual void OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
+	//~ End IWorldInteractable interface
 
 	//~ Begin IAbilitySystemInterface
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;

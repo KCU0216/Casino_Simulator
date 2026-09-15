@@ -9,6 +9,7 @@
 #include "ActiveGameplayEffectHandle.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "GameplayTagContainer.h"
+#include "Mining/MiningShopComponent.h"
 #include "casino_simulatorCharacter.generated.h"
 
 class UInputComponent;
@@ -28,6 +29,7 @@ struct FInputActionValue;
 class ARaceManager;
 class ANPC_Dice;
 class AThreeCardPokerTableActor;
+class AOrePickupBase;
 
 /** A startup ability and the semantic input tag used to activate it (empty for passive/event abilities). */
 USTRUCT(BlueprintType)
@@ -38,7 +40,7 @@ struct FStartupAbilityDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	TSubclassOf<UGameplayAbility> AbilityClass;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities", meta = (Categories = "Input"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	FGameplayTag InputTag;
 };
 
@@ -117,6 +119,9 @@ protected:
 	/** Prevents a repeated possession of the same pawn from granting duplicate startup abilities. */
 	bool bStartupAbilitiesGranted = false;
 
+	/** Prevents repeated possession or PlayerState replication from stacking movement delegates. */
+	bool bMovementAttributeChangesBound = false;
+
 	/** Handles cigarette/alcohol shop purchases and forwards successful recovery to GAS */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Shop", meta = (AllowPrivateAccess = "true"))
 	UCasinoShopComponent* ShopComponent;
@@ -137,6 +142,17 @@ protected:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Machine|Interaction", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ASeatedMachineBase> CurrentSeatedMachine;
+
+	/** The one ore pickup currently carried by this character. Set and cleared by the server-side pickup/drop flow. */
+	UPROPERTY(ReplicatedUsing = OnRep_CarriedOre, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<AOrePickupBase> CarriedOre;
+
+	/** The Three Card Poker table this (locally-owned) character is currently interacting with, if
+	 * any. Mirrors CurrentSeatedMachine's role now that AThreeCardPokerTableActor handles its own
+	 * interaction directly (no more separate dealer NPC) — kept in sync network-wide via
+	 * AThreeCardPokerTableActor's interaction-started/ended multicasts, same as SetCurrentSeatedMachine. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Three Card Poker", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<AThreeCardPokerTableActor> CurrentThreeCardPokerTable;
 
 	/** Walking speed at full Nicotine (ratio = 1). CharacterMovementComponent's MaxWalkSpeed is scaled from this as Nicotine depletes. */
 	UPROPERTY(EditAnywhere, Category="Abilities", meta = (AllowPrivateAccess = "true"))
@@ -185,6 +201,18 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
 	void ServerClaimRaceWinnings(ARaceManager* Manager);
 
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Mining|Shop")
+	void ServerBuyMiningShopUpgrade(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType);
+
+	UFUNCTION(Client, Reliable, Category = "Mining|Shop")
+	void ClientMiningShopPurchaseCompleted(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType, int32 TotalPrice);
+
+	UFUNCTION(Client, Reliable, Category = "Mining|Shop")
+	void ClientMiningShopPurchaseFailed(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType, const FString& Reason);
+
+	UFUNCTION(Server, Unreliable, BlueprintCallable, Category = "Mining|Data")
+	void ServerUpdateCarriedOreTargetLocation(FVector TargetLocation);
+
 	/** Forwards a dice game bet placed by this (locally-owned) character to the server, since a
 	 * client can't call a Server RPC declared on DiceNPC directly (it isn't owned by that client). */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Dice Game")
@@ -195,7 +223,10 @@ public:
 	 * by that client's connection - see AThreeCardPokerTableActor's class comment). Same forwarding
 	 * trick as ServerPlaceDiceBet. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
-	void ServerPlaceThreeCardPokerAnte(AThreeCardPokerTableActor* Table, int32 Amount);
+	void ServerPlaceThreeCardPokerPlay(AThreeCardPokerTableActor* Table, int32 AnteAmount, int32 PairBetAmount);
+
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
+	void ServerPlaceThreeCardPokerAnte(AThreeCardPokerTableActor* Table, int32 Amount, int32 PairBetAmount);
 
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
 	void ServerPlaceThreeCardPokerPairPlus(AThreeCardPokerTableActor* Table, int32 Amount);
@@ -218,11 +249,41 @@ public:
 	void SetCurrentSeatedMachine(ASeatedMachineBase* NewMachine);
 	void ClearCurrentSeatedMachine(ASeatedMachineBase* MachineToClear);
 
+	/** The Three Card Poker table this character is currently interacting with, or null. Used by
+	 * UThreeCardPokerBlueprintLibrary::GetThreeCardPokerTableForPlayer so BP betting UI doesn't need
+	 * to resolve it itself. */
+	UFUNCTION(BlueprintPure, Category = "Three Card Poker")
+	AThreeCardPokerTableActor* GetCurrentThreeCardPokerTable() const { return CurrentThreeCardPokerTable; }
+
+	void SetCurrentThreeCardPokerTable(AThreeCardPokerTableActor* NewTable);
+	void ClearCurrentThreeCardPokerTable(AThreeCardPokerTableActor* TableToClear);
+
+UFUNCTION(BlueprintPure, Category = "OrePickup")
+	AOrePickupBase* GetCarriedOre() const { return CarriedOre; }
+
+	/** Server-side state update used by AOrePickupBase after a successful pickup or drop. */
+	void SetCarriedOre(AOrePickupBase* NewCarriedOre);
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
+	int32 GetPickaxeMiningPower() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
+	float GetPickaxeMiningSpeed() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
+	float GetPickaxeMiningMontagePlayRate() const;
+
+	/** Lets Blueprint-owned equipment meshes restore their visibility after shared UI/camera flows. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment")
+	void RefreshEquipmentVisuals();
+
 protected:
 
 	//~ Begin AActor interface
 	virtual void PossessedBy(AController* NewController) override;
 	//~ End AActor interface
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	//~ Begin APawn interface
 	virtual void OnRep_PlayerState() override;
@@ -237,17 +298,17 @@ protected:
 	/** Applies AttributeDecayEffectClass to this character's own ability system so Nicotine/Alcohol decay over time. Server-only. */
 	void ApplyAttributeDecayEffect();
 
-	/** Subscribes UpdateMoveSpeedFromNicotine to the Nicotine/MaxNicotine attribute change delegates. Call after InitAbilityActorInfo, on every machine (not authority-only) since MaxWalkSpeed needs to match locally for movement prediction/simulation. */
-	void BindMoveSpeedToNicotine();
+	void BindMovementAttributeChanges();
 
-	/** Rescales CharacterMovementComponent's MaxWalkSpeed to MaxMoveSpeed * (Nicotine / MaxNicotine). */
-	void UpdateMoveSpeedFromNicotine() const;
+	void UpdateMovementFromAttributes() const;
 
-	/** Subscribes UpdateJumpSpeedFromAlcohol to the Alcohol/MaxAlcohol attribute change delegates. Call after InitAbilityActorInfo, on every machine (not authority-only) since JumpZVelocity needs to match locally for movement prediction/simulation. */
-	void BindJumpSpeedToAlcohol();
+	UFUNCTION()
+	void OnRep_CarriedOre();
 
-	/** Rescales CharacterMovementComponent's JumpZVelocity to MaxJumpSpeed * (Alcohol / MaxAlcohol). */
-	void UpdateJumpSpeedFromAlcohol() const;
+	void UpdateCarriedOreInteractionPrompt() const;
+	void HandleCarriedOreChanged() const;
+	void StartOreCarryAbility() const;
+	void StopOreCarryAbility() const;
 
 	/** Called from Input Actions for movement input */
 	void MoveInput(const FInputActionValue& Value);
@@ -263,6 +324,16 @@ protected:
 
 	/** Called from Input Actions for slot 2 input */
 	void Slot2Input(const FInputActionValue& Value);
+
+	/** Shared Slot1Input/Slot2Input handler: routes to the server if we're not the authority, then refreshes local inventory UI. */
+	void UseNumberSlotItem(int32 SlotIndex);
+
+	/** Server RPC: a remote client isn't the authority, so it can't apply GameplayEffects/modify PlayerState itself - this asks the server to do it. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory")
+	void ServerUseNumberSlotItem(int32 SlotIndex);
+
+	/** Server-authoritative: consumes the item in PlayerState's NumberSlots[SlotIndex] and applies its OnUseEffect. */
+	void ApplyNumberSlotItemEffect(int32 SlotIndex);
 
 	void MachineExitInput();
 

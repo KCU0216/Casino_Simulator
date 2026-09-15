@@ -2,9 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Mining/OrePickupBase.h"
+#include "Mining/OreTypes.h"
 #include "OreBase.generated.h"
 
 class UStaticMeshComponent;
+class AOrePickupBase;
+class Acasino_simulatorCharacter;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOreDurabilityChanged, int32, NewDurability, int32, MaxDurability);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOreDepleted);
@@ -13,16 +17,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOreDepleted);
  * Server-authoritative base actor for mineable world resources.
  *
  * Create Blueprint children for each ore type and set their mesh, OreId,
- * MaxDurability, and future reward data there.
+ * and future reward data there. Durability defaults from OreId unless disabled.
  */
-
-UENUM(BlueprintType)
-enum class EOreType : uint8
-{
-	Iron,
-	Gold,
-	Diamond
-};
 
 UCLASS(Abstract, Blueprintable)
 class CASINO_SIMULATOR_API AOreBase : public AActor
@@ -38,6 +34,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Ore|Mining")
 	bool ApplyMiningHit(int32 Damage = 1);
 
+	/** Applies a mining hit using the interacting character's current pickaxe power. Must be called on the server. */
+	UFUNCTION(BlueprintCallable, Category="Ore|Mining")
+	bool ApplyMiningHitFromCharacter(Acasino_simulatorCharacter* MiningCharacter);
+
 	UFUNCTION(BlueprintPure, Category="Ore|Mining")
 	bool IsDepleted() const { return CurrentDurability <= 0; }
 
@@ -46,6 +46,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Ore|Mining")
 	int32 GetMaxDurability() const { return MaxDurability; }
+
+	UFUNCTION(BlueprintPure, Category="Ore|Mining")
+	int32 GetDefaultMaxDurabilityForOreType() const;
 
 	UFUNCTION(BlueprintPure, Category="Ore|Identity")
 	EOreType GetOreId() const { return OreId; }
@@ -70,10 +73,16 @@ protected:
 	EOreType OreId = EOreType::Iron;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Ore|Mining", meta=(ClampMin="1"))
-	int32 MaxDurability = 3;
+	int32 MaxDurability = 100;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Ore|Mining")
+	bool bUseOreTypeDefaultDurability = true;
 
 	UPROPERTY(ReplicatedUsing=OnRep_CurrentDurability, BlueprintReadOnly, Category="Ore|Mining")
 	int32 CurrentDurability = 0;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "OrePickup")
+	TSubclassOf<AOrePickupBase> OrePickupClass;
 
 	UFUNCTION()
 	void OnRep_CurrentDurability(int32 PreviousDurability);

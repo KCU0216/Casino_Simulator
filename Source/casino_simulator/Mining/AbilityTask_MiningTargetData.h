@@ -1,6 +1,7 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Abilities/Tasks/AbilityTask.h"
 #include "AbilityTask_MiningTargetData.generated.h"
 
@@ -40,4 +41,30 @@ public:
 
 private:
 	float Range = 300.f;
+};
+
+
+
+UCLASS()
+
+class CASINO_SIMULATOR_API UAbilityTask_SendOreCarryTargetUpdates : public UAbilityTask
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Ability|Tasks",
+		meta = (DisplayName = "Send Ore Carry Target Updates",
+			DefaultToSelf = "OwningAbility",
+			BlueprintInternalUseOnly = "true"))
+	static UAbilityTask_SendOreCarryTargetUpdates* SendOreCarryTargetUpdates(UGameplayAbility* OwningAbility, float SendInterval = 0.033f, float CarryDistance = 300.f);
+
+	virtual void Activate() override;
+	virtual void TickTask(float DeltaTime) override;
+
+	
+private:
+	float Interval = 0.033f;
+	float Distance = 300.f;
+	float Elapsed = 0.f;
+
 };

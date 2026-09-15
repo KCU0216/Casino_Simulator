@@ -2,6 +2,8 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "casino_simulatorCharacter.h"
+#include "Mining/OrePickupBase.h"
 
 AOreBase::AOreBase()
 {
@@ -21,6 +23,11 @@ void AOreBase::BeginPlay()
 
 	if (HasAuthority())
 	{
+		if (bUseOreTypeDefaultDurability)
+		{
+			MaxDurability = GetDefaultMaxDurabilityForOreType();
+		}
+
 		CurrentDurability = MaxDurability;
 	}
 }
@@ -47,10 +54,50 @@ bool AOreBase::ApplyMiningHit(const int32 Damage)
 	{
 		OnOreDepleted.Broadcast();
 		ReceiveOreDepleted();
+
+		//spawn OrePickup
+
+		if (OrePickupClass)
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+			AOrePickupBase* Pickup = GetWorld()->SpawnActor<AOrePickupBase>(
+				OrePickupClass,
+				GetActorTransform(), 
+				SpawnParams);
+		}
+		
 		Destroy();
 	}
 
 	return true;
+}
+
+bool AOreBase::ApplyMiningHitFromCharacter(Acasino_simulatorCharacter* MiningCharacter)
+{
+	if (!HasAuthority() || !MiningCharacter)
+	{
+		return false;
+	}
+
+	return ApplyMiningHit(MiningCharacter->GetPickaxeMiningPower());
+}
+
+int32 AOreBase::GetDefaultMaxDurabilityForOreType() const
+{
+	switch (OreId)
+	{
+	case EOreType::Iron:
+		return 100;
+	case EOreType::Gold:
+		return 200;
+	case EOreType::Diamond:
+		return 500;
+	default:
+		return 100;
+	}
 }
 
 void AOreBase::OnRep_CurrentDurability(const int32 PreviousDurability)

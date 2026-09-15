@@ -74,9 +74,9 @@ protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	//~ End AActor interface
 
-	//~ Begin ANPC_Base interface
+	//~ Begin IWorldInteractable interface
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
-	//~ End ANPC_Base interface
+	//~ End IWorldInteractable interface
 
 	/** Player currently playing this round, cached from Interact so ShowResult knows who to pay out. */
 	TWeakObjectPtr<Acasino_simulatorCharacter> InteractingPlayer;

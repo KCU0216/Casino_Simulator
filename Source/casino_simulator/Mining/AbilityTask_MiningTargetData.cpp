@@ -1,5 +1,5 @@
-#include "Mining/AbilityTask_MiningTargetData.h"
-
+﻿#include "Mining/AbilityTask_MiningTargetData.h"
+#include "casino_simulatorCharacter.h"
 #include "Abilities/GameplayAbility.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "AbilitySystemComponent.h"
@@ -111,3 +111,65 @@ void UAbilityTask_SendMiningTargetData::Activate()
 
 	EndTask();
 }
+
+UAbilityTask_SendOreCarryTargetUpdates* UAbilityTask_SendOreCarryTargetUpdates::SendOreCarryTargetUpdates(UGameplayAbility* OwningAbility, float SendInterval, float CarryDistance)
+{
+	UAbilityTask_SendOreCarryTargetUpdates* Task = 
+		NewAbilityTask<UAbilityTask_SendOreCarryTargetUpdates>(OwningAbility);
+
+	Task->Interval = SendInterval;
+	Task->Distance = CarryDistance;
+
+
+	return Task;
+}
+
+void UAbilityTask_SendOreCarryTargetUpdates::Activate()
+{
+	bTickingTask = true;
+}
+
+void UAbilityTask_SendOreCarryTargetUpdates::TickTask(float DeltaTime)
+{
+	Super::TickTask(DeltaTime);
+
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	Elapsed += DeltaTime;
+
+	if (Elapsed < Interval)
+	{
+		return;
+	}
+
+	Elapsed = 0.f;
+
+	AActor* Avatar = GetAvatarActor();
+	Acasino_simulatorCharacter* Character = Cast<Acasino_simulatorCharacter>(Avatar);
+
+	if (!Character)
+	{
+		EndTask();
+		return;
+	}
+
+	if (!Character->GetCarriedOre())
+	{
+		return;
+	}
+
+	FVector ViewLocation;
+	FRotator ViewRotation;
+
+	Character->GetActorEyesViewPoint(ViewLocation, ViewRotation);
+
+	const FVector TargetLocation =
+		ViewLocation + ViewRotation.Vector() * Distance;
+
+	Character->ServerUpdateCarriedOreTargetLocation(TargetLocation);
+
+}
+

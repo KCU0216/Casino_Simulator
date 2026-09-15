@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "casino_simulatorPlayerState.h"
 #include "Item/ItemData.h"
@@ -15,6 +15,8 @@ void Acasino_simulatorPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimePr
 
 	// Owner-only: a player's inventory contents aren't relevant to other clients.
 	DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, Inventory, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, MiningPowerUpgradeLevel, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, MiningSpeedUpgradeLevel, COND_OwnerOnly);
 }
 
 bool Acasino_simulatorPlayerState::FindItemData(int32 ItemID, FItemData& OutItemData) const
@@ -127,6 +129,37 @@ int32 Acasino_simulatorPlayerState::RemoveItem(int32 ItemID, int32 Quantity)
 	}
 
 	return AmountRemoved;
+}
+
+
+//Mining Section
+
+
+void Acasino_simulatorPlayerState::AddMiningPowerUpgradeLevel(int32 Amount)
+{
+	if (!HasAuthority() || Amount <= 0)
+	{
+		return;
+	}
+
+	MiningPowerUpgradeLevel += Amount;
+	OnRep_MiningUpgradeLevels();
+}
+
+void Acasino_simulatorPlayerState::AddMiningSpeedUpgradeLevel(int32 Amount)
+{
+	if (!HasAuthority() || Amount <= 0)
+	{
+		return;
+	}
+
+	MiningSpeedUpgradeLevel += Amount;
+	OnRep_MiningUpgradeLevels();
+}
+
+void Acasino_simulatorPlayerState::OnRep_MiningUpgradeLevels()
+{
+	OnMiningUpgradeLevelsChanged.Broadcast();
 }
 
 void Acasino_simulatorPlayerState::OnRep_Inventory()

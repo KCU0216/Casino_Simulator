@@ -26,9 +26,8 @@ public:
 	static FText GetThreeCardPokerHandRankDisplayName(EThreeCardPokerHandRank Rank);
 
 	/** Resolves the table a player is currently interacting with, in one call, so BP betting UI
-	 * doesn't need to chain GetOwningPlayer -> Cast -> CurrentInteractionTarget -> Cast -> GetTable
-	 * as separate graph nodes. Returns null if Player isn't currently interacting with a Three Card
-	 * Poker dealer NPC. */
+	 * doesn't need to call GetCurrentThreeCardPokerTable itself. Returns null if Player isn't
+	 * currently interacting with a Three Card Poker table. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="ThreeCardPoker")
 	static AThreeCardPokerTableActor* GetThreeCardPokerTableForPlayer(Acasino_simulatorCharacter* Player);
 

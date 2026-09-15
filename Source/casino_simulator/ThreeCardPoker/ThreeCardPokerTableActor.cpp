@@ -8,6 +8,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
+#include "casino_simulatorPlayerController.h"
 #include "ThreeCardPoker/ThreeCardPokerBlueprintLibrary.h"
 
 AThreeCardPokerTableActor::AThreeCardPokerTableActor()
@@ -15,8 +16,20 @@ AThreeCardPokerTableActor::AThreeCardPokerTableActor()
 	bReplicates = true;
 	SetReplicateMovement(false);
 
+	InteractionPromptText = FText::FromString(TEXT("E Play"));
+
+	// Tighter than AWorldInteractableBase's 500cm default (sized for a big machine) - closer to the
+	// old dealer NPC's 150cm InteractionSphere (ANPC_Base), since a player should be standing at the
+	// table to play, not just in the same room.
+	if (InteractionSphere)
+	{
+		InteractionSphere->SetSphereRadius(50.0f);
+	}
+
+	// Kept by name (not as the actor's root anymore - SceneRoot is) so the BP-added card visual
+	// components already parented to it in BP_ThreeCardPokerTable's SCS don't get orphaned.
 	TableRoot = CreateDefaultSubobject<USceneComponent>(TEXT("TableRoot"));
-	SetRootComponent(TableRoot);
+	TableRoot->SetupAttachment(SceneRoot);
 
 	TableMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TableMesh"));
 	TableMesh->SetupAttachment(TableRoot);
@@ -25,7 +38,9 @@ AThreeCardPokerTableActor::AThreeCardPokerTableActor()
 
 	DeckPoint = CreateDefaultSubobject<USceneComponent>(TEXT("DeckPoint"));
 	DeckPoint->SetupAttachment(TableRoot);
-	DeckPoint->SetRelativeLocation(FVector(30.0f, 95.0f, 8.0f));
+
+	ViewPoint = CreateDefaultSubobject<USceneComponent>(TEXT("ViewPoint"));
+	ViewPoint->SetupAttachment(TableRoot);
 
 	ResultText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ResultText"));
 	ResultText->SetupAttachment(TableRoot);
@@ -78,21 +93,127 @@ void AThreeCardPokerTableActor::SetInteractingPlayer(Acasino_simulatorCharacter*
 		return;
 	}
 
-	if (InteractingPlayer.Get() != Player)
+	Acasino_simulatorCharacter* PreviousPlayer = InteractingPlayer.Get();
+	if (PreviousPlayer == Player)
 	{
-		// Switching players (or clearing) mid-round would leave stale bets/cards behind otherwise.
-		ResetRound();
+		return;
 	}
 
+	// Switching players (or clearing) mid-round would leave stale bets/cards behind otherwise.
 	InteractingPlayer = Player;
+
+	ResetRound();
+
 
 	// Owning the table while a specific player is using it gives ROLE_AutonomousProxy to that
 	// player's client only (same trick as ANPC_Dice::SetInteractingPlayer). Reverts to
 	// DefaultOwner once nobody's interacting.
 	SetOwner(Player ? static_cast<AActor*>(Player) : DefaultOwner.Get());
+
+	// Keep each affected player's GetCurrentThreeCardPokerTable() in sync on every machine, not just
+	// the server — same reasoning as ASeatedMachineBase's Multicast_MachineUseStarted/Released.
+	if (PreviousPlayer)
+	{
+		Multicast_ThreeCardPokerInteractionEnded(PreviousPlayer);
+	}
+	if (Player)
+	{
+		Multicast_ThreeCardPokerInteractionStarted(Player);
+	}
 }
 
-bool AThreeCardPokerTableActor::PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount)
+void AThreeCardPokerTableActor::Interact(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	// RequestWorldInteraction/Server_RequestWorldInteraction (casino_simulatorPlayerController) only
+	// ever call Interact() with authority - either directly on a listen server/host, or via the
+	// Server RPC's Implementation - so no client-side forwarding branch is needed here.
+	Super::Interact(InteractingCharacter);
+	if (!HasAuthority() || !InteractingCharacter)
+	{
+		return;
+	}
+
+	SetInteractingPlayer(InteractingCharacter);
+}
+
+void AThreeCardPokerTableActor::OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	// If the player already has an NPC dialogue or a seated machine open, walking up and pressing E
+	// on this table shouldn't leave that other panel's PlayerHUDWidget dialogue-style prompt lingering
+	// on screen underneath the betting UI - close it out first, same as RequestWorldInteraction/
+	// RequestNPCInteraction already do via CloseInteraction() when switching between interaction targets.
+	if (InteractingCharacter)
+	{
+		if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController()))
+		{
+			if (PC->GetCurrentInteractionTarget() || InteractingCharacter->GetCurrentSeatedMachine())
+			{
+				PC->CloseInteraction();
+			}
+		}
+	}
+
+	BP_OnLocalThreeCardPokerInteract(InteractingCharacter);
+}
+
+bool AThreeCardPokerTableActor::PlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount)
+{
+	if (!Player || AnteAmount < MinAnteBet || AnteAmount+ PairBetAmount > Player->GetCurrency())
+	{
+		return false;
+	}
+	
+	if (PairBetAmount > 0 && PairBetAmount < MinPairPlusBet)
+	{
+		return false;
+	}
+
+	if (HasAuthority())
+	{
+		return ExecutePlacePlayGame(Player, AnteAmount, PairBetAmount);
+	}
+
+	// This table isn't owned by any player's connection, so a Server RPC declared on it would just
+	// be dropped if called from a client. Route through Player's own Character instead, which IS
+	// owned by the calling client's connection (same forwarding trick as ANPC_Dice::PlaceBet).
+	Player->ServerPlaceThreeCardPokerPlay(this, AnteAmount, PairBetAmount);
+	return true;
+}
+
+bool AThreeCardPokerTableActor::ExecutePlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount)
+{
+	if (!Player || AnteAmount < MinAnteBet || AnteAmount + PairBetAmount > Player->GetCurrency())
+	{
+		return false;
+	}
+
+	if (PairBetAmount > 0 && PairBetAmount < MinPairPlusBet)
+	{
+		return false;
+	}
+
+	if (InteractingPlayer.Get() != Player || RoundState != EThreeCardPokerRoundState::WaitingForBet || AnteBet > 0 || PairPlusBet > 0)
+	{
+		return false;
+	}
+	
+	float TotalAmount = AnteAmount + PairBetAmount;
+
+	if (!Player->TrySpendCurrency(static_cast<float>(TotalAmount)))
+	{
+		return false;
+	}
+
+	AnteBet = AnteAmount;
+	PairPlusBet = PairBetAmount;
+	OnTableChanged.Broadcast();
+
+	// No other seat to wait for — the Ante alone starts the round.
+	StartRound();
+	return true;
+}
+
+bool AThreeCardPokerTableActor::PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount)
 {
 	if (!Player || Amount < MinAnteBet)
 	{
@@ -101,17 +222,17 @@ bool AThreeCardPokerTableActor::PlaceAnte(Acasino_simulatorCharacter* Player, in
 
 	if (HasAuthority())
 	{
-		return ExecutePlaceAnte(Player, Amount);
+		return ExecutePlaceAnte(Player, Amount, PairBetAmount);
 	}
 
 	// This table isn't owned by any player's connection, so a Server RPC declared on it would just
 	// be dropped if called from a client. Route through Player's own Character instead, which IS
 	// owned by the calling client's connection (same forwarding trick as ANPC_Dice::PlaceBet).
-	Player->ServerPlaceThreeCardPokerAnte(this, Amount);
+	Player->ServerPlaceThreeCardPokerAnte(this, Amount, PairBetAmount);
 	return true;
 }
 
-bool AThreeCardPokerTableActor::ExecutePlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount)
+bool AThreeCardPokerTableActor::ExecutePlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount)
 {
 	if (!HasAuthority() || !Player || Amount < MinAnteBet)
 	{
@@ -125,6 +246,11 @@ bool AThreeCardPokerTableActor::ExecutePlaceAnte(Acasino_simulatorCharacter* Pla
 	}
 
 	if (!Player->TrySpendCurrency(static_cast<float>(Amount)))
+	{
+		return false;
+	}
+
+	if (!PlacePairPlus(Player, PairBetAmount))
 	{
 		return false;
 	}
@@ -423,23 +549,29 @@ void AThreeCardPokerTableActor::DealCardToDealer(bool bFaceUp)
 
 void AThreeCardPokerTableActor::Multicast_PlayerCardDealt_Implementation(const FBlackjackCard& Card)
 {
-	// Temporary diagnostic: read the raw (Replicated) properties directly here, bypassing OnRep
-	// entirely, to tell apart "the values never actually replicated to this client" from "the values
-	// are here but OnRep_TableState just never runs". This RPC is confirmed to already reach clients.
-	const FString DiagMsg = FString::Printf(TEXT("[3CP] Multicast_PlayerCardDealt: HasAuthority=%d PlayerCards.Num=%d RoundState=%d"),
-		HasAuthority(), PlayerCards.Num(), static_cast<int32>(RoundState));
-	UE_LOG(LogTemp, Warning, TEXT("%s"), *DiagMsg);
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 8.0f, FColor::Yellow, DiagMsg);
-	}
-
 	OnPlayerCardDealt.Broadcast(Card);
 }
 
 void AThreeCardPokerTableActor::Multicast_DealerCardDealt_Implementation(const FBlackjackCard& Card)
 {
 	OnDealerCardDealt.Broadcast(Card);
+}
+
+void AThreeCardPokerTableActor::Multicast_ThreeCardPokerInteractionStarted_Implementation(Acasino_simulatorCharacter* Player)
+{
+	if (Player)
+	{
+		Player->SetCurrentThreeCardPokerTable(this);
+		//BP_OnLocalThreeCardPokerInteract(Player);
+	}
+}
+
+void AThreeCardPokerTableActor::Multicast_ThreeCardPokerInteractionEnded_Implementation(Acasino_simulatorCharacter* Player)
+{
+	if (Player)
+	{
+		Player->ClearCurrentThreeCardPokerTable(this);
+	}
 }
 
 void AThreeCardPokerTableActor::Multicast_DealerHandRevealed_Implementation(const TArray<FBlackjackCard>& RevealedHand)

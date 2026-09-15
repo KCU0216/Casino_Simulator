@@ -21,8 +21,8 @@ enum class EThreeCardPokerHandRank : uint8
 	StraightFlush UMETA(DisplayName="Straight Flush")
 };
 
-/** 1:1 vs. the dealer (see ANPC_ThreeCardPoker) — no seat-waiting state, since there's never more
- * than one player at a time. */
+/** 1:1 vs. the dealer (see AThreeCardPokerTableActor) — no seat-waiting state, since there's never
+ * more than one player at a time. */
 UENUM(BlueprintType)
 enum class EThreeCardPokerRoundState : uint8
 {

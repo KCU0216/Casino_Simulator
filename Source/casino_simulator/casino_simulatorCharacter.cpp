@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "casino_simulatorCharacter.h"
 #include "Animation/AnimInstance.h"
@@ -15,14 +15,20 @@
 #include "Economy/CasinoShopComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Machine/SeatedMachineBase.h"
+#include "Net/UnrealNetwork.h"
 #include "NPC/NPC_Dice.h"
 #include "ThreeCardPoker/ThreeCardPokerTableActor.h"
 #include "casino_simulatorPlayerController.h"
 #include "RaceGame/RaceManager.h"
+#include "Mining/MiningShopComponent.h"
+#include "Mining/OrePickupBase.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
 #include "Item/ItemData.h"
 #include "casino_simulator.h"
+#include "NativeGameplayTags.h"
+
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Carry, "Ability.Ore.Carry");
 
 Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 {
@@ -70,6 +76,13 @@ Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 	ShopComponent = CreateDefaultSubobject<UCasinoShopComponent>(TEXT("ShopComponent"));
 	WorldInteractionDetector = CreateDefaultSubobject<UWorldInteractionDetectorComponent>(TEXT("WorldInteractionDetector"));
 	BlackjackPlayerComponent = CreateDefaultSubobject<UBlackjackPlayerComponent>(TEXT("BlackjackPlayerComponent"));
+}
+
+void Acasino_simulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(Acasino_simulatorCharacter, CarriedOre);
 }
 
 UAbilitySystemComponent* Acasino_simulatorCharacter::GetAbilitySystemComponent() const
@@ -149,6 +162,27 @@ void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(ASeatedMachineBase* M
 	}
 }
 
+void Acasino_simulatorCharacter::SetCarriedOre(AOrePickupBase* NewCarriedOre)
+{
+	CarriedOre = NewCarriedOre;
+	HandleCarriedOreChanged();
+}
+
+int32 Acasino_simulatorCharacter::GetPickaxeMiningPower() const
+{
+	return AttributeSet ? FMath::Max(FMath::RoundToInt(AttributeSet->GetMiningPower()), 1) : 1;
+}
+
+float Acasino_simulatorCharacter::GetPickaxeMiningSpeed() const
+{
+	return AttributeSet ? FMath::Max(AttributeSet->GetMiningSpeed(), 0.1f) : 1.0f;
+}
+
+float Acasino_simulatorCharacter::GetPickaxeMiningMontagePlayRate() const
+{
+	return GetPickaxeMiningSpeed();
+}
+
 void Acasino_simulatorCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -170,8 +204,7 @@ void Acasino_simulatorCharacter::PossessedBy(AController* NewController)
 		// Every machine (server and each client) needs its own local MaxWalkSpeed/JumpZVelocity to
 		// match, since movement prediction/simulation runs locally - Nicotine/Alcohol themselves
 		// replicate, so this just needs to react to them wherever it's bound.
-		BindMoveSpeedToNicotine();
-		BindJumpSpeedToAlcohol();
+		BindMovementAttributeChanges();
 	}
 }
 
@@ -183,8 +216,7 @@ void Acasino_simulatorCharacter::OnRep_PlayerState()
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this, this);
-		BindMoveSpeedToNicotine();
-		BindJumpSpeedToAlcohol();
+		BindMovementAttributeChanges();
 	}
 }
 
@@ -263,62 +295,123 @@ void Acasino_simulatorCharacter::ApplyAttributeDecayEffect()
 	UE_LOG(Logcasino_simulator, Log, TEXT("'%s' applied attribute decay effect (active: %s)."), *GetNameSafe(this), AttributeDecayEffectHandle.IsValid() ? TEXT("true") : TEXT("false"));
 }
 
-void Acasino_simulatorCharacter::BindMoveSpeedToNicotine()
+void Acasino_simulatorCharacter::BindMovementAttributeChanges()
 {
 	if (!AbilitySystemComponent)
 	{
 		return;
 	}
 
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetNicotineAttribute())
-		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMoveSpeedFromNicotine(); });
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetMaxNicotineAttribute())
-		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMoveSpeedFromNicotine(); });
+	if (bMovementAttributeChangesBound)
+	{
+		UpdateMovementFromAttributes();
+		return;
+	}
 
-	// Apply immediately so movement speed matches the current ratio without waiting for the next change.
-	UpdateMoveSpeedFromNicotine();
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetNicotineAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMovementFromAttributes(); });
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetMaxNicotineAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMovementFromAttributes(); });
+
+
+
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetAlcoholAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMovementFromAttributes(); });
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetMaxAlcoholAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) { UpdateMovementFromAttributes(); });
+
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetCarryMovementMultiplierAttribute())
+		.AddLambda([this](const FOnAttributeChangeData&) {UpdateMovementFromAttributes(); });
+
+	bMovementAttributeChangesBound = true;
+	UpdateMovementFromAttributes();
+
 }
 
-void Acasino_simulatorCharacter::UpdateMoveSpeedFromNicotine() const
+void Acasino_simulatorCharacter::UpdateMovementFromAttributes() const
 {
+
 	if (!AttributeSet || !GetCharacterMovement())
 	{
 		return;
 	}
 
 	const float MaxNicotineValue = AttributeSet->GetMaxNicotine();
-	const float Ratio = (MaxNicotineValue > 0.0f) ? FMath::Clamp(AttributeSet->GetNicotine() / MaxNicotineValue, 0.0f, 1.0f) : 1.0f;
+	const float NicotineRatio = (MaxNicotineValue > 0.0f) ? FMath::Clamp(AttributeSet->GetNicotine() / MaxNicotineValue, 0.0f, 1.0f) : 1.0f;
 
-	GetCharacterMovement()->MaxWalkSpeed = MaxMoveSpeed * Ratio;
+	const float MaxAlcoholValue = AttributeSet->GetMaxAlcohol();
+	const float AlcoholRatio = (MaxAlcoholValue > 0.0f) ? FMath::Clamp(AttributeSet->GetAlcohol() / MaxAlcoholValue, 0.0f, 1.0f) : 1.0f;
+
+	const float CarryMovementMultiplier = AttributeSet->GetCarryMovementMultiplier();
+
+	GetCharacterMovement()->MaxWalkSpeed = MaxMoveSpeed * NicotineRatio * CarryMovementMultiplier;
+	GetCharacterMovement()->JumpZVelocity = MaxJumpSpeed * AlcoholRatio * CarryMovementMultiplier;
+
 }
 
-void Acasino_simulatorCharacter::BindJumpSpeedToAlcohol()
+void Acasino_simulatorCharacter::OnRep_CarriedOre()
+{
+	HandleCarriedOreChanged();
+}
+
+void Acasino_simulatorCharacter::UpdateCarriedOreInteractionPrompt() const
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
+	if (!PC)
+	{
+		return;
+	}
+
+	if (CarriedOre)
+	{
+		PC->OpenCarriedOreInteraction();
+		return;
+	}
+
+	PC->CloseInteraction();
+}
+
+void Acasino_simulatorCharacter::HandleCarriedOreChanged() const
+{
+	UpdateCarriedOreInteractionPrompt();
+
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (CarriedOre)
+	{
+		StartOreCarryAbility();
+		return;
+	}
+
+	StopOreCarryAbility();
+}
+
+void Acasino_simulatorCharacter::StartOreCarryAbility() const
 {
 	if (!AbilitySystemComponent)
 	{
 		return;
 	}
 
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetAlcoholAttribute())
-		.AddLambda([this](const FOnAttributeChangeData&) { UpdateJumpSpeedFromAlcohol(); });
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Ucasino_simulatorAttributeSet::GetMaxAlcoholAttribute())
-		.AddLambda([this](const FOnAttributeChangeData&) { UpdateJumpSpeedFromAlcohol(); });
-
-	// Apply immediately so jump speed matches the current ratio without waiting for the next change.
-	UpdateJumpSpeedFromAlcohol();
+	AbilitySystemComponent->TryActivateAbilityByTag(TAG_Ability_Ore_Carry);
 }
 
-void Acasino_simulatorCharacter::UpdateJumpSpeedFromAlcohol() const
+void Acasino_simulatorCharacter::StopOreCarryAbility() const
 {
-	if (!AttributeSet || !GetCharacterMovement())
+	if (!AbilitySystemComponent)
 	{
 		return;
 	}
 
-	const float MaxAlcoholValue = AttributeSet->GetMaxAlcohol();
-	const float Ratio = (MaxAlcoholValue > 0.0f) ? FMath::Clamp(AttributeSet->GetAlcohol() / MaxAlcoholValue, 0.0f, 1.0f) : 1.0f;
-
-	GetCharacterMovement()->JumpZVelocity = MaxJumpSpeed * Ratio;
+	AbilitySystemComponent->CancelAbilitiesByTag(TAG_Ability_Ore_Carry);
 }
 
 void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -414,56 +507,30 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 
 void Acasino_simulatorCharacter::Slot1Input(const FInputActionValue& Value)
 {
-	Acasino_simulatorPlayerState* State = GetPlayerState<Acasino_simulatorPlayerState>();
+	UseNumberSlotItem(0);
+}
 
-	if (!State|| !State->NumberSlots.IsValidIndex(0))
+void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
+{
+	UseNumberSlotItem(1);
+}
+
+void Acasino_simulatorCharacter::UseNumberSlotItem(int32 SlotIndex)
+{
+	// GameplayEffects/PlayerState item removal must happen on the authority. A remote client
+	// (pure client, not a listen server host) never has authority over its own pawn, so calling
+	// ApplyNumberSlotItemEffect directly there silently does nothing - route it through a Server RPC instead.
+	if (HasAuthority())
 	{
-		return;
+		ApplyNumberSlotItemEffect(SlotIndex);
+	}
+	else
+	{
+		ServerUseNumberSlotItem(SlotIndex);
 	}
 
-	const int32 ItemID = State->NumberSlots[0];
-
-	FItemData ItemData;
-	if (!State->FindItemData(ItemID, ItemData) || State->GetItemQuantity(ItemID) <= 0)
-	{
-		return;
-	}
-
-	if (!ItemData.bConsumeOnUse || !ItemData.OnUseEffect || !AbilitySystemComponent)
-	{
-		return;
-	}
-
-	// GameplayEffects should only ever be applied on the authority (see PossessedBy/InitializeDefaultAttributes).
-	// On a remote client this input is handled locally but won't have authority - a Server RPC would be
-	// needed there to actually apply the effect; out of scope for this pass.
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
-	EffectContext.AddSourceObject(this);
-
-	const FGameplayEffectSpecHandle SpecHandle = AbilitySystemComponent->MakeOutgoingSpec(ItemData.OnUseEffect, 1.0f, EffectContext);
-	if (!SpecHandle.IsValid())
-	{
-		return;
-	}
-
-	// ItemData.ItemCategory doubles as the SetByCaller tag the item's OnUseEffect modifier should be
-	// configured to read (Magnitude Calculation Type = Set by Caller, Data Tag = that item's category).
-	// EffectMagnitude is per-item (e.g. how much Nicotine/Alcohol this specific item restores), so it's
-	// supplied here rather than baked into the GameplayEffect asset itself.
-	SpecHandle.Data->SetSetByCallerMagnitude(ItemData.ItemCategory, ItemData.EffectMagnitude);
-
-	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-
-	if(State)
-	{
-		State->RemoveItem(ItemID, 1);
-	}
-
+	// UI refresh is purely local (this client's own inventory widget), so it's fine to run
+	// regardless of network role - it doesn't touch replicated state.
 	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
 	if (PC && PC->IsInventoryOpen())
 	{
@@ -471,17 +538,21 @@ void Acasino_simulatorCharacter::Slot1Input(const FInputActionValue& Value)
 	}
 }
 
-void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
+void Acasino_simulatorCharacter::ServerUseNumberSlotItem_Implementation(int32 SlotIndex)
 {
-	// TODO: quick-use the item in PlayerState's NumberSlots[1] once that use-item flow exists.
+	ApplyNumberSlotItemEffect(SlotIndex);
+}
+
+void Acasino_simulatorCharacter::ApplyNumberSlotItemEffect(int32 SlotIndex)
+{
 	Acasino_simulatorPlayerState* State = GetPlayerState<Acasino_simulatorPlayerState>();
 
-	if (!State || !State->NumberSlots.IsValidIndex(1))
+	if (!State || !State->NumberSlots.IsValidIndex(SlotIndex))
 	{
 		return;
 	}
 
-	const int32 ItemID = State->NumberSlots[1];
+	const int32 ItemID = State->NumberSlots[SlotIndex];
 
 	FItemData ItemData;
 	if (!State->FindItemData(ItemID, ItemData) || State->GetItemQuantity(ItemID) <= 0)
@@ -490,14 +561,6 @@ void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
 	}
 
 	if (!ItemData.bConsumeOnUse || !ItemData.OnUseEffect || !AbilitySystemComponent)
-	{
-		return;
-	}
-
-	// GameplayEffects should only ever be applied on the authority (see PossessedBy/InitializeDefaultAttributes).
-	// On a remote client this input is handled locally but won't have authority - a Server RPC would be
-	// needed there to actually apply the effect; out of scope for this pass.
-	if (!HasAuthority())
 	{
 		return;
 	}
@@ -519,16 +582,7 @@ void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
 
 	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 
-	if (State)
-	{
-		State->RemoveItem(ItemID, 1);
-	}
-
-	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
-	if (PC && PC->IsInventoryOpen())
-	{
-		PC->RefreshInventroy();
-	}
+	State->RemoveItem(ItemID, 1);
 }
 
 void Acasino_simulatorCharacter::MachineExitInput()
@@ -593,6 +647,37 @@ void Acasino_simulatorCharacter::ServerClaimRaceWinnings_Implementation(ARaceMan
 	}
 }
 
+void Acasino_simulatorCharacter::ServerBuyMiningShopUpgrade_Implementation(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType)
+{
+	if (MiningShopComponent)
+	{
+		MiningShopComponent->ProcessUpgradePurchase(this, UpgradeType);
+	}
+}
+
+void Acasino_simulatorCharacter::ClientMiningShopPurchaseCompleted_Implementation(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType, int32 TotalPrice)
+{
+	if (MiningShopComponent)
+	{
+		MiningShopComponent->HandlePurchaseCompletedFromServer(UpgradeType, TotalPrice);
+	}
+}
+
+void Acasino_simulatorCharacter::ClientMiningShopPurchaseFailed_Implementation(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType, const FString& Reason)
+{
+	if (MiningShopComponent)
+	{
+		MiningShopComponent->HandlePurchaseFailedFromServer(UpgradeType, Reason);
+	}
+}
+void Acasino_simulatorCharacter::ServerUpdateCarriedOreTargetLocation_Implementation(FVector TargetLocation)
+{
+	if (CarriedOre)
+	{
+		CarriedOre->UpdateCarryTargetLocation(this, TargetLocation);
+	}
+}
+
 void Acasino_simulatorCharacter::ServerPlaceDiceBet_Implementation(ANPC_Dice* DiceNPC, int32 Select, int32 Betting)
 {
 	if (DiceNPC)
@@ -601,11 +686,19 @@ void Acasino_simulatorCharacter::ServerPlaceDiceBet_Implementation(ANPC_Dice* Di
 	}
 }
 
-void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerAnte_Implementation(AThreeCardPokerTableActor* Table, int32 Amount)
+void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerPlay_Implementation(AThreeCardPokerTableActor* Table, int32 AnteAmount, int32 PairBetAmount)
 {
 	if (Table)
 	{
-		Table->ExecutePlaceAnte(this, Amount);
+		Table->ExecutePlacePlayGame(this, AnteAmount, PairBetAmount);
+	}
+}
+
+void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerAnte_Implementation(AThreeCardPokerTableActor* Table, int32 Amount, int32 PairBetAmout)
+{
+	if (Table)
+	{
+		Table->ExecutePlaceAnte(this, Amount, PairBetAmout);
 	}
 }
 
@@ -638,5 +731,18 @@ void Acasino_simulatorCharacter::ServerLeaveThreeCardPokerTable_Implementation(A
 	if (Table)
 	{
 		Table->ExecuteLeaveTable(this);
+	}
+}
+
+void Acasino_simulatorCharacter::SetCurrentThreeCardPokerTable(AThreeCardPokerTableActor* NewTable)
+{
+	CurrentThreeCardPokerTable = NewTable;
+}
+
+void Acasino_simulatorCharacter::ClearCurrentThreeCardPokerTable(AThreeCardPokerTableActor* TableToClear)
+{
+	if (!TableToClear || CurrentThreeCardPokerTable == TableToClear)
+	{
+		CurrentThreeCardPokerTable = nullptr;
 	}
 }
