@@ -30,6 +30,7 @@ class ARaceManager;
 class ANPC_Dice;
 class AThreeCardPokerTableActor;
 class AOrePickupBase;
+class ACartBase;
 
 /** A startup ability and the semantic input tag used to activate it (empty for passive/event abilities). */
 USTRUCT(BlueprintType)
@@ -147,6 +148,9 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_CarriedOre, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AOrePickupBase> CarriedOre;
 
+	UPROPERTY(ReplicatedUsing = OnRep_CarriedCart, VisibleInstanceOnly, BlueprintReadOnly, Category = "Cart", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ACartBase> CarriedCart;
+
 	/** The Three Card Poker table this (locally-owned) character is currently interacting with, if
 	 * any. Mirrors CurrentSeatedMachine's role now that AThreeCardPokerTableActor handles its own
 	 * interaction directly (no more separate dealer NPC) — kept in sync network-wide via
@@ -213,6 +217,9 @@ public:
 	UFUNCTION(Server, Unreliable, BlueprintCallable, Category = "Mining|Data")
 	void ServerUpdateCarriedOreTargetLocation(FVector TargetLocation);
 
+	UFUNCTION(Server, Unreliable, BlueprintCallable, Category = "Mining|Data")
+	void ServerUpdateCarriedCartTargetLocation(FVector TargetLocation);
+
 	/** Forwards a dice game bet placed by this (locally-owned) character to the server, since a
 	 * client can't call a Server RPC declared on DiceNPC directly (it isn't owned by that client). */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Dice Game")
@@ -261,8 +268,14 @@ public:
 UFUNCTION(BlueprintPure, Category = "OrePickup")
 	AOrePickupBase* GetCarriedOre() const { return CarriedOre; }
 
+	UFUNCTION(BlueprintPure, Category = "Cart")
+	ACartBase* GetCarriedCart() const { return CarriedCart; }
+
 	/** Server-side state update used by AOrePickupBase after a successful pickup or drop. */
 	void SetCarriedOre(AOrePickupBase* NewCarriedOre);
+
+	/** Server-side state update used by AOrePickupBase after a successful pickup or drop. */
+	void SetCarriedCart(ACartBase* NewCarriedCart);
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
 	int32 GetPickaxeMiningPower() const;
@@ -304,11 +317,19 @@ protected:
 
 	UFUNCTION()
 	void OnRep_CarriedOre();
+	UFUNCTION()
+	void OnRep_CarriedCart();
 
 	void UpdateCarriedOreInteractionPrompt() const;
+	void UpdateCarriedCartInteractionPrompt() const;
 	void HandleCarriedOreChanged() const;
+	void HandleCarriedCartChanged() const;
 	void StartOreCarryAbility() const;
 	void StopOreCarryAbility() const;
+
+	void StartCartCarryAbility() const;
+
+	void StopCartCarryAbility() const;
 
 	/** Called from Input Actions for movement input */
 	void MoveInput(const FInputActionValue& Value);

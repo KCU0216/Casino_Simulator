@@ -173,3 +173,65 @@ void UAbilityTask_SendOreCarryTargetUpdates::TickTask(float DeltaTime)
 
 }
 
+
+
+UAbilityTask_SendCartCarryTargetUpdates* UAbilityTask_SendCartCarryTargetUpdates::SendCartCarryTargetUpdates(UGameplayAbility* OwningAbility, float SendInterval, float CarryDistance)
+{
+	UAbilityTask_SendCartCarryTargetUpdates* Task =
+		NewAbilityTask<UAbilityTask_SendCartCarryTargetUpdates>(OwningAbility);
+
+	Task->Interval = SendInterval;
+	Task->Distance = CarryDistance;
+
+
+	return Task;
+}
+
+void UAbilityTask_SendCartCarryTargetUpdates::Activate()
+{
+	bTickingTask = true;
+}
+
+void UAbilityTask_SendCartCarryTargetUpdates::TickTask(float DeltaTime)
+{
+	Super::TickTask(DeltaTime);
+
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	Elapsed += DeltaTime;
+
+	if (Elapsed < Interval)
+	{
+		return;
+	}
+
+	Elapsed = 0.f;
+
+	AActor* Avatar = GetAvatarActor();
+	Acasino_simulatorCharacter* Character = Cast<Acasino_simulatorCharacter>(Avatar);
+
+	if (!Character)
+	{
+		EndTask();
+		return;
+	}
+
+	if (!Character->GetCarriedCart())
+	{
+		return;
+	}
+
+	FVector ViewLocation;
+	FRotator ViewRotation;
+
+	Character->GetActorEyesViewPoint(ViewLocation, ViewRotation);
+
+	const FVector TargetLocation =
+		ViewLocation + ViewRotation.Vector() * Distance;
+
+	Character->ServerUpdateCarriedCartTargetLocation(TargetLocation);
+
+}

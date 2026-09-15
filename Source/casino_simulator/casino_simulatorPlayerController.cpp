@@ -25,12 +25,14 @@
 #include "Interaction/WorldInteractableBase.h"
 #include "Interaction/WorldInteractable.h"
 #include "Machine/SeatedMachineBase.h"
+#include "Mining/CartBase.h"
+#include "Mining/OrePickupBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NPC/NPC_Base.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "NativeGameplayTags.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_DropOre, "Input.DropOre");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_ReleaseCart, "Input.ReleaseCart");
 
 Acasino_simulatorPlayerController::Acasino_simulatorPlayerController()
 {
@@ -297,18 +299,34 @@ void Acasino_simulatorPlayerController::ClearInteractionTarget(ANPC_Base* Intera
 
 void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 {
+	UE_LOG(LogTemp, Error, TEXT("InteractWithCurrentTarget: bInteractionUIOpen=%d"), bInteractionUIOpen);
+
 	if (bInteractionUIOpen)
 	{
+		UE_LOG(LogTemp, Error, TEXT("InteractWithCurrentTarget blocked by interaction UI"));
 		return;
 	}
 
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter)
 	{
+		UE_LOG(LogTemp, Error, TEXT("InteractWithCurrentTarget failed: no player character"));
 		return;
 	}
 
+	const FString CarriedOreName = PlayerCharacter->GetCarriedOre() ? PlayerCharacter->GetCarriedOre()->GetName() : TEXT("None");
+	const FString CarriedCartName = PlayerCharacter->GetCarriedCart() ? PlayerCharacter->GetCarriedCart()->GetName() : TEXT("None");
+	UE_LOG(LogTemp, Error, TEXT("InteractWithCurrentTarget: CarriedOre=%s CarriedCart=%s"),
+		*CarriedOreName,
+		*CarriedCartName);
+
+	//광물 놓을 수 있으면 먼저 놓음.
 	if (TryDropCarriedOre(PlayerCharacter))
+	{
+		return;
+	}
+
+	if (TryReleaseCarriedCart(PlayerCharacter))
 	{
 		return;
 	}
@@ -365,6 +383,35 @@ bool Acasino_simulatorPlayerController::TryDropCarriedOre(Acasino_simulatorChara
 	return true;
 }
 
+bool Acasino_simulatorPlayerController::TryReleaseCarriedCart(Acasino_simulatorCharacter* PlayerCharacter)
+{
+	if (!PlayerCharacter || !PlayerCharacter->GetCarriedCart())
+	{
+		const FString PlayerCharacterName = PlayerCharacter ? PlayerCharacter->GetName() : TEXT("None");
+		const FString CarriedCartName = PlayerCharacter && PlayerCharacter->GetCarriedCart() ? PlayerCharacter->GetCarriedCart()->GetName() : TEXT("None");
+		UE_LOG(LogTemp, Error, TEXT("TryReleaseCarriedCart failed: PlayerCharacter=%s CarriedCart=%s"),
+			*PlayerCharacterName,
+			*CarriedCartName);
+		return false;
+	}
+
+	Ucasino_simulatorAbilitySystemComponent* CasinoAbilitySystem =
+		Cast<Ucasino_simulatorAbilitySystemComponent>(PlayerCharacter->GetAbilitySystemComponent());
+	if (!CasinoAbilitySystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("TryReleaseCarriedCart failed: no ability system"));
+		return false;
+	}
+
+	const FString CarriedCartName = PlayerCharacter->GetCarriedCart() ? PlayerCharacter->GetCarriedCart()->GetName() : TEXT("None");
+	UE_LOG(LogTemp, Error, TEXT("TryReleaseCarriedCart: pressing %s for %s"),
+		*TAG_Input_ReleaseCart.GetTag().ToString(),
+		*CarriedCartName);
+	CasinoAbilitySystem->PressInputTag(TAG_Input_ReleaseCart);
+	CasinoAbilitySystem->ReleaseInputTag(TAG_Input_ReleaseCart);
+	return true;
+}
+
 void Acasino_simulatorPlayerController::ExitCurrentMachine()
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
@@ -403,6 +450,14 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 	IWorldInteractable::Execute_OnLocalInteract(Target, PlayerCharacter);
 	CloseInteraction();
 
+
+
+	if (Target->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
+	{
+		Target->BeginLocalInteraction(PlayerCharacter);
+		return;
+	}
+
 	FGameplayTagContainer TagContainer;
 	TagContainer.AddTag(FGameplayTag::RequestGameplayTag(FName("State.Sit")));
 
@@ -411,12 +466,6 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 	if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
 	{
 		MovementComponent->DisableMovement();
-	}
-
-	if (Target->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
-	{
-		Target->BeginLocalInteraction(PlayerCharacter);
-		return;
 	}
 
 	if (HasAuthority())
@@ -706,6 +755,20 @@ void Acasino_simulatorPlayerController::OpenCarriedOreInteraction()
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->BP_SetInteractionPromptText(FText::FromString(TEXT("Drop")));
+		PlayerHUDWidget->BP_OpenInterection();
+	}
+}
+
+void Acasino_simulatorPlayerController::OpenCarriedCartInteraction()
+{
+	if (bInteractionUIOpen || bInteractionPromptSuppressed)
+	{
+		return;
+	}
+
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->BP_SetInteractionPromptText(FText::FromString(TEXT("Release")));
 		PlayerHUDWidget->BP_OpenInterection();
 	}
 }

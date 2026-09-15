@@ -68,3 +68,27 @@ private:
 	float Elapsed = 0.f;
 
 };
+
+UCLASS()
+
+class CASINO_SIMULATOR_API UAbilityTask_SendCartCarryTargetUpdates : public UAbilityTask
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Ability|Tasks",
+		meta = (DisplayName = "Send Cart Carry Target Updates",
+			DefaultToSelf = "OwningAbility",
+			BlueprintInternalUseOnly = "true"))
+	static UAbilityTask_SendCartCarryTargetUpdates* SendCartCarryTargetUpdates(UGameplayAbility* OwningAbility, float SendInterval = 0.033f, float CarryDistance = 300.f);
+
+	virtual void Activate() override;
+	virtual void TickTask(float DeltaTime) override;
+
+
+private:
+	float Interval = 0.033f;
+	float Distance = 300.f;
+	float Elapsed = 0.f;
+
+};

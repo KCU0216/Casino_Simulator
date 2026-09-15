@@ -22,6 +22,7 @@
 #include "RaceGame/RaceManager.h"
 #include "Mining/MiningShopComponent.h"
 #include "Mining/OrePickupBase.h"
+#include "Mining/CartBase.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
 #include "Item/ItemData.h"
@@ -29,6 +30,9 @@
 #include "NativeGameplayTags.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Carry, "Ability.Ore.Carry");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Drop, "Ability.Ore.Drop");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Carry, "Ability.Cart.Carry");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Release, "Ability.Cart.Release");
 
 Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 {
@@ -83,6 +87,7 @@ void Acasino_simulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(Acasino_simulatorCharacter, CarriedOre);
+	DOREPLIFETIME(Acasino_simulatorCharacter, CarriedCart);
 }
 
 UAbilitySystemComponent* Acasino_simulatorCharacter::GetAbilitySystemComponent() const
@@ -166,6 +171,11 @@ void Acasino_simulatorCharacter::SetCarriedOre(AOrePickupBase* NewCarriedOre)
 {
 	CarriedOre = NewCarriedOre;
 	HandleCarriedOreChanged();
+}
+void Acasino_simulatorCharacter::SetCarriedCart(ACartBase* NewCarriedCart)
+{
+	CarriedCart = NewCarriedCart;
+	HandleCarriedCartChanged();
 }
 
 int32 Acasino_simulatorCharacter::GetPickaxeMiningPower() const
@@ -354,6 +364,11 @@ void Acasino_simulatorCharacter::OnRep_CarriedOre()
 	HandleCarriedOreChanged();
 }
 
+void Acasino_simulatorCharacter::OnRep_CarriedCart()
+{
+	HandleCarriedCartChanged();
+}
+
 void Acasino_simulatorCharacter::UpdateCarriedOreInteractionPrompt() const
 {
 	if (!IsLocallyControlled())
@@ -370,6 +385,28 @@ void Acasino_simulatorCharacter::UpdateCarriedOreInteractionPrompt() const
 	if (CarriedOre)
 	{
 		PC->OpenCarriedOreInteraction();
+		return;
+	}
+
+	PC->CloseInteraction();
+}
+
+void Acasino_simulatorCharacter::UpdateCarriedCartInteractionPrompt() const
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
+	if (!PC)
+	{
+		return;
+	}
+
+	if (CarriedCart)
+	{
+		PC->OpenCarriedCartInteraction();
 		return;
 	}
 
@@ -394,6 +431,24 @@ void Acasino_simulatorCharacter::HandleCarriedOreChanged() const
 	StopOreCarryAbility();
 }
 
+void Acasino_simulatorCharacter::HandleCarriedCartChanged() const
+{
+	UpdateCarriedCartInteractionPrompt();
+
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (CarriedCart)
+	{
+		StartCartCarryAbility();
+		return;
+	}
+
+	StopCartCarryAbility();
+}
+
 void Acasino_simulatorCharacter::StartOreCarryAbility() const
 {
 	if (!AbilitySystemComponent)
@@ -412,6 +467,26 @@ void Acasino_simulatorCharacter::StopOreCarryAbility() const
 	}
 
 	AbilitySystemComponent->CancelAbilitiesByTag(TAG_Ability_Ore_Carry);
+}
+
+void Acasino_simulatorCharacter::StartCartCarryAbility() const
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	AbilitySystemComponent->TryActivateAbilityByTag(TAG_Ability_Cart_Carry);
+}
+
+void Acasino_simulatorCharacter::StopCartCarryAbility() const
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	AbilitySystemComponent->CancelAbilitiesByTag(TAG_Ability_Cart_Carry);
 }
 
 void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -674,7 +749,27 @@ void Acasino_simulatorCharacter::ServerUpdateCarriedOreTargetLocation_Implementa
 {
 	if (CarriedOre)
 	{
-		CarriedOre->UpdateCarryTargetLocation(this, TargetLocation);
+		if (!CarriedOre->UpdateCarryTargetLocation(this, TargetLocation))
+		{
+			if (AbilitySystemComponent)
+			{
+				AbilitySystemComponent->TryActivateAbilityByTag(TAG_Ability_Ore_Drop);
+			}
+		}
+	}
+}
+
+void Acasino_simulatorCharacter::ServerUpdateCarriedCartTargetLocation_Implementation(FVector TargetLocation)
+{
+	if (CarriedCart)
+	{
+		if (!CarriedCart->UpdateCarryTargetLocation(this, TargetLocation))
+		{
+			if (AbilitySystemComponent)
+			{
+				AbilitySystemComponent->TryActivateAbilityByTag(TAG_Ability_Cart_Release);
+			}
+		}
 	}
 }
 

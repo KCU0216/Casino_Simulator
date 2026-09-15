@@ -45,7 +45,9 @@ bool AOrePickupBase::CanInteract(Acasino_simulatorCharacter* InteractingCharacte
 //무게에 따른 속도 변화량 가져오기
 float AOrePickupBase::GetCarryMovementMultiplier() const
 {
-	const float WeightRatio = FMath::Clamp(Weight / WeightForFullPenalty, 0.0f, 1.0f);
+	const int32 EffectiveCarrierCount = FMath::Max(Carriers.Num(), 1);
+	const float WeightPerCarrier = Weight / EffectiveCarrierCount;
+	const float WeightRatio = FMath::Clamp(WeightPerCarrier / WeightForFullPenalty, 0.0f, 1.0f);
 	return FMath::Clamp(1.0f - WeightRatio, MinimumCarryMovementMultiplier, 1.0f);
 }
 //로컬에서 시작 (예측)
@@ -144,19 +146,32 @@ bool AOrePickupBase::CanMoveCarry()
 {
 	return Carriers.Num() >= MinCarryCount && Carriers.Num() <= MaxCarryCount;
 }
-
+//옮기는 위치 업데이트
 bool AOrePickupBase::UpdateCarryTargetLocation(Acasino_simulatorCharacter* Character, FVector TargetLocation)
 {
-	if (!HasAuthority() || !IsValid(Character) || !Carriers.Contains(Character) || TargetLocation.ContainsNaN())
+	//서버냐
+	if (!HasAuthority() || !IsValid(Character) || !Carriers.Contains(Character))
 	{
 		return false;
 	}
-
+	//말 되는 값이냐
+	if (TargetLocation.ContainsNaN())
+	{
+		CarrierTargetLocations.Remove(Character);
+		return false;
+	}
+	//클라가 똑바로 보냈냐
 	if (FVector::DistSquared(Character->GetActorLocation(), TargetLocation) > FMath::Square(MaxCarryTargetDistance))
 	{
+		CarrierTargetLocations.Remove(Character);
 		return false;
 	}
-
+	//광물이랑 너무 머냐
+	if (FVector::DistSquared(Character->GetActorLocation(), GetActorLocation()) > FMath::Square(MaxCarryTargetDistance))
+	{
+		CarrierTargetLocations.Remove(Character);
+		return false;
+	}
 	CarrierTargetLocations.FindOrAdd(Character) = TargetLocation;
 	return true;
 }

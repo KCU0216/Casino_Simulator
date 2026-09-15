@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -170,6 +170,8 @@ protected:
 	/** Uses the existing DropOre ability when E is pressed while carrying ore. */
 	bool TryDropCarriedOre(class Acasino_simulatorCharacter* PlayerCharacter);
 
+	bool TryReleaseCarriedCart(class Acasino_simulatorCharacter* PlayerCharacter);
+
 public:
 
 	/** Shows the inventory widget if hidden, hides it if shown. Spawns it from InventoryWidgetClass on first use. */
@@ -228,6 +230,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void OpenCarriedOreInteraction();
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void OpenCarriedCartInteraction();
 
 	/** World-type counterpart to SetInteractionTarget/ClearInteractionTarget - called from
 	 * AWorldInteractableBase::OnInteractionFocusStarted/Ended_Implementation so machines/tables/props
