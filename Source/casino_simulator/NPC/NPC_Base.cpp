@@ -133,6 +133,7 @@ void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharac
 		: nullptr)
 	{
 		PlayerController->SetWorldInteractionTargetFocused(true);
+		InteractingCharacter->SetCurrentSeatedMachine(this);
 	}
 }
 
@@ -143,6 +144,7 @@ void ANPC_Base::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacte
 		: nullptr)
 	{
 		PlayerController->SetWorldInteractionTargetFocused(false);
+		InteractingCharacter->SetCurrentSeatedMachine(nullptr);
 	}
 }
 
