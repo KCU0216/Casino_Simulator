@@ -32,6 +32,21 @@ public:
 	/** Constructor */
 	Acasino_simulatorPlayerController();
 
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Loop")
+    void ServerSubmitDailyPayment(int32 Amount);
+    UFUNCTION(Client, Reliable)
+    void ClientPrepareDailyPayment(FRotator Facing);
+    UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")
+    void OnPrepareDailyPayment();
+    UFUNCTION(Client, Reliable)
+    void ClientPrepareCasinoDay(FRotator Facing);
+    UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")
+    void OnPrepareCasinoDay();
+    UFUNCTION(Client, Reliable)
+    void ClientDailyPaymentResult(bool bSuccess);
+    UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")
+    void OnDailyPaymentResult(bool bSuccess);
+
 protected:
 
 	/** Input Mapping Contexts */

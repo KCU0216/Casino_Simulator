@@ -1,7 +1,11 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 
 #include "casino_simulatorPlayerController.h"
+#include "casino_simulatorGameMode.h"
+#include "casino_simulatorCharacter.h"
+#include "Engine/World.h"
+
 #include "Camera/CameraComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
@@ -821,4 +825,38 @@ bool Acasino_simulatorPlayerController::ShouldUseTouchControls() const
 {
 	// are we on a mobile platform? Should we force touch?
 	return SVirtualJoystick::ShouldDisplayTouchInterface() || bForceTouchControls;
+}
+
+void Acasino_simulatorPlayerController::ServerSubmitDailyPayment_Implementation(int32 Amount)
+{
+    auto* GM = GetWorld()->GetAuthGameMode<Acasino_simulatorGameMode>();
+    ClientDailyPaymentResult(GM && GM->SubmitDailyPayment(
+        Cast<Acasino_simulatorCharacter>(GetPawn()), Amount));
+}
+
+void Acasino_simulatorPlayerController::ClientDailyPaymentResult_Implementation(bool bSuccess)
+{
+    OnDailyPaymentResult(bSuccess);
+}
+
+void Acasino_simulatorPlayerController::ClientPrepareDailyPayment_Implementation(FRotator Facing)
+{
+    OnPrepareDailyPayment();
+    ResetIgnoreLookInput();
+    ResetIgnoreMoveInput();
+    SetInputMode(FInputModeGameOnly());
+    bShowMouseCursor = false;
+    SetControlRotation(Facing);
+    if (GetPawn()) SetViewTargetWithBlend(GetPawn(), 0.0f);
+}
+
+void Acasino_simulatorPlayerController::ClientPrepareCasinoDay_Implementation(FRotator Facing)
+{
+    OnPrepareCasinoDay();
+    ResetIgnoreLookInput();
+    ResetIgnoreMoveInput();
+    SetInputMode(FInputModeGameOnly());
+    bShowMouseCursor = false;
+    SetControlRotation(Facing);
+    if (GetPawn()) SetViewTargetWithBlend(GetPawn(), 0.0f);
 }
