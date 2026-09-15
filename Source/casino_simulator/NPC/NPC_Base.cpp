@@ -132,7 +132,7 @@ void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharac
 		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
 		: nullptr)
 	{
-		PlayerController->SetInteractionTarget(this);
+		PlayerController->SetWorldInteractionTargetFocused(true);
 	}
 }
 
@@ -142,7 +142,7 @@ void ANPC_Base::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacte
 		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
 		: nullptr)
 	{
-		PlayerController->ClearInteractionTarget(this);
+		PlayerController->SetWorldInteractionTargetFocused(false);
 	}
 }
 

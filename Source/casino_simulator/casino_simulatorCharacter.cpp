@@ -12,7 +12,6 @@
 #include "Abilities/GameplayAbility.h"
 #include "casino_simulatorAbilitySystemComponent.h"
 #include "Blackjack/BlackjackPlayerComponent.h"
-#include "Economy/CasinoShopComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Machine/SeatedMachineBase.h"
 #include "Net/UnrealNetwork.h"
@@ -27,6 +26,7 @@
 #include "Item/ItemData.h"
 #include "casino_simulator.h"
 #include "NativeGameplayTags.h"
+#include "Interaction/WorldInteractable.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Carry, "Ability.Ore.Carry");
 
@@ -73,7 +73,6 @@ Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 	// it when InitAbilityActorInfo runs.
 	AttributeSet = CreateDefaultSubobject<Ucasino_simulatorAttributeSet>(TEXT("AttributeSet"));
 
-	ShopComponent = CreateDefaultSubobject<UCasinoShopComponent>(TEXT("ShopComponent"));
 	WorldInteractionDetector = CreateDefaultSubobject<UWorldInteractionDetectorComponent>(TEXT("WorldInteractionDetector"));
 	BlackjackPlayerComponent = CreateDefaultSubobject<UBlackjackPlayerComponent>(TEXT("BlackjackPlayerComponent"));
 }
@@ -149,12 +148,12 @@ float Acasino_simulatorCharacter::GetCurrency() const
 	);
 }
 
-void Acasino_simulatorCharacter::SetCurrentSeatedMachine(ASeatedMachineBase* NewMachine)
+void Acasino_simulatorCharacter::SetCurrentSeatedMachine(TScriptInterface<IWorldInteractable> NewMachine)
 {
 	CurrentSeatedMachine = NewMachine;
 }
 
-void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(ASeatedMachineBase* MachineToClear)
+void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(IWorldInteractable* MachineToClear)
 {
 	if (!MachineToClear || CurrentSeatedMachine == MachineToClear)
 	{
@@ -694,22 +693,6 @@ void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerPlay_Implementation(AT
 	}
 }
 
-void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerAnte_Implementation(AThreeCardPokerTableActor* Table, int32 Amount, int32 PairBetAmout)
-{
-	if (Table)
-	{
-		Table->ExecutePlaceAnte(this, Amount, PairBetAmout);
-	}
-}
-
-void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerPairPlus_Implementation(AThreeCardPokerTableActor* Table, int32 Amount)
-{
-	if (Table)
-	{
-		Table->ExecutePlacePairPlus(this, Amount);
-	}
-}
-
 void Acasino_simulatorCharacter::ServerPlayThreeCardPokerHand_Implementation(AThreeCardPokerTableActor* Table)
 {
 	if (Table)
@@ -731,18 +714,5 @@ void Acasino_simulatorCharacter::ServerLeaveThreeCardPokerTable_Implementation(A
 	if (Table)
 	{
 		Table->ExecuteLeaveTable(this);
-	}
-}
-
-void Acasino_simulatorCharacter::SetCurrentThreeCardPokerTable(AThreeCardPokerTableActor* NewTable)
-{
-	CurrentThreeCardPokerTable = NewTable;
-}
-
-void Acasino_simulatorCharacter::ClearCurrentThreeCardPokerTable(AThreeCardPokerTableActor* TableToClear)
-{
-	if (!TableToClear || CurrentThreeCardPokerTable == TableToClear)
-	{
-		CurrentThreeCardPokerTable = nullptr;
 	}
 }

@@ -62,8 +62,18 @@ class Acasino_simulatorCharacter : public ACharacter, public IAbilitySystemInter
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FirstPersonCameraComponent;
 
+// Stat
 protected:
+	/** Walking speed at full Nicotine (ratio = 1). CharacterMovementComponent's MaxWalkSpeed is scaled from this as Nicotine depletes. */
+	UPROPERTY(EditAnywhere, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
+	float MaxMoveSpeed = 600.0f;
 
+	/** Jump launch speed at full Alcohol (ratio = 1). CharacterMovementComponent's JumpZVelocity is scaled from this as Alcohol depletes. */
+	UPROPERTY(EditAnywhere, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
+	float MaxJumpSpeed = 420.0f;
+
+// Input Action
+protected:
 	/** Jump Input Action */
 	UPROPERTY(EditAnywhere, Category ="Input")
 	UInputAction* JumpAction;
@@ -96,6 +106,8 @@ protected:
 	UPROPERTY(EditAnywhere, Category ="Input")
 	class UInputAction* MouseLookAction;
 
+// Ability System
+protected:
 	/** Ability system component driving this character's abilities/attributes/effects */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
 	Ucasino_simulatorAbilitySystemComponent* AbilitySystemComponent;
@@ -122,59 +134,47 @@ protected:
 	/** Prevents repeated possession or PlayerState replication from stacking movement delegates. */
 	bool bMovementAttributeChangesBound = false;
 
-	/** Handles cigarette/alcohol shop purchases and forwards successful recovery to GAS */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Shop", meta = (AllowPrivateAccess = "true"))
-	UCasinoShopComponent* ShopComponent;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Interaction", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UWorldInteractionDetectorComponent> WorldInteractionDetector;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Blackjack", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UBlackjackPlayerComponent> BlackjackPlayerComponent;
-
 	/** Infinite periodic GameplayEffect (typically a Blueprint) that decays Nicotine/Alcohol over time. Applied once, server-side. */
-	UPROPERTY(EditDefaultsOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditDefaultsOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UGameplayEffect> AttributeDecayEffectClass;
 
 	/** Handle to the active decay effect, kept so it can be removed/reapplied later (e.g. to pause decay) */
-	UPROPERTY(BlueprintReadOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Abilities", meta = (AllowPrivateAccess = "true"))
 	FActiveGameplayEffectHandle AttributeDecayEffectHandle;
 
+// Game Machine
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Blackjack", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UBlackjackPlayerComponent> BlackjackPlayerComponent;
+
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Machine|Interaction", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<ASeatedMachineBase> CurrentSeatedMachine;
+	TScriptInterface<IWorldInteractable> CurrentSeatedMachine;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Three Card Poker", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<AThreeCardPokerTableActor> CurrentThreeCardPokerTable;
+
+// Component
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Interaction", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UWorldInteractionDetectorComponent> WorldInteractionDetector;
 
 	/** The one ore pickup currently carried by this character. Set and cleared by the server-side pickup/drop flow. */
 	UPROPERTY(ReplicatedUsing = OnRep_CarriedOre, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AOrePickupBase> CarriedOre;
 
-	/** The Three Card Poker table this (locally-owned) character is currently interacting with, if
-	 * any. Mirrors CurrentSeatedMachine's role now that AThreeCardPokerTableActor handles its own
-	 * interaction directly (no more separate dealer NPC) — kept in sync network-wide via
-	 * AThreeCardPokerTableActor's interaction-started/ended multicasts, same as SetCurrentSeatedMachine. */
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Three Card Poker", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<AThreeCardPokerTableActor> CurrentThreeCardPokerTable;
-
-	/** Walking speed at full Nicotine (ratio = 1). CharacterMovementComponent's MaxWalkSpeed is scaled from this as Nicotine depletes. */
-	UPROPERTY(EditAnywhere, Category="Abilities", meta = (AllowPrivateAccess = "true"))
-	float MaxMoveSpeed = 600.0f;
-
-	/** Jump launch speed at full Alcohol (ratio = 1). CharacterMovementComponent's JumpZVelocity is scaled from this as Alcohol depletes. */
-	UPROPERTY(EditAnywhere, Category="Abilities", meta = (AllowPrivateAccess = "true"))
-	float MaxJumpSpeed = 420.0f;
-
+	// Function
 public:
 	Acasino_simulatorCharacter();
 
-	//~ Begin IAbilitySystemInterface
+	/** Grants an ability to this character's ASC. Authority-only; granted specs replicate to the owning client. */
+	UFUNCTION(BlueprintCallable, Category = "Abilities")
+	FGameplayAbilitySpecHandle GrantAbility(TSubclassOf<UGameplayAbility> AbilityClass, int32 Level = 1, FGameplayTag InputTag = FGameplayTag());
+
+// Return Get
+public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
-	//~ End IAbilitySystemInterface
-
-	/** Returns the attribute set holding nicotine/alcohol levels **/
+	
 	Ucasino_simulatorAttributeSet* GetAttributeSet() const { return AttributeSet; }
-
-	/** Returns the shop component used by shop/exchange UI blueprints **/
-	UFUNCTION(BlueprintPure, Category="Shop")
-	UCasinoShopComponent* GetShopComponent() const { return ShopComponent; }
 
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	UWorldInteractionDetectorComponent* GetWorldInteractionDetector() const { return WorldInteractionDetector; }
@@ -182,6 +182,26 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack")
 	UBlackjackPlayerComponent* GetBlackjackPlayerComponent() const { return BlackjackPlayerComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
+	TScriptInterface<IWorldInteractable> GetCurrentSeatedMachine() const { return CurrentSeatedMachine; }
+
+	UFUNCTION(BlueprintPure, Category = "Three Card Poker")
+	AThreeCardPokerTableActor* GetCurrentThreeCardPokerTable() const { return CurrentThreeCardPokerTable; }
+
+	UFUNCTION(BlueprintPure, Category = "OrePickup")
+	AOrePickupBase* GetCarriedOre() const { return CarriedOre; }
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
+	int32 GetPickaxeMiningPower() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
+	float GetPickaxeMiningSpeed() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
+	float GetPickaxeMiningMontagePlayRate() const;
+
+// Currency
+public:
 	UFUNCTION(BlueprintCallable, Category = "Economy|Currency")
 	bool TrySpendCurrency(float Amount);
 
@@ -191,9 +211,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Economy|Currency")
 	float GetCurrency() const;
 
-	/** Grants an ability to this character's ASC. Authority-only; granted specs replicate to the owning client. */
-	UFUNCTION(BlueprintCallable, Category="Abilities")
-	FGameplayAbilitySpecHandle GrantAbility(TSubclassOf<UGameplayAbility> AbilityClass, int32 Level = 1, FGameplayTag InputTag = FGameplayTag());
+// Use Currency In Game 
+public:
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Dice Game")
+	void ServerPlaceDiceBet(ANPC_Dice* DiceNPC, int32 Select, int32 Betting);
 
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
 	void ServerBuyRaceTicket(ARaceManager* Manager, int32 RunnerIndex, int32 Amount, int32 Count);
@@ -201,6 +222,8 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Race|Bet")
 	void ServerClaimRaceWinnings(ARaceManager* Manager);
 
+// Mining
+public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Mining|Shop")
 	void ServerBuyMiningShopUpgrade(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType);
 
@@ -213,23 +236,13 @@ public:
 	UFUNCTION(Server, Unreliable, BlueprintCallable, Category = "Mining|Data")
 	void ServerUpdateCarriedOreTargetLocation(FVector TargetLocation);
 
-	/** Forwards a dice game bet placed by this (locally-owned) character to the server, since a
-	 * client can't call a Server RPC declared on DiceNPC directly (it isn't owned by that client). */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Dice Game")
-	void ServerPlaceDiceBet(ANPC_Dice* DiceNPC, int32 Select, int32 Betting);
+	/** Server-side state update used by AOrePickupBase after a successful pickup or drop. */
+	void SetCarriedOre(AOrePickupBase* NewCarriedOre);
 
-	/** Forwards Three Card Poker actions from this (locally-owned) character to the server, since a
-	 * client can't call a Server RPC declared on AThreeCardPokerTableActor directly (it isn't owned
-	 * by that client's connection - see AThreeCardPokerTableActor's class comment). Same forwarding
-	 * trick as ServerPlaceDiceBet. */
+// Three Poker
+public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
 	void ServerPlaceThreeCardPokerPlay(AThreeCardPokerTableActor* Table, int32 AnteAmount, int32 PairBetAmount);
-
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
-	void ServerPlaceThreeCardPokerAnte(AThreeCardPokerTableActor* Table, int32 Amount, int32 PairBetAmount);
-
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
-	void ServerPlaceThreeCardPokerPairPlus(AThreeCardPokerTableActor* Table, int32 Amount);
 
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
 	void ServerPlayThreeCardPokerHand(AThreeCardPokerTableActor* Table);
@@ -240,38 +253,8 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
 	void ServerLeaveThreeCardPokerTable(AThreeCardPokerTableActor* Table);
 
-	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
-	ASeatedMachineBase* GetCurrentSeatedMachine() const { return CurrentSeatedMachine; }
-
-	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
-	bool IsUsingSeatedMachine() const { return CurrentSeatedMachine != nullptr; }
-
-	void SetCurrentSeatedMachine(ASeatedMachineBase* NewMachine);
-	void ClearCurrentSeatedMachine(ASeatedMachineBase* MachineToClear);
-
-	/** The Three Card Poker table this character is currently interacting with, or null. Used by
-	 * UThreeCardPokerBlueprintLibrary::GetThreeCardPokerTableForPlayer so BP betting UI doesn't need
-	 * to resolve it itself. */
-	UFUNCTION(BlueprintPure, Category = "Three Card Poker")
-	AThreeCardPokerTableActor* GetCurrentThreeCardPokerTable() const { return CurrentThreeCardPokerTable; }
-
-	void SetCurrentThreeCardPokerTable(AThreeCardPokerTableActor* NewTable);
-	void ClearCurrentThreeCardPokerTable(AThreeCardPokerTableActor* TableToClear);
-
-UFUNCTION(BlueprintPure, Category = "OrePickup")
-	AOrePickupBase* GetCarriedOre() const { return CarriedOre; }
-
-	/** Server-side state update used by AOrePickupBase after a successful pickup or drop. */
-	void SetCarriedOre(AOrePickupBase* NewCarriedOre);
-
-	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
-	int32 GetPickaxeMiningPower() const;
-
-	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
-	float GetPickaxeMiningSpeed() const;
-
-	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
-	float GetPickaxeMiningMontagePlayRate() const;
+	void SetCurrentSeatedMachine(TScriptInterface<IWorldInteractable> NewMachine);
+	void ClearCurrentSeatedMachine(IWorldInteractable* MachineToClear);
 
 	/** Lets Blueprint-owned equipment meshes restore their visibility after shared UI/camera flows. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment")

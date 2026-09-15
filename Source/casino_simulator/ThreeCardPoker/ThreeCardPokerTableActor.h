@@ -77,18 +77,6 @@ public:
 	bool ExecutePlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount);
 
 	UFUNCTION(BlueprintCallable, Category="ThreeCardPoker|Round")
-	bool PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount);
-
-	/** Authoritative half of PlaceAnte. Server-only; validates Player is the one currently
-	 * interacting with this table. */
-	bool ExecutePlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount);
-
-	UFUNCTION(BlueprintCallable, Category="ThreeCardPoker|Round")
-	bool PlacePairPlus(Acasino_simulatorCharacter* Player, int32 Amount);
-
-	bool ExecutePlacePairPlus(Acasino_simulatorCharacter* Player, int32 Amount);
-
-	UFUNCTION(BlueprintCallable, Category="ThreeCardPoker|Round")
 	bool PlayHand(Acasino_simulatorCharacter* Player);
 
 	bool ExecutePlayHand(Acasino_simulatorCharacter* Player);

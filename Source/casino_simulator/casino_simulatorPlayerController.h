@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Interaction/WorldInteractable.h"
 #include "casino_simulatorPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -14,7 +15,6 @@ class UAbilitySystemComponent;
 class ANPC_Base;
 class ASeatedMachineBase;
 class UInventoryWidget;
-class AWorldInteractableBase;
 struct FOnAttributeChangeData;
 
 /**
@@ -118,15 +118,6 @@ protected:
 	UPROPERTY()
 	TObjectPtr<class Acasino_simulatorPlayerState> BoundPlayerState;
 
-	UPROPERTY(BlueprintReadOnly)
-	TObjectPtr<ANPC_Base> CurrentInteractionTarget;
-
-	/** True while a World-type target (machine/table/prop - AWorldInteractableBase's family) is what
-	 * the player is currently focused on. Mirrors CurrentInteractionTarget's role for NPCs: both use
-	 * the same PlayerHUDWidget prompt flow (BP_OpenInterection/BP_CloseInterection) via
-	 * OpenInteraction/CloseInteraction. Kept as its own bool rather than widening
-	 * CurrentInteractionTarget's type because
-	 * WBP_DiceBetting/WBP_ThreeCardPokerBetting read that property directly in their Blueprint graphs. */
 	UPROPERTY(BlueprintReadOnly, Category="Interaction", meta=(AllowPrivateAccess="true"))
 	bool bWorldInteractionTargetFocused = false;
 
@@ -179,31 +170,19 @@ public:
 	UFUNCTION(BlueprintPure, Category="Inventory")
 	bool IsInventoryOpen() const;
 
-	/** The NPC this controller is currently interacting with (null if none). Used by e.g.
-	 * UThreeCardPokerBlueprintLibrary::GetThreeCardPokerTableForPlayer to resolve which table a
-	 * player is at without the caller needing direct access to the protected member. */
-	UFUNCTION(BlueprintPure, Category="Interaction")
-	ANPC_Base* GetCurrentInteractionTarget() const { return CurrentInteractionTarget; }
-
-	UFUNCTION(BlueprintCallable, Category="Interaction")
-	void SetInteractionTarget(ANPC_Base* NewInteractionTarget);
-
-	UFUNCTION(BlueprintCallable, Category="Interaction")
-	void ClearInteractionTarget(ANPC_Base* InteractionTargetToClear);
-
 	UFUNCTION(BlueprintCallable, Category="Interaction")
 	void InteractWithCurrentTarget();
 
 	UFUNCTION(BlueprintCallable, Category="Machine|Interaction")
 	void ExitCurrentMachine();
 
-	void RequestWorldInteraction(AWorldInteractableBase* Target);
+	void RequestWorldInteraction(TScriptInterface<IWorldInteractable> Target);
 
 	/** NPC counterpart to RequestWorldInteraction, called after the detector resolves an ANPC_Base
 	 * as the focused target. Runs Interact() locally, forwards to the
 	 * server via Server_InteractWithNPC on a client, and disables movement for non-Shop NPCs - same
 	 * behavior this used to run from inline inside InteractWithCurrentTarget. */
-	void RequestNPCInteraction(ANPC_Base* Target);
+	//void RequestNPCInteraction(ANPC_Base* Target);
 
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	bool IsInteractionUIOpen() const { return bInteractionUIOpen; }
@@ -240,10 +219,7 @@ public:
 
 protected:
 	UFUNCTION(Server, Reliable)
-	void Server_RequestWorldInteraction(AWorldInteractableBase* Target);
-
-	UFUNCTION(Server, Reliable)
-	void Server_InteractWithNPC(ANPC_Base* Target);
+	void Server_RequestWorldInteraction(const TScriptInterface<IWorldInteractable>& Target);
 
 	UFUNCTION(Server, Reliable)
 	void Server_HandleMachinePrimaryInput(ASeatedMachineBase* Machine);

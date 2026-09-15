@@ -27,8 +27,6 @@
 #include "Machine/SeatedMachineBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NPC/NPC_Base.h"
-#include "GameFramework/CharacterMovementComponent.h"
-#include "NativeGameplayTags.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_DropOre, "Input.DropOre");
 
@@ -263,38 +261,6 @@ void Acasino_simulatorPlayerController::OnCurrencyChanged(const FOnAttributeChan
 	}
 }
 
-void Acasino_simulatorPlayerController::SetInteractionTarget(ANPC_Base* NewInteractionTarget)
-{
-	if (!NewInteractionTarget)
-	{
-		return;
-	}
-
-	CurrentInteractionTarget = NewInteractionTarget;
-	OpenInteraction();
-}
-
-void Acasino_simulatorPlayerController::ClearInteractionTarget(ANPC_Base* InteractionTargetToClear)
-{
-	if (InteractionTargetToClear && CurrentInteractionTarget != InteractionTargetToClear)
-	{
-		return;
-	}
-
-	CurrentInteractionTarget = nullptr;
-
-	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
-	{
-		if (PlayerCharacter->GetCarriedOre())
-		{
-			OpenCarriedOreInteraction();
-			return;
-		}
-	}
-
-	CloseInteraction();
-}
-
 void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 {
 	if (bInteractionUIOpen)
@@ -313,19 +279,6 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 		return;
 	}
 
-	if (ASeatedMachineBase* CurrentMachine = PlayerCharacter->GetCurrentSeatedMachine())
-	{
-		if (HasAuthority())
-		{
-			CurrentMachine->HandleMachinePrimaryInput(PlayerCharacter);
-		}
-		else
-		{
-			Server_HandleMachinePrimaryInput(CurrentMachine);
-		}
-		return;
-	}
-
 	if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 	{
 		TScriptInterface<IWorldInteractable> FocusedTarget = Detector->GetFocusedTarget();
@@ -334,15 +287,7 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 			return;
 		}
 
-		UObject* FocusedObject = FocusedTarget.GetObject();
-		if (AWorldInteractableBase* WorldTarget = Cast<AWorldInteractableBase>(FocusedObject))
-		{
-			RequestWorldInteraction(WorldTarget);
-		}
-		else if (ANPC_Base* NPCTarget = Cast<ANPC_Base>(FocusedObject))
-		{
-			RequestNPCInteraction(NPCTarget);
-		}
+		RequestWorldInteraction(FocusedTarget);
 	}
 }
 
@@ -373,7 +318,7 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 		return;
 	}
 
-	ASeatedMachineBase* CurrentMachine = PlayerCharacter->GetCurrentSeatedMachine();
+	TScriptInterface<IWorldInteractable> CurrentMachine = PlayerCharacter->GetCurrentSeatedMachine();
 	if (!CurrentMachine)
 	{
 		return;
@@ -381,18 +326,19 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 
 	if (HasAuthority())
 	{
-		CurrentMachine->RequestReleaseMachine(PlayerCharacter);
+		CurrentMachine->OnInteractionFocusEnded(PlayerCharacter);
 	}
 	else
 	{
-		Server_ExitMachine(CurrentMachine);
+		CurrentMachine->OnInteractionFocusEnded_Implementation(PlayerCharacter);
 	}
 }
 
-void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractableBase* Target)
+void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface<IWorldInteractable> Target)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Target)
+	UObject* TargetObject = Target.GetObject();
+	if (!PlayerCharacter || !TargetObject)
 	{
 		return;
 	}
@@ -400,18 +346,12 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 	// OnLocalInteract is BlueprintNativeEvent (so a Blueprint-graph-only override still runs), which
 	// requires going through Execute_ rather than a direct call - see IWorldInteractable's class
 	// comment. CanInteract/Interact are plain virtual, so they're called directly below.
-	IWorldInteractable::Execute_OnLocalInteract(Target, PlayerCharacter);
+	IWorldInteractable::Execute_OnLocalInteract(TargetObject, PlayerCharacter);
 	CloseInteraction();
 
 	if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
 	{
 		MovementComponent->DisableMovement();
-	}
-
-	if (Target->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
-	{
-		Target->BeginLocalInteraction(PlayerCharacter);
-		return;
 	}
 
 	if (HasAuthority())
@@ -424,7 +364,7 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 	}
 }
 
-void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implementation(AWorldInteractableBase* Target)
+void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implementation(const TScriptInterface<IWorldInteractable>& Target)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter || !Target || !Target->CanInteract(PlayerCharacter))
@@ -432,47 +372,6 @@ void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implement
 		return;
 	}
 
-	Target->Interact(PlayerCharacter);
-}
-
-void Acasino_simulatorPlayerController::RequestNPCInteraction(ANPC_Base* Target)
-{
-	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Target || !Target->CanInteract(PlayerCharacter))
-	{
-		return;
-	}
-
-	CloseInteraction();
-
-	// Always run locally so BP_OnInteract (opening the UI, playing local effects, etc.) fires
-	// immediately on this player's own machine. On a client this only touches that client's
-	// non-authoritative copy of the NPC though, so also tell the server to run the same Interact()
-	// on its authoritative copy (e.g. so NPC_Dice's InteractingPlayer is set server-side too) - skip
-	// it on the server/host, which already just ran it above.
-	Target->Interact(PlayerCharacter);
-	if (!HasAuthority())
-	{
-		Server_InteractWithNPC(Target);
-	}
-
-	if (Target->GetNPCType() != ENPCType::Shop)
-	{
-		if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
-		{
-			MovementComponent->DisableMovement();
-		}
-	}
-}
-
-void Acasino_simulatorPlayerController::Server_InteractWithNPC_Implementation(ANPC_Base* Target)
-{
-	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Target || !Target->GetCanInterection())
-	{
-		return;
-	}
-	CurrentInteractionTarget = Target;
 	Target->Interact(PlayerCharacter);
 }
 
@@ -513,7 +412,15 @@ void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSup
 		return;
 	}
 
-	if ((CurrentInteractionTarget || bWorldInteractionTargetFocused) && !bInteractionUIOpen)
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+	if (PlayerCharacter == nullptr)
+	{
+		return;
+	}
+
+	PlayerCharacter->GetCurrentSeatedMachine();
+
+	if ((PlayerCharacter->GetCurrentSeatedMachine() != nullptr || bWorldInteractionTargetFocused) && !bInteractionUIOpen)
 	{
 		OpenInteraction();
 	}
@@ -569,13 +476,15 @@ void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 	}
 
 	SetLocalPawnMeshesHiddenForInteraction(false);
-
-	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+	if (PlayerCharacter == nullptr)
 	{
-		PlayerCharacter->RefreshEquipmentVisuals();
+		return;
 	}
 
-	if (CurrentInteractionTarget || bWorldInteractionTargetFocused)
+	PlayerCharacter->RefreshEquipmentVisuals();
+
+	if (PlayerCharacter->GetCurrentSeatedMachine() != nullptr|| bWorldInteractionTargetFocused)
 	{
 		OpenInteraction();
 	}
@@ -650,8 +559,12 @@ void Acasino_simulatorPlayerController::OpenInteraction()
 		}
 	}
 
-	const bool bHasNPCTarget = CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection();
+	/*const bool bHasNPCTarget = CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection();
 	if ((!bHasNPCTarget && !bWorldInteractionTargetFocused) || bInteractionUIOpen || bInteractionPromptSuppressed)
+	{
+		return;
+	}*/
+	if (!bWorldInteractionTargetFocused || bInteractionUIOpen || bInteractionPromptSuppressed)
 	{
 		return;
 	}
