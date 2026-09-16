@@ -16,6 +16,9 @@ class CASINO_SIMULATOR_API UBT_NormalEnemy : public UBTService_BlackboardBase
 	
 public :
 	UBT_NormalEnemy();
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Target")
+	float LoseTargetDelay = 1.0f;
 
 protected:
 	virtual void TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
