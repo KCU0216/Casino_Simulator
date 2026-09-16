@@ -60,20 +60,49 @@ void ACartBase::Tick(float DeltaTime)
 		return;
 	}
 
-	if (FVector::DistSquared(Carrier->GetActorLocation(), *TargetLocation) > FMath::Square(MaxCarryTargetDistance))
+	FVector CarrierToTarget = *TargetLocation - Carrier->GetActorLocation();
+	CarrierToTarget.Z = 0.0f;
+	if (CarrierToTarget.SizeSquared() > FMath::Square(MaxCarryTargetDistance))
 	{
 		return;
 	}
 
-	const FVector NewLocation = FMath::VInterpTo(
-		GetActorLocation(),
-		CarrierTargetLocation,
-		DeltaTime,
-		20.f
-	);
-	//500.f -> temp carry velocity (hard coding)
+	FVector ToTarget = *TargetLocation - GetActorLocation();
+	ToTarget.Z = 0.0f;
 
-	SetActorLocation(NewLocation, false);
+	FVector CurrentVelocity = CartMesh->GetPhysicsLinearVelocity();
+	CurrentVelocity.Z = 0.0f;
+
+	const FVector SpringForce = ToTarget * CarrySpringStrength;
+	const FVector DampingForce = -CurrentVelocity * CarryDampingStrength;
+	const FVector CarryForce = (SpringForce + DampingForce).GetClampedToMaxSize(MaxCarryForce);
+
+	CartMesh->AddForce(CarryForce);
+
+	FVector CartForward = -CartMesh->GetForwardVector();
+	CartForward.Z = 0.0f;
+
+	FVector DesiredForward = Carrier->GetActorForwardVector();
+	DesiredForward.Z = 0.0f;
+
+	if (!CartForward.IsNearlyZero() && !DesiredForward.IsNearlyZero())
+	{
+		CartForward.Normalize();
+		DesiredForward.Normalize();
+
+		const float TurnAngle = FMath::Atan2(
+			FVector::CrossProduct(CartForward, DesiredForward).Z,
+			FVector::DotProduct(CartForward, DesiredForward)
+		);
+		const float AngularVelocityZ = CartMesh->GetPhysicsAngularVelocityInRadians().Z;
+		const float TurnTorque = FMath::Clamp(
+			TurnAngle * TurnTorqueStrength - AngularVelocityZ * TurnDampingStrength,
+			-MaxTurnTorque,
+			MaxTurnTorque
+		);
+
+		CartMesh->AddTorqueInRadians(FVector(0.0f, 0.0f, TurnTorque), NAME_None, true);
+	}
 
 }
 
@@ -110,7 +139,9 @@ bool ACartBase::UpdateCarryTargetLocation(Acasino_simulatorCharacter* Character,
 		return false;
 	}
 	//클라가 똑바로 보냈냐
-	if (FVector::DistSquared(Character->GetActorLocation(), TargetLocation) > FMath::Square(MaxCarryTargetDistance))
+	FVector CharacterToTarget = TargetLocation - Character->GetActorLocation();
+	CharacterToTarget.Z = 0.0f;
+	if (CharacterToTarget.SizeSquared() > FMath::Square(MaxCarryTargetDistance))
 	{
 		return false;
 	}
@@ -141,9 +172,6 @@ bool ACartBase::TryCarry(Acasino_simulatorCharacter* Character)
 		return false;
 	}
 
-	CartMesh->SetSimulatePhysics(false);
-	CartMesh->SetEnableGravity(false);
-
 	Carrier = Character;
 	CarrierTargetLocation = GetActorLocation();
 	Character->SetCarriedCart(this);
@@ -153,26 +181,15 @@ bool ACartBase::TryCarry(Acasino_simulatorCharacter* Character)
 
 bool ACartBase::TryRelease(Acasino_simulatorCharacter* Character)
 {
-	UE_LOG(LogTemp, Error, TEXT("Cart TryRelease called: HasAuthority=%d Character=%s CharacterCarriedCart=%s This=%s Carrier=%s"),
-		HasAuthority(),
-		*GetNameSafe(Character),
-		*GetNameSafe(Character ? Character->GetCarriedCart() : nullptr),
-		*GetNameSafe(this),
-		*GetNameSafe(Carrier));
-
 	if (!HasAuthority()
 		|| !Character
 		|| Character->GetCarriedCart() != this
 		)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Cart TryRelease failed"));
 		return false;
 	}
 	Carrier = nullptr;
-	CartMesh->SetSimulatePhysics(true);
-	CartMesh->SetEnableGravity(true);
 	Character->SetCarriedCart(nullptr);
-	UE_LOG(LogTemp, Error, TEXT("Cart TryRelease succeeded"));
 	return true;
 }
 

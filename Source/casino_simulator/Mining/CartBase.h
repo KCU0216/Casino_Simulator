@@ -40,7 +40,25 @@ protected:
 	FVector CarrierTargetLocation = FVector::ZeroVector;
 
 	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "Mining|Cart")
-	float MaxCarryTargetDistance = 500.f;
+	float MaxCarryTargetDistance = 300.f;
+
+	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "Mining|Cart")
+	float CarrySpringStrength = 30000.f;
+
+	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "Mining|Cart")
+	float CarryDampingStrength = 800.f;
+
+	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "Mining|Cart")
+	float MaxCarryForce = 500000.f;
+
+	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "Mining|Cart")
+	float TurnTorqueStrength = 10.f;
+
+	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "Mining|Cart")
+	float TurnDampingStrength = 2.5f;
+
+	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "Mining|Cart")
+	float MaxTurnTorque = 30.f;
 
 
 

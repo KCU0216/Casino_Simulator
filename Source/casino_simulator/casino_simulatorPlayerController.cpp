@@ -292,6 +292,12 @@ void Acasino_simulatorPlayerController::ClearInteractionTarget(ANPC_Base* Intera
 			OpenCarriedOreInteraction();
 			return;
 		}
+
+		if (PlayerCharacter->GetCarriedCart())
+		{
+			OpenCarriedCartInteraction();
+			return;
+		}
 	}
 
 	CloseInteraction();
@@ -299,26 +305,16 @@ void Acasino_simulatorPlayerController::ClearInteractionTarget(ANPC_Base* Intera
 
 void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 {
-	UE_LOG(LogTemp, Error, TEXT("InteractWithCurrentTarget: bInteractionUIOpen=%d"), bInteractionUIOpen);
-
 	if (bInteractionUIOpen)
 	{
-		UE_LOG(LogTemp, Error, TEXT("InteractWithCurrentTarget blocked by interaction UI"));
 		return;
 	}
 
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter)
 	{
-		UE_LOG(LogTemp, Error, TEXT("InteractWithCurrentTarget failed: no player character"));
 		return;
 	}
-
-	const FString CarriedOreName = PlayerCharacter->GetCarriedOre() ? PlayerCharacter->GetCarriedOre()->GetName() : TEXT("None");
-	const FString CarriedCartName = PlayerCharacter->GetCarriedCart() ? PlayerCharacter->GetCarriedCart()->GetName() : TEXT("None");
-	UE_LOG(LogTemp, Error, TEXT("InteractWithCurrentTarget: CarriedOre=%s CarriedCart=%s"),
-		*CarriedOreName,
-		*CarriedCartName);
 
 	//광물 놓을 수 있으면 먼저 놓음.
 	if (TryDropCarriedOre(PlayerCharacter))
@@ -387,11 +383,6 @@ bool Acasino_simulatorPlayerController::TryReleaseCarriedCart(Acasino_simulatorC
 {
 	if (!PlayerCharacter || !PlayerCharacter->GetCarriedCart())
 	{
-		const FString PlayerCharacterName = PlayerCharacter ? PlayerCharacter->GetName() : TEXT("None");
-		const FString CarriedCartName = PlayerCharacter && PlayerCharacter->GetCarriedCart() ? PlayerCharacter->GetCarriedCart()->GetName() : TEXT("None");
-		UE_LOG(LogTemp, Error, TEXT("TryReleaseCarriedCart failed: PlayerCharacter=%s CarriedCart=%s"),
-			*PlayerCharacterName,
-			*CarriedCartName);
 		return false;
 	}
 
@@ -399,14 +390,9 @@ bool Acasino_simulatorPlayerController::TryReleaseCarriedCart(Acasino_simulatorC
 		Cast<Ucasino_simulatorAbilitySystemComponent>(PlayerCharacter->GetAbilitySystemComponent());
 	if (!CasinoAbilitySystem)
 	{
-		UE_LOG(LogTemp, Error, TEXT("TryReleaseCarriedCart failed: no ability system"));
 		return false;
 	}
 
-	const FString CarriedCartName = PlayerCharacter->GetCarriedCart() ? PlayerCharacter->GetCarriedCart()->GetName() : TEXT("None");
-	UE_LOG(LogTemp, Error, TEXT("TryReleaseCarriedCart: pressing %s for %s"),
-		*TAG_Input_ReleaseCart.GetTag().ToString(),
-		*CarriedCartName);
 	CasinoAbilitySystem->PressInputTag(TAG_Input_ReleaseCart);
 	CasinoAbilitySystem->ReleaseInputTag(TAG_Input_ReleaseCart);
 	return true;
@@ -788,6 +774,12 @@ void Acasino_simulatorPlayerController::SetWorldInteractionTargetFocused(bool bF
 			if (PlayerCharacter->GetCarriedOre())
 			{
 				OpenCarriedOreInteraction();
+				return;
+			}
+
+			if (PlayerCharacter->GetCarriedCart())
+			{
+				OpenCarriedCartInteraction();
 				return;
 			}
 		}
