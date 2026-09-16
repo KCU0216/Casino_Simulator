@@ -304,6 +304,11 @@ bool AThreeCardPokerTableActor::LeaveTable(Acasino_simulatorCharacter* Player)
 	}
 
 	Player->ServerLeaveThreeCardPokerTable(this);
+	
+	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(Player->GetController()))
+	{
+		PC->SetIsInteractionUIOpen(false);
+	}
 	return true;
 }
 

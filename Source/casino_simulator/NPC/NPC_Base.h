@@ -51,9 +51,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="NPC", meta = (AllowPrivateAccess = "true"))
 	ENPCType NPCType = ENPCType::None;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "NPC", meta = (AllowPrivateAccess = "true"))
-	bool CanInterection = true;
-
 	/** Ability system component driving this NPC's abilities/attributes/effects */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
 	UAbilitySystemComponent* AbilitySystemComponent;
@@ -74,6 +71,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category="Interaction", meta = (AllowPrivateAccess = "true"))
 	Acasino_simulatorCharacter* OverlappingPlayer = nullptr;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true"))
+	bool IsAnimPlay = false;
+
 public:
 
 	ANPC_Base();
@@ -85,14 +85,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="NPC")
 	ENPCType GetNPCType() const { return NPCType; }
 
-	UFUNCTION(BlueprintPure, Category = "NPC")
-	bool GetCanInterection() const { return CanInterection; }
+	UFUNCTION(BlueprintCallable, Category = "Intreaction")
+	void SetIsAnimPlay(bool Value);
 
-	UFUNCTION(BlueprintCallable, Category = "Interaction")
-	void SetCanInterection(bool value);
+	UFUNCTION(BlueprintPure, Category = "Intreaction")
+	bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
 
 	//~ Begin IWorldInteractable interface
-	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
 	// GetInteractionPromptText not overridden - NPCs use the default HUD prompt text.
 	virtual void OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
