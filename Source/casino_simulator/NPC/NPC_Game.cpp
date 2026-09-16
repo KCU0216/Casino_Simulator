@@ -1,8 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
+#include "NPC_Game.h"
 #include "casino_simulatorCharacter.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
-#include "NPC_Game.h"
+
 
 void ANPC_Game::OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
