@@ -51,10 +51,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Machine|State")
 	bool IsOccupied() const { return CurrentUser != nullptr; }
 
-	
-	UFUNCTION(BlueprintPure, Category = "Machine|State")
-	bool CanOperate(Acasino_simulatorCharacter* RequestingCharacter) const;
-
 	virtual bool CanInteract(Acasino_simulatorCharacter* RequestingCharacter) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Machine|State")

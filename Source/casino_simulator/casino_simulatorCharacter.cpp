@@ -580,7 +580,6 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 			Cast<ASeatedMachineBase>(CurrentMachine.GetObject()))
 		{
 			Machine->HandleMachinePrimaryInput(this);
-			return;
 		}
 	}
 

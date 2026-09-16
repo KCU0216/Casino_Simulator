@@ -67,7 +67,7 @@ void ASeatedMachineBase::RequestReleaseMachine(Acasino_simulatorCharacter* Reque
 
 void ASeatedMachineBase::HandleMachinePrimaryInput(Acasino_simulatorCharacter* RequestingCharacter)
 {
-	if (!RequestingCharacter || !CanOperate(RequestingCharacter))
+	if (!RequestingCharacter)
 	{
 		return;
 	}
@@ -89,11 +89,6 @@ void ASeatedMachineBase::SetCanExitMachine(bool bCanExit)
 	{
 		Server_SetCanExitMachine(bCanExit);
 	}
-}
-
-bool ASeatedMachineBase::CanOperate(Acasino_simulatorCharacter* RequestingCharacter) const
-{
-	return bCanOperate && CurrentUser && CurrentUser == RequestingCharacter;
 }
 
 bool ASeatedMachineBase::CanInteract(Acasino_simulatorCharacter* RequestingCharacter) const
@@ -141,7 +136,7 @@ void ASeatedMachineBase::Server_ReleaseMachine_Implementation(Acasino_simulatorC
 
 void ASeatedMachineBase::Server_HandleMachinePrimaryInput_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
 {
-	if (!RequestingCharacter || !CanOperate(RequestingCharacter))
+	if (!RequestingCharacter)
 	{
 		return;
 	}

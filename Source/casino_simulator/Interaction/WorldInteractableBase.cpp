@@ -46,23 +46,55 @@ void AWorldInteractableBase::OnLocalInteract_Implementation(Acasino_simulatorCha
 
 void AWorldInteractableBase::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
+	// 위젯이 떠있으면 막기
+	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
+	if (PC == nullptr)
+	{
+		return;
+	}
+	if (InteractingCharacter == nullptr || PC->IsInteractionUIOpen())
+	{
+		return;
+	}
+	// NPCs use the same PlayerHUDWidget prompt flow as world interactables.
+	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
+
+	if (PlayerController != nullptr && CanInteract(InteractingCharacter))
+	{
+		PlayerController->SetWorldInteractionTargetFocused(true);
+		InteractingCharacter->SetCurrentSeatedMachine(this);
+	}
+
 	// Same PlayerHUDWidget prompt flow ANPC_Base uses.
-	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
+	/*if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
 		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
 		: nullptr)
 	{
 		PlayerController->SetWorldInteractionTargetFocused(true);
-	}
+	}*/
 }
 
 void AWorldInteractableBase::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
+	if (InteractingCharacter == nullptr)
+	{
+		return;
+	}
+
+	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
+	if (PlayerController != nullptr && InteractingPlayer != nullptr && InteractingPlayer == InteractingCharacter)
+	{
+		InteractingPlayer = nullptr;
+		PlayerController->SetWorldInteractionTargetFocused(false);
+		InteractingCharacter->SetCurrentSeatedMachine(nullptr);
+	}
+
+	/*if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
 		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
 		: nullptr)
 	{
 		PlayerController->SetWorldInteractionTargetFocused(false);
-	}
+	}*/
 }
 
 bool AWorldInteractableBase::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
@@ -79,7 +111,7 @@ bool AWorldInteractableBase::CanInteract(Acasino_simulatorCharacter* Interacting
 	}
 
 	const FVector ToCharacter = InteractingCharacter->GetActorLocation() - GetActorLocation();
-	return ToCharacter.SizeSquared() <= FMath::Square(MaxDistance);
+	return  InteractingPlayer == InteractingCharacter && ToCharacter.SizeSquared() <= FMath::Square(MaxDistance);
 }
 
 void AWorldInteractableBase::OnInteractionSphereBeginOverlap(
@@ -90,13 +122,28 @@ void AWorldInteractableBase::OnInteractionSphereBeginOverlap(
 	bool bFromSweep,
 	const FHitResult& SweepResult)
 {
-	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor))
+	UE_LOG(LogTemp, Warning, TEXT("Enter"));
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+
+	if (InteractingPlayer == nullptr && PlayerCharacter != nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Player"));
+		InteractingPlayer = PlayerCharacter;
+
+		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Detector"));
+			Detector->RegisterCandidate(this);
+		}
+	}
+
+	/*if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor))
 	{
 		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
 			Detector->RegisterCandidate(this);
 		}
-	}
+	}*/
 }
 
 void AWorldInteractableBase::OnInteractionSphereEndOverlap(
@@ -105,11 +152,19 @@ void AWorldInteractableBase::OnInteractionSphereEndOverlap(
 	UPrimitiveComponent* OtherComp,
 	int32 OtherBodyIndex)
 {
-	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor))
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+	if (InteractingPlayer != nullptr && InteractingPlayer == PlayerCharacter)
 	{
 		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
 			Detector->UnregisterCandidate(this);
 		}
 	}
+	/*if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor))
+	{
+		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
+		{
+			Detector->UnregisterCandidate(this);
+		}
+	}*/
 }

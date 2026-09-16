@@ -358,10 +358,10 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 		return;
 	}
 
-	IWorldInteractable::Execute_OnInteractionFocusEnded(
+	/*IWorldInteractable::Execute_OnInteractionFocusEnded(
 		Machine,
 		PlayerCharacter
-	);
+	);*/
 
 	Machine->RequestReleaseMachine(PlayerCharacter);
 }
