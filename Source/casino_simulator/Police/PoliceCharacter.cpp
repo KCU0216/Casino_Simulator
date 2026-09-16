@@ -6,5 +6,5 @@
 
 APoliceCharacter::APoliceCharacter()
 {
-	AIControllerClass = APoliceAIController::StaticClass();
+	Job = 0;
 }

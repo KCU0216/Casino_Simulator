@@ -25,7 +25,7 @@ public class casino_simulator : ModuleRules
 			"GameplayTasks"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "NavigationSystem" });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"casino_simulator",
