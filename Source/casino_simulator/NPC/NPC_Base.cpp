@@ -98,7 +98,14 @@ void ANPC_Base::SetIsAnimPlay(bool Value)
 
 bool ANPC_Base::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
 {
-	return OverlappingPlayer == InteractingCharacter && IsAnimPlay == false;
+	if (GetNPCType() == ENPCType::Shop)
+	{
+		return true;
+	}
+	else
+	{
+		return OverlappingPlayer == InteractingCharacter && IsAnimPlay == false;
+	}
 }
 
 void ANPC_Base::Interact(Acasino_simulatorCharacter* InteractingCharacter)
@@ -148,6 +155,7 @@ void ANPC_Base::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacte
 	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
 	if (PlayerController != nullptr && OverlappingPlayer != nullptr && OverlappingPlayer == InteractingCharacter)
 	{
+		OverlappingPlayer = nullptr;
 		PlayerController->SetWorldInteractionTargetFocused(false);
 		InteractingCharacter->SetCurrentSeatedMachine(nullptr);
 	}
@@ -161,14 +169,9 @@ void ANPC_Base::OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedC
 	// UWorldInteractionDetectorComponent, same as AWorldInteractableBase - see OnInteractionFocusStarted
 	// above for where the UI actually opens once this NPC wins that resolution.
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
-	if (OverlappingPlayer == nullptr && PlayerCharacter != nullptr)
+	if (PlayerCharacter == nullptr)
 	{
-		OverlappingPlayer = PlayerCharacter;
-
-		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-		{
-			Detector->RegisterCandidate(this);
-		}
+		return;
 	}
 }
 
@@ -177,8 +180,6 @@ void ANPC_Base::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedCom
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
 	if (OverlappingPlayer != nullptr && OverlappingPlayer == PlayerCharacter)
 	{
-			OverlappingPlayer = nullptr;
-
 		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
 			Detector->UnregisterCandidate(this);

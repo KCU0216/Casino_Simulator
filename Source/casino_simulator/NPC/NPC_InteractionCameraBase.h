@@ -34,4 +34,9 @@ private:
 	/** Optional external view actor override. Leave empty to use this NPC's InteractionCameraComponent owner. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category="Interaction|Camera", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<AActor> InteractionCameraTarget;
+
+protected:
+	virtual void OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult) override;
+
+	virtual void OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex) override;
 };
