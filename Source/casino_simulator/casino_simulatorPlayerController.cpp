@@ -25,10 +25,13 @@
 #include "Interaction/WorldInteractableBase.h"
 #include "Interaction/WorldInteractable.h"
 #include "Machine/SeatedMachineBase.h"
+#include "Mining/CartBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "NativeGameplayTags.h"
 #include "NPC/NPC_Base.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_DropOre, "Input.DropOre");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_ReleaseCart, "Input.ReleaseCart");
 
 Acasino_simulatorPlayerController::Acasino_simulatorPlayerController()
 {
@@ -279,6 +282,11 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 		return;
 	}
 
+	if (TryReleaseCarriedCart(PlayerCharacter))
+	{
+		return;
+	}
+
 	if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 	{
 		TScriptInterface<IWorldInteractable> FocusedTarget = Detector->GetFocusedTarget();
@@ -307,6 +315,25 @@ bool Acasino_simulatorPlayerController::TryDropCarriedOre(Acasino_simulatorChara
 
 	CasinoAbilitySystem->PressInputTag(TAG_Input_DropOre);
 	CasinoAbilitySystem->ReleaseInputTag(TAG_Input_DropOre);
+	return true;
+}
+
+bool Acasino_simulatorPlayerController::TryReleaseCarriedCart(Acasino_simulatorCharacter* PlayerCharacter)
+{
+	if (!PlayerCharacter || !PlayerCharacter->GetCarriedCart())
+	{
+		return false;
+	}
+
+	Ucasino_simulatorAbilitySystemComponent* CasinoAbilitySystem =
+		Cast<Ucasino_simulatorAbilitySystemComponent>(PlayerCharacter->GetAbilitySystemComponent());
+	if (!CasinoAbilitySystem)
+	{
+		return false;
+	}
+
+	CasinoAbilitySystem->PressInputTag(TAG_Input_ReleaseCart);
+	CasinoAbilitySystem->ReleaseInputTag(TAG_Input_ReleaseCart);
 	return true;
 }
 
@@ -352,6 +379,13 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface
 	// comment. CanInteract/Interact are plain virtual, so they're called directly below.
 	IWorldInteractable::Execute_OnLocalInteract(TargetObject, PlayerCharacter);
 	CloseInteraction();
+
+	if (AWorldInteractableBase* WorldTarget = Cast<AWorldInteractableBase>(TargetObject);
+		WorldTarget && WorldTarget->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
+	{
+		WorldTarget->BeginLocalInteraction(PlayerCharacter);
+		return;
+	}
 
 	if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
 	{
@@ -556,7 +590,7 @@ void Acasino_simulatorPlayerController::OpenInteraction()
 {
 	if (const Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
 	{
-		if (PlayerCharacter->GetCarriedOre())
+		if (PlayerCharacter->GetCarriedOre() || PlayerCharacter->GetCarriedCart())
 		{
 			CloseInteraction();
 			return;
@@ -622,6 +656,20 @@ void Acasino_simulatorPlayerController::OpenCarriedOreInteraction()
 	}
 }
 
+void Acasino_simulatorPlayerController::OpenCarriedCartInteraction()
+{
+	if (bInteractionUIOpen || bInteractionPromptSuppressed)
+	{
+		return;
+	}
+
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->BP_SetInteractionPromptText(FText::FromString(TEXT("Release")));
+		PlayerHUDWidget->BP_OpenInterection();
+	}
+}
+
 void Acasino_simulatorPlayerController::SetWorldInteractionTargetFocused(bool bFocused)
 {
 	bWorldInteractionTargetFocused = bFocused;
@@ -637,6 +685,12 @@ void Acasino_simulatorPlayerController::SetWorldInteractionTargetFocused(bool bF
 			if (PlayerCharacter->GetCarriedOre())
 			{
 				OpenCarriedOreInteraction();
+				return;
+			}
+
+			if (PlayerCharacter->GetCarriedCart())
+			{
+				OpenCarriedCartInteraction();
 				return;
 			}
 		}

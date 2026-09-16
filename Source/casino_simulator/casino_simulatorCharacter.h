@@ -30,6 +30,7 @@ class ARaceManager;
 class ANPC_Dice;
 class AThreeCardPokerTableActor;
 class AOrePickupBase;
+class ACartBase;
 
 /** A startup ability and the semantic input tag used to activate it (empty for passive/event abilities). */
 USTRUCT(BlueprintType)
@@ -162,6 +163,9 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_CarriedOre, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AOrePickupBase> CarriedOre;
 
+	UPROPERTY(ReplicatedUsing = OnRep_CarriedCart, VisibleInstanceOnly, BlueprintReadOnly, Category = "Cart", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ACartBase> CarriedCart;
+
 	// Function
 public:
 	Acasino_simulatorCharacter();
@@ -190,6 +194,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "OrePickup")
 	AOrePickupBase* GetCarriedOre() const { return CarriedOre; }
+
+	UFUNCTION(BlueprintPure, Category = "Cart")
+	ACartBase* GetCarriedCart() const { return CarriedCart; }
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
 	int32 GetPickaxeMiningPower() const;
@@ -236,8 +243,14 @@ public:
 	UFUNCTION(Server, Unreliable, BlueprintCallable, Category = "Mining|Data")
 	void ServerUpdateCarriedOreTargetLocation(FVector TargetLocation);
 
+	UFUNCTION(Server, Unreliable, BlueprintCallable, Category = "Mining|Data")
+	void ServerUpdateCarriedCartTargetLocation(FVector TargetLocation);
+
 	/** Server-side state update used by AOrePickupBase after a successful pickup or drop. */
 	void SetCarriedOre(AOrePickupBase* NewCarriedOre);
+
+	/** Server-side state update used by ACartBase after a successful carry or release. */
+	void SetCarriedCart(ACartBase* NewCarriedCart);
 
 // Three Poker
 public:
@@ -287,11 +300,17 @@ protected:
 
 	UFUNCTION()
 	void OnRep_CarriedOre();
+	UFUNCTION()
+	void OnRep_CarriedCart();
 
 	void UpdateCarriedOreInteractionPrompt() const;
+	void UpdateCarriedCartInteractionPrompt() const;
 	void HandleCarriedOreChanged() const;
+	void HandleCarriedCartChanged() const;
 	void StartOreCarryAbility() const;
 	void StopOreCarryAbility() const;
+	void StartCartCarryAbility() const;
+	void StopCartCarryAbility() const;
 
 	/** Called from Input Actions for movement input */
 	void MoveInput(const FInputActionValue& Value);
