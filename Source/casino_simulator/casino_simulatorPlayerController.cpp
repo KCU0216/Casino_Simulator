@@ -339,6 +339,7 @@ bool Acasino_simulatorPlayerController::TryReleaseCarriedCart(Acasino_simulatorC
 
 void Acasino_simulatorPlayerController::ExitCurrentMachine()
 {
+	SetIsInteractionUIOpen(false);
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter)
 	{
@@ -435,6 +436,11 @@ void Acasino_simulatorPlayerController::Server_ExitMachine_Implementation(ASeate
 	Machine->RequestReleaseMachine(PlayerCharacter);
 }
 
+void Acasino_simulatorPlayerController::SetIsInteractionUIOpen(bool Value)
+{
+	bInteractionUIOpen = Value;
+}
+
 void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSuppressed)
 {
 	if (bInteractionPromptSuppressed == bSuppressed)
@@ -471,7 +477,7 @@ void Acasino_simulatorPlayerController::EnterInteractionUIMode(AActor* CameraTar
 		return;
 	}
 
-	bInteractionUIOpen = true;
+	SetIsInteractionUIOpen(true);
 	CloseInteraction();
 
 	bShowMouseCursor = true;
@@ -498,7 +504,7 @@ void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 		return;
 	}
 
-	bInteractionUIOpen = false;
+	SetIsInteractionUIOpen(false);
 
 	bShowMouseCursor = false;
 

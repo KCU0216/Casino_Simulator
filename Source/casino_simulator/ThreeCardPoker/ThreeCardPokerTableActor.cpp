@@ -3,6 +3,7 @@
 #include "ThreeCardPoker/ThreeCardPokerTableActor.h"
 
 #include "Components/SceneComponent.h"
+#include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "GameFramework/GameStateBase.h"
@@ -304,6 +305,11 @@ bool AThreeCardPokerTableActor::LeaveTable(Acasino_simulatorCharacter* Player)
 	}
 
 	Player->ServerLeaveThreeCardPokerTable(this);
+
+	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(Player->GetController()))
+	{
+		PC->SetIsInteractionUIOpen(false);
+	}
 	return true;
 }
 

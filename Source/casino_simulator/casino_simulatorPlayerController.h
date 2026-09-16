@@ -185,6 +185,8 @@ public:
 	 * server via Server_InteractWithNPC on a client, and disables movement for non-Shop NPCs - same
 	 * behavior this used to run from inline inside InteractWithCurrentTarget. */
 	//void RequestNPCInteraction(ANPC_Base* Target);
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void SetIsInteractionUIOpen(bool Value);
 
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	bool IsInteractionUIOpen() const { return bInteractionUIOpen; }
