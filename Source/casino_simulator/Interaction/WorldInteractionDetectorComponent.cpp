@@ -85,7 +85,7 @@ void UWorldInteractionDetectorComponent::UpdateFocusedTarget()
 		return;
 	}
 
-	if (OwnerCharacter->GetCarriedOre())
+	if (OwnerCharacter->GetCarriedOre() || OwnerCharacter->GetCarriedCart())
 	{
 		SetFocusedTarget(TScriptInterface<IWorldInteractable>());
 		return;
