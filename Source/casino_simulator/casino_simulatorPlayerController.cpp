@@ -324,14 +324,18 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 		return;
 	}
 
-	if (HasAuthority())
+	ASeatedMachineBase* Machine = Cast<ASeatedMachineBase>(CurrentMachine.GetObject());
+	if (!Machine)
 	{
-		CurrentMachine->OnInteractionFocusEnded(PlayerCharacter);
+		return;
 	}
-	else
-	{
-		CurrentMachine->OnInteractionFocusEnded_Implementation(PlayerCharacter);
-	}
+
+	IWorldInteractable::Execute_OnInteractionFocusEnded(
+		Machine,
+		PlayerCharacter
+	);
+
+	Machine->RequestReleaseMachine(PlayerCharacter);
 }
 
 void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface<IWorldInteractable> Target)

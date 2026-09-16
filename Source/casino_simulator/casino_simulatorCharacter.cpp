@@ -498,7 +498,19 @@ void Acasino_simulatorCharacter::LookInput(const FInputActionValue& Value)
 
 void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 {
-	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController()))
+	if (TScriptInterface<IWorldInteractable> CurrentMachine =
+		GetCurrentSeatedMachine())
+	{
+		if (ASeatedMachineBase* Machine =
+			Cast<ASeatedMachineBase>(CurrentMachine.GetObject()))
+		{
+			Machine->HandleMachinePrimaryInput(this);
+			return;
+		}
+	}
+
+	if (Acasino_simulatorPlayerController* PC =
+		Cast<Acasino_simulatorPlayerController>(GetController()))
 	{
 		PC->InteractWithCurrentTarget();
 	}

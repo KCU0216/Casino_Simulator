@@ -14,6 +14,7 @@ class CASINO_SIMULATOR_API AEnemyAIController_________ : public AAIController
 {
 	GENERATED_BODY()
 public:	
+	AEnemyAIController_________();
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlackBoard")
 	TObjectPtr<class UBehaviorTree> BehaviorTreeAsset;
 

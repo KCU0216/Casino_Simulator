@@ -10,9 +10,8 @@
 #include "Perception/AISenseConfig_Sight.h"
 #include "Enemy/EnemyBaseCharacter.h"
 
-void AEnemyAIController_________::BeginPlay()
+AEnemyAIController_________::AEnemyAIController_________()
 {
-	Super::BeginPlay();
 
 	AIPerceptionComp = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("AIPerceptionComponent"));
 
@@ -26,17 +25,11 @@ void AEnemyAIController_________::BeginPlay()
 	AIPerceptionComp->SetDominantSense(SightConfig->GetSenseImplementation());
 
 	SetPerceptionComponent(*AIPerceptionComp);
+}
 
-	/*if (Blackboard)
-	{
-		Acasino_simulatorCharacter* Player = Cast<Acasino_simulatorCharacter>(UGameplayStatics::GetPlayerPawn(GetWorld(), 0));
-		if (Player == nullptr)
-		{
-			return;
-		}
-
-		Blackboard->SetValueAsObject(TEXT("Target"), Player);
-	}*/
+void AEnemyAIController_________::BeginPlay()
+{
+	Super::BeginPlay();
 }
 
 void AEnemyAIController_________::OnPossess(APawn* InPawn)
@@ -48,18 +41,16 @@ void AEnemyAIController_________::OnPossess(APawn* InPawn)
 		return;
 	}
 
-	RunBehaviorTree(BehaviorTreeAsset);
-
 	AEnemyBaseCharacter* Enemy = Cast<AEnemyBaseCharacter>(InPawn);
 
-	if (!Enemy || !Blackboard)
+	if (!Enemy)
 	{
 			return;
 	}
 
 	UBlackboardComponent* BB = nullptr;
 
-	if (!UseBlackboard(BehaviorTreeAsset->BlackboardAsset, BB))
+	if (!UseBlackboard(BehaviorTreeAsset->BlackboardAsset, BB) || !BB)
 	{
 		return;
 	}

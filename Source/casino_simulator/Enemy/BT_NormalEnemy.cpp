@@ -76,7 +76,7 @@ void UBT_NormalEnemy::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMem
 		}
 		if (FoundCharacter)
 		{
-			BB->SetValueAsObject(GetSelectedBlackboardKey(), FoundCharacter);
+			BB->SetValueAsObject(TEXT("Target"), FoundCharacter);
 		}
 		else
 		{
