@@ -155,6 +155,7 @@ void UWorldInteractionDetectorComponent::SetFocusedTarget(const TScriptInterface
 	// opening/closing the same PlayerHUDWidget panel (via SetWorldInteractionTargetFocused /
 	// SetInteractionTarget-ClearInteractionTarget respectively) - the detector itself no longer needs
 	// to know which family it's looking at.
+	
 	if (CurrentObject)
 	{
 		IWorldInteractable::Execute_OnInteractionFocusEnded(CurrentObject, OwnerCharacter);

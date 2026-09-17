@@ -64,14 +64,6 @@ void AWorldInteractableBase::OnInteractionFocusStarted_Implementation(Acasino_si
 		PlayerController->SetWorldInteractionTargetFocused(true);
 		InteractingCharacter->SetCurrentSeatedMachine(this);
 	}
-
-	// Same PlayerHUDWidget prompt flow ANPC_Base uses.
-	/*if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
-		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
-		: nullptr)
-	{
-		PlayerController->SetWorldInteractionTargetFocused(true);
-	}*/
 }
 
 void AWorldInteractableBase::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
@@ -84,17 +76,10 @@ void AWorldInteractableBase::OnInteractionFocusEnded_Implementation(Acasino_simu
 	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
 	if (PlayerController != nullptr && InteractingPlayer != nullptr && InteractingPlayer == InteractingCharacter)
 	{
-		InteractingPlayer = nullptr;
+
 		PlayerController->SetWorldInteractionTargetFocused(false);
 		InteractingCharacter->SetCurrentSeatedMachine(nullptr);
 	}
-
-	/*if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
-		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
-		: nullptr)
-	{
-		PlayerController->SetWorldInteractionTargetFocused(false);
-	}*/
 }
 
 bool AWorldInteractableBase::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
@@ -136,14 +121,6 @@ void AWorldInteractableBase::OnInteractionSphereBeginOverlap(
 			Detector->RegisterCandidate(this);
 		}
 	}
-
-	/*if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor))
-	{
-		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-		{
-			Detector->RegisterCandidate(this);
-		}
-	}*/
 }
 
 void AWorldInteractableBase::OnInteractionSphereEndOverlap(
@@ -155,16 +132,10 @@ void AWorldInteractableBase::OnInteractionSphereEndOverlap(
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
 	if (InteractingPlayer != nullptr && InteractingPlayer == PlayerCharacter)
 	{
+		InteractingPlayer = nullptr;
 		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
 			Detector->UnregisterCandidate(this);
 		}
 	}
-	/*if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor))
-	{
-		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-		{
-			Detector->UnregisterCandidate(this);
-		}
-	}*/
 }
