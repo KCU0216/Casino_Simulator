@@ -22,7 +22,9 @@ public class casino_simulator : ModuleRules
 			"SlateCore",
 			"GameplayAbilities",
 			"GameplayTags",
-			"GameplayTasks"
+			"GameplayTasks",
+            "OnlineSubsystem", "OnlineSubsystemUtils", "OnlineSubsystemEOS",
+            "OnlineBase", "VoiceChat", "DeveloperSettings"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

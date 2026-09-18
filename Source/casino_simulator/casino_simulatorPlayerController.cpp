@@ -2,6 +2,8 @@
 
 
 #include "casino_simulatorPlayerController.h"
+#include "Online/CasinoLobbyGameMode.h"
+#include "Online/CasinoOnlineSubsystem.h"
 #include "casino_simulatorGameMode.h"
 #include "casino_simulatorCharacter.h"
 #include "Engine/World.h"
@@ -832,6 +834,18 @@ void Acasino_simulatorPlayerController::ServerSubmitDailyPayment_Implementation(
     auto* GM = GetWorld()->GetAuthGameMode<Acasino_simulatorGameMode>();
     ClientDailyPaymentResult(GM && GM->SubmitDailyPayment(
         Cast<Acasino_simulatorCharacter>(GetPawn()), Amount));
+}
+
+void Acasino_simulatorPlayerController::ServerSetLobbyReady_Implementation(bool bReady)
+{
+    if (!GetWorld()->GetAuthGameMode<ACasinoLobbyGameMode>()) return;
+    const auto* Online = GetGameInstance()->GetSubsystem<UCasinoOnlineSubsystem>();
+    if (!Online || Online->State != ECasinoOnlineState::InRoom) return;
+    if (auto* PS = GetPlayerState<Acasino_simulatorPlayerState>())
+    {
+        PS->bLobbyReady = bReady;
+        PS->ForceNetUpdate();
+    }
 }
 
 void Acasino_simulatorPlayerController::ClientDailyPaymentResult_Implementation(bool bSuccess)

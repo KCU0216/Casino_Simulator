@@ -34,6 +34,9 @@ class CASINO_SIMULATOR_API Acasino_simulatorPlayerState : public APlayerState
 public:
 	Acasino_simulatorPlayerState();
 
+    UPROPERTY(Replicated, BlueprintReadOnly, Category="Casino|Lobby")
+    bool bLobbyReady = false;
+
 	/** DataTable of FItemData rows this inventory resolves ItemIDs against (RowName is arbitrary; FItemData::UniqueID is the actual key) */
 	UPROPERTY(EditDefaultsOnly, Category = "Inventory")
 	TObjectPtr<UDataTable> ItemDataTable;

@@ -12,12 +12,52 @@ Acasino_simulatorGameMode::Acasino_simulatorGameMode()
 {
 	PlayerStateClass = Acasino_simulatorPlayerState::StaticClass();
     GameStateClass = ACasinoLoopGameState::StaticClass();
+    bUseSeamlessTravel = true;
 }
 
 void Acasino_simulatorGameMode::BeginPlay()
 {
     Super::BeginPlay();
-    if (bAutoStartDayLoop) StartDayLoop();
+    if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoOnlineMatch")))
+    {
+        OnlineExpectedPlayers = FMath::Clamp(UGameplayStatics::GetIntOption(OptionsString, TEXT("ExpectedPlayers"), 1), 1, 16);
+        OnlineArrivalDeadline = FPlatformTime::Seconds() + 90.0;
+        GetWorldTimerManager().SetTimer(OnlineArrivalTimer, this,
+            &Acasino_simulatorGameMode::WaitForOnlinePlayers, 0.5f, true);
+    }
+    else if (bAutoStartDayLoop) StartDayLoop();
+}
+
+void Acasino_simulatorGameMode::PreLogin(const FString& Options, const FString& Address,
+    const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage)
+{
+    Super::PreLogin(Options, Address, UniqueId, ErrorMessage);
+    if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoOnlineMatch")))
+        ErrorMessage = TEXT("Match already started. Join the next lobby.");
+}
+
+void Acasino_simulatorGameMode::WaitForOnlinePlayers()
+{
+    int32 Arrived = 0;
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+        if (APlayerController* PC = It->Get())
+            if (PC->GetPawn() && PC->HasClientLoadedCurrentWorld()) ++Arrived;
+    if (Arrived >= OnlineExpectedPlayers)
+    {
+        GetWorldTimerManager().ClearTimer(OnlineArrivalTimer);
+        StartDayLoop();
+    }
+    else if (FPlatformTime::Seconds() >= OnlineArrivalDeadline)
+    {
+        GetWorldTimerManager().ClearTimer(OnlineArrivalTimer);
+        UE_LOG(LogTemp, Error, TEXT("Online match: players did not finish loading within 90 seconds."));
+        if (auto* GS = GetGameState<ACasinoLoopGameState>())
+        {
+            auto Status = GS->LoopStatus;
+            Status.Phase = ECasinoLoopPhase::GameOver;
+            GS->SetLoopStatus(Status);
+        }
+    }
 }
 
 void Acasino_simulatorGameMode::EndPlay(const EEndPlayReason::Type Reason)
@@ -25,6 +65,7 @@ void Acasino_simulatorGameMode::EndPlay(const EEndPlayReason::Type Reason)
     GetWorldTimerManager().ClearTimer(DayLoopTimer);
     GetWorldTimerManager().ClearTimer(PaymentTimer);
     GetWorldTimerManager().ClearTimer(NextDayTimer);
+    GetWorldTimerManager().ClearTimer(OnlineArrivalTimer);
     Super::EndPlay(Reason);
 }
 

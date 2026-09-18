@@ -68,7 +68,13 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+    virtual void PreLogin(const FString& Options, const FString& Address,
+        const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;
 private:
+    FTimerHandle OnlineArrivalTimer;
+    double OnlineArrivalDeadline = 0.0;
+    int32 OnlineExpectedPlayers = 0;
+    void WaitForOnlinePlayers();
     FTimerHandle DayLoopTimer;
     FTimerHandle PaymentTimer;
     FTimerHandle NextDayTimer;
