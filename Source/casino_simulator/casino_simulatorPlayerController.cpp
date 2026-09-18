@@ -371,6 +371,7 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 	);*/
 
 	Machine->RequestReleaseMachine(PlayerCharacter);
+	OpenInteraction();
 }
 
 void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface<IWorldInteractable> Target)
