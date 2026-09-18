@@ -135,7 +135,7 @@ void UCasinoOnlineSubsystem::CreateRoom(const FString& RoomName)
     Settings.NumPublicConnections = FMath::Clamp(Config->MaxPlayers, 2, 16);
     // OSS EOS replaces BuildUniqueId with the engine build ID during creation.
     // Keep our game protocol version in an independently advertised attribute.
-    Settings.Set(CasinoOnline::BuildKey, Config->BuildId, EOnlineDataAdvertisementType::ViaOnlineService);
+    Settings.Set(CasinoOnline::BuildKey, static_cast<int64>(Config->BuildId), EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(SETTING_HOST_MIGRATION, false, EOnlineDataAdvertisementType::DontAdvertise);
     Settings.Set(CasinoOnline::RoomKey, RoomName.TrimStartAndEnd().Left(48), EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(CasinoOnline::ProjectKey, CasinoOnline::ProjectValue, EOnlineDataAdvertisementType::ViaOnlineService);
@@ -199,7 +199,8 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
                 UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: invalid session."), I);
                 continue;
             }
-            int32 RoomBuild = 0;
+            // EOS deserializes all integer lobby attributes as Int64.
+            int64 RoomBuild = 0;
             if (!Result.Session.SessionSettings.Get(CasinoOnline::BuildKey, RoomBuild))
             {
                 UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: missing CASINO_BUILD_ID (recreate room with updated build)."), I);
@@ -207,7 +208,7 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
             }
             if (RoomBuild != ExpectedBuild)
             {
-                UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: GameBuild=%d Expected=%d EngineBuild=%d."),
+                UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: GameBuild=%lld Expected=%d EngineBuild=%d."),
                     I, RoomBuild, ExpectedBuild, Result.Session.SessionSettings.BuildUniqueId);
                 continue;
             }
@@ -223,7 +224,7 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
             Room.Capacity = Result.Session.SessionSettings.NumPublicConnections;
             Room.Players = Room.Capacity - Result.Session.NumOpenPublicConnections;
             Rooms.Add(Room);
-            UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] accepted. GameBuild=%d OpenSlots=%d"),
+            UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] accepted. GameBuild=%lld OpenSlots=%d"),
                 I, RoomBuild, Result.Session.NumOpenPublicConnections);
         }
     }
