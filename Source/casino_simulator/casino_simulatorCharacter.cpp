@@ -33,6 +33,8 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Carry, "Ability.Ore.Carry");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Drop, "Ability.Ore.Drop");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Carry, "Ability.Cart.Carry");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Release, "Ability.Cart.Release");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_EquipPickaxe, "Input.EquipPickaxe");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_Mining, "Input.Mining");
 
 Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 {
@@ -507,7 +509,6 @@ void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* Play
 		if (Slot1Action)
 		{
 			EnhancedInputComponent->BindAction(Slot1Action, ETriggerEvent::Started, this, &Acasino_simulatorCharacter::Slot1Input);
-			UE_LOG(LogTemp, Log, TEXT("Bind"));
 		}
 
 		if (Slot2Action)
@@ -518,6 +519,20 @@ void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* Play
 		if (MachineExitAction)
 		{
 			EnhancedInputComponent->BindAction(MachineExitAction, ETriggerEvent::Started, this, &Acasino_simulatorCharacter::MachineExitInput);
+		}
+
+		if (EquipPickaxeAction)
+		{
+			EnhancedInputComponent->BindAction(EquipPickaxeAction, ETriggerEvent::Started, this, &Acasino_simulatorCharacter::EquipPickaxeInputStarted);
+			EnhancedInputComponent->BindAction(EquipPickaxeAction, ETriggerEvent::Completed, this, &Acasino_simulatorCharacter::EquipPickaxeInputCompleted);
+			EnhancedInputComponent->BindAction(EquipPickaxeAction, ETriggerEvent::Canceled, this, &Acasino_simulatorCharacter::EquipPickaxeInputCompleted);
+		}
+
+		if (MiningAction)
+		{
+			EnhancedInputComponent->BindAction(MiningAction, ETriggerEvent::Started, this, &Acasino_simulatorCharacter::MiningInputStarted);
+			EnhancedInputComponent->BindAction(MiningAction, ETriggerEvent::Completed, this, &Acasino_simulatorCharacter::MiningInputCompleted);
+			EnhancedInputComponent->BindAction(MiningAction, ETriggerEvent::Canceled, this, &Acasino_simulatorCharacter::MiningInputCompleted);
 		}
 
 		// Moving
@@ -681,6 +696,38 @@ void Acasino_simulatorCharacter::MachineExitInput()
 	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController()))
 	{
 		PC->ExitCurrentMachine();
+	}
+}
+
+void Acasino_simulatorCharacter::EquipPickaxeInputStarted()
+{
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->PressInputTag(TAG_Input_EquipPickaxe);
+	}
+}
+
+void Acasino_simulatorCharacter::EquipPickaxeInputCompleted()
+{
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->ReleaseInputTag(TAG_Input_EquipPickaxe);
+	}
+}
+
+void Acasino_simulatorCharacter::MiningInputStarted()
+{
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->PressInputTag(TAG_Input_Mining);
+	}
+}
+
+void Acasino_simulatorCharacter::MiningInputCompleted()
+{
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->ReleaseInputTag(TAG_Input_Mining);
 	}
 }
 

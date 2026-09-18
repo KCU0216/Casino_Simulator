@@ -95,6 +95,14 @@ protected:
 	UPROPERTY(EditAnywhere, Category ="Input")
 	UInputAction* MachineExitAction;
 
+	/** Equip pickaxe Input Action */
+	UPROPERTY(EditAnywhere, Category ="Input")
+	UInputAction* EquipPickaxeAction;
+
+	/** Mining Input Action */
+	UPROPERTY(EditAnywhere, Category ="Input")
+	UInputAction* MiningAction;
+
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, Category ="Input")
 	UInputAction* MoveAction;
@@ -338,6 +346,12 @@ protected:
 	void ApplyNumberSlotItemEffect(int32 SlotIndex);
 
 	void MachineExitInput();
+
+	void EquipPickaxeInputStarted();
+	void EquipPickaxeInputCompleted();
+
+	void MiningInputStarted();
+	void MiningInputCompleted();
 
 	/** Handles aim inputs from either controls or UI interfaces */
 	UFUNCTION(BlueprintCallable, Category="Input")
