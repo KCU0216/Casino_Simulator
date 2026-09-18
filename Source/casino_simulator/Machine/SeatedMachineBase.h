@@ -49,12 +49,12 @@ public:
 
 	
 	UFUNCTION(BlueprintPure, Category = "Machine|State")
-	bool IsOccupied() const { return CurrentUser != nullptr; }
+	bool IsOccupied() const { return InteractingPlayer != nullptr; }
 
 	virtual bool CanInteract(Acasino_simulatorCharacter* RequestingCharacter) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Machine|State")
-	Acasino_simulatorCharacter* GetCurrentUser() const { return CurrentUser; }
+	Acasino_simulatorCharacter* GetCurrentUser() const { return InteractingPlayer; }
 
 	UFUNCTION(BlueprintPure, Category = "Machine|Seat")
 	USceneComponent* GetSeatPoint() const { return SeatPoint; }
@@ -106,11 +106,6 @@ protected:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Machine|State")
 	bool bCanExitMachine = true;
 
-
-	UFUNCTION(Server, Reliable)
-	void Server_RequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
-
-	
 	UFUNCTION(Server, Reliable)
 	void Server_ReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 
@@ -120,13 +115,11 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void Server_SetCanExitMachine(bool bCanExit);
 
-	
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_MachineUseStarted(Acasino_simulatorCharacter* RequestingCharacter);
+	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
 
+	virtual void HandleMachineUseStarted(Acasino_simulatorCharacter* RequestingCharacter) override;
 	
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_MachineReleased(Acasino_simulatorCharacter* ReleasingCharacter);
+	virtual void HandleMachineUseReleased(Acasino_simulatorCharacter* ReleasingCharacter) override;
 	
 
 	UFUNCTION()

@@ -34,6 +34,16 @@ void AWorldInteractableBase::BeginPlay()
 
 void AWorldInteractableBase::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 {
+	InteractingPlayer = InteractingCharacter;
+	InteractingCharacter->SetCurrentSeatedMachine(this);
+
+	if (HasAuthority())
+	{
+		Server_RequestUseMachine_Implementation(InteractingCharacter);
+		return;
+	}
+
+	Server_RequestUseMachine(InteractingCharacter);
 }
 
 void AWorldInteractableBase::BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter)
@@ -46,23 +56,20 @@ void AWorldInteractableBase::OnLocalInteract_Implementation(Acasino_simulatorCha
 
 void AWorldInteractableBase::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
+	if (InteractingCharacter == nullptr)
+	{
+		return;
+	}
 	// 위젯이 떠있으면 막기
 	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
-	if (PC == nullptr)
+	if (PC == nullptr || PC->IsInteractionUIOpen())
 	{
 		return;
 	}
-	if (InteractingCharacter == nullptr || PC->IsInteractionUIOpen())
-	{
-		return;
-	}
-	// NPCs use the same PlayerHUDWidget prompt flow as world interactables.
-	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
 
-	if (PlayerController != nullptr && CanInteract(InteractingCharacter))
+	if (PC != nullptr && CanInteract(InteractingCharacter))
 	{
-		PlayerController->SetWorldInteractionTargetFocused(true);
-		InteractingCharacter->SetCurrentSeatedMachine(this);
+		PC->SetWorldInteractionTargetFocused(true);
 	}
 }
 
@@ -74,11 +81,10 @@ void AWorldInteractableBase::OnInteractionFocusEnded_Implementation(Acasino_simu
 	}
 
 	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
-	if (PlayerController != nullptr && InteractingPlayer != nullptr && InteractingPlayer == InteractingCharacter)
+	if (PlayerController != nullptr)
 	{
 
 		PlayerController->SetWorldInteractionTargetFocused(false);
-		InteractingCharacter->SetCurrentSeatedMachine(nullptr);
 	}
 }
 
@@ -96,7 +102,7 @@ bool AWorldInteractableBase::CanInteract(Acasino_simulatorCharacter* Interacting
 	}
 
 	const FVector ToCharacter = InteractingCharacter->GetActorLocation() - GetActorLocation();
-	return  InteractingPlayer == InteractingCharacter && ToCharacter.SizeSquared() <= FMath::Square(MaxDistance);
+	return ToCharacter.SizeSquared() <= FMath::Square(MaxDistance) && InteractingPlayer == nullptr;
 }
 
 void AWorldInteractableBase::OnInteractionSphereBeginOverlap(
@@ -107,17 +113,17 @@ void AWorldInteractableBase::OnInteractionSphereBeginOverlap(
 	bool bFromSweep,
 	const FHitResult& SweepResult)
 {
-	UE_LOG(LogTemp, Warning, TEXT("Enter"));
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+
+	if (PlayerCharacter && !Players.Contains(PlayerCharacter))
+	{
+		Players.Add(PlayerCharacter);
+	}
 
 	if (InteractingPlayer == nullptr && PlayerCharacter != nullptr)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Player"));
-		InteractingPlayer = PlayerCharacter;
-
 		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Detector"));
 			Detector->RegisterCandidate(this);
 		}
 	}
@@ -130,12 +136,51 @@ void AWorldInteractableBase::OnInteractionSphereEndOverlap(
 	int32 OtherBodyIndex)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+
+	if (PlayerCharacter)
+	{
+		Players.Remove(PlayerCharacter);
+	}
+
 	if (InteractingPlayer != nullptr && InteractingPlayer == PlayerCharacter)
 	{
-		InteractingPlayer = nullptr;
 		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
 			Detector->UnregisterCandidate(this);
 		}
 	}
+}
+
+void AWorldInteractableBase::HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)
+{
+}
+
+void AWorldInteractableBase::HandleMachineUseStarted(Acasino_simulatorCharacter* Character)
+{
+}
+
+void AWorldInteractableBase::HandleMachineUseReleased(Acasino_simulatorCharacter* Character)
+{
+}
+
+void AWorldInteractableBase::Multicast_MachineUseStarted_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
+{
+	InteractingPlayer = RequestingCharacter;
+	RequestingCharacter->SetCurrentSeatedMachine(this);
+
+	HandleMachineUseStarted(RequestingCharacter);
+}
+
+void AWorldInteractableBase::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
+{
+	InteractingPlayer = nullptr;
+	ReleasingCharacter->SetCurrentSeatedMachine(nullptr);
+
+	HandleMachineUseReleased(ReleasingCharacter);
+}
+
+void AWorldInteractableBase::Server_RequestUseMachine_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
+{
+	HandleMachineRequestUseMachine(RequestingCharacter);
+	Multicast_MachineUseStarted(RequestingCharacter);
 }

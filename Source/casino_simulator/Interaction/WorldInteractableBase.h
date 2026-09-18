@@ -30,7 +30,9 @@ class CASINO_SIMULATOR_API AWorldInteractableBase : public AActor, public IWorld
 	GENERATED_BODY()
 
 protected:
-	TWeakObjectPtr<Acasino_simulatorCharacter> InteractingPlayer;
+	TObjectPtr<Acasino_simulatorCharacter> InteractingPlayer;
+	UPROPERTY()
+	TArray<TObjectPtr<Acasino_simulatorCharacter>> Players;
 
 public:
 	AWorldInteractableBase();
@@ -85,4 +87,18 @@ protected:
 
 	UFUNCTION()
 	void OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+protected:
+	UFUNCTION(Server, Reliable)
+	void Server_RequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
+	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
+	
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_MachineUseStarted(Acasino_simulatorCharacter* RequestingCharacter);
+	virtual void HandleMachineUseStarted(Acasino_simulatorCharacter* Character);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_MachineReleased(Acasino_simulatorCharacter* ReleasingCharacter);
+	virtual void HandleMachineUseReleased(Acasino_simulatorCharacter* Character);
+
 };

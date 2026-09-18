@@ -45,13 +45,7 @@ void ASeatedMachineBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 
 void ASeatedMachineBase::Interact(Acasino_simulatorCharacter* RequestingCharacter)
 {
-	if (HasAuthority())
-	{
-		Server_RequestUseMachine_Implementation(RequestingCharacter);
-		return;
-	}
-
-	Server_RequestUseMachine(RequestingCharacter);
+	Super::Interact(RequestingCharacter);
 }
 
 void ASeatedMachineBase::RequestReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
@@ -93,24 +87,8 @@ void ASeatedMachineBase::SetCanExitMachine(bool bCanExit)
 
 bool ASeatedMachineBase::CanInteract(Acasino_simulatorCharacter* RequestingCharacter) const
 {
-	return Super::CanInteract(RequestingCharacter)
-		&& (!CurrentUser || CurrentUser == RequestingCharacter);
-}
-
-void ASeatedMachineBase::Server_RequestUseMachine_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
-{
-	const ESeatedMachineUseResult Result = CanAcceptUser(RequestingCharacter);
-	if (Result != ESeatedMachineUseResult::Accepted)
-	{
-		OnMachineUseRejected(RequestingCharacter, Result);
-		return;
-	}
-
-	CurrentUser = RequestingCharacter;
-	bCanOperate = true;
-	bCanExitMachine = true;
-
-	Multicast_MachineUseStarted(RequestingCharacter);
+	return Super::CanInteract(RequestingCharacter);
+		//&& (!CurrentUser || CurrentUser == RequestingCharacter);
 }
 
 void ASeatedMachineBase::Server_ReleaseMachine_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
@@ -149,14 +127,48 @@ void ASeatedMachineBase::Server_SetCanExitMachine_Implementation(bool bCanExit)
 	bCanExitMachine = bCanExit;
 }
 
-void ASeatedMachineBase::Multicast_MachineUseStarted_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
+//void ASeatedMachineBase::Multicast_MachineUseStarted_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
+//{
+//	Super::Multicast_MachineUseStarted(RequestingCharacter);
+//
+//	EnterMachineUseView(RequestingCharacter);
+//	OnMachineReady(RequestingCharacter);
+//}
+//
+//void ASeatedMachineBase::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
+//{
+//	OnMachineReleased(ReleasingCharacter);
+//	ExitMachineUseView(ReleasingCharacter);
+//}
+
+void ASeatedMachineBase::HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)
 {
+	Super::HandleMachineRequestUseMachine(RequestingCharacter);
+
+	const ESeatedMachineUseResult Result = CanAcceptUser(RequestingCharacter);
+	if (Result != ESeatedMachineUseResult::Accepted)
+	{
+		OnMachineUseRejected(RequestingCharacter, Result);
+		return;
+	}
+
+	CurrentUser = RequestingCharacter;
+	bCanOperate = true;
+	bCanExitMachine = true;
+}
+
+void ASeatedMachineBase::HandleMachineUseStarted(Acasino_simulatorCharacter* RequestingCharacter)
+{
+	Super::HandleMachineUseStarted(RequestingCharacter);
+
 	EnterMachineUseView(RequestingCharacter);
 	OnMachineReady(RequestingCharacter);
 }
 
-void ASeatedMachineBase::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
+void ASeatedMachineBase::HandleMachineUseReleased(Acasino_simulatorCharacter* ReleasingCharacter)
 {
+	Super::HandleMachineUseReleased(ReleasingCharacter);
+
 	OnMachineReleased(ReleasingCharacter);
 	ExitMachineUseView(ReleasingCharacter);
 }
