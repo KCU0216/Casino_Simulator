@@ -19,6 +19,7 @@ namespace CasinoOnline
 {
     const FName RoomKey(TEXT("CASINO_ROOM"));
     const FName ProjectKey(TEXT("CASINO_PROJECT"));
+    const FName BuildKey(TEXT("CASINO_BUILD_ID"));
     const FString ProjectValue(TEXT("CasinoSimulatorKCU"));
     FString MapPath(const TSoftObjectPtr<UWorld>& Map)
     {
@@ -132,11 +133,15 @@ void UCasinoOnlineSubsystem::CreateRoom(const FString& RoomName)
     Settings.bUseLobbiesIfAvailable = true;
     Settings.bUseLobbiesVoiceChatIfAvailable = true;
     Settings.NumPublicConnections = FMath::Clamp(Config->MaxPlayers, 2, 16);
-    Settings.BuildUniqueId = Config->BuildId;
+    // OSS EOS replaces BuildUniqueId with the engine build ID during creation.
+    // Keep our game protocol version in an independently advertised attribute.
+    Settings.Set(CasinoOnline::BuildKey, Config->BuildId, EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(SETTING_HOST_MIGRATION, false, EOnlineDataAdvertisementType::DontAdvertise);
     Settings.Set(CasinoOnline::RoomKey, RoomName.TrimStartAndEnd().Left(48), EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(CasinoOnline::ProjectKey, CasinoOnline::ProjectValue, EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(SETTING_MAPNAME, PendingLobbyPath, EOnlineDataAdvertisementType::ViaOnlineService);
+    UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Creating room. GameBuild=%d Capacity=%d"),
+        Config->BuildId, Settings.NumPublicConnections);
     SetState(ECasinoOnlineState::Creating);
     CreateHandle = Sessions->AddOnCreateSessionCompleteDelegate_Handle(
         FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::CreateComplete));
@@ -147,6 +152,7 @@ void UCasinoOnlineSubsystem::CreateComplete(FName Name, bool bSuccess)
 {
     if (Name != NAME_GameSession) return;
     Sessions->ClearOnCreateSessionCompleteDelegate_Handle(CreateHandle);
+    UE_LOG(LogTemp, Log, TEXT("CasinoOnline: CreateRoom completed. Success=%d"), bSuccess);
     if (!bSuccess) { SetState(ECasinoOnlineState::Ready); Error(TEXT("CreateRoom"), TEXT("EOS room creation failed.")); return; }
     bSessionWasPresent = true;
     SetState(ECasinoOnlineState::InRoom);
@@ -156,13 +162,20 @@ void UCasinoOnlineSubsystem::CreateComplete(FName Name, bool bSuccess)
 
 void UCasinoOnlineSubsystem::FindRooms()
 {
-    if (State != ECasinoOnlineState::Ready || !IsLoggedIn()) return;
+    if (State != ECasinoOnlineState::Ready || !IsLoggedIn())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("CasinoOnline: FindRooms ignored. State=%d LoggedIn=%d"),
+            static_cast<int32>(State), IsLoggedIn());
+        return;
+    }
     Rooms.Reset();
     Search = MakeShared<FOnlineSessionSearch>();
     Search->bIsLanQuery = false;
     Search->MaxSearchResults = 50;
     Search->QuerySettings.Set(SEARCH_LOBBIES, true, EOnlineComparisonOp::Equals);
     Search->QuerySettings.Set(CasinoOnline::ProjectKey, CasinoOnline::ProjectValue, EOnlineComparisonOp::Equals);
+    UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Searching rooms. ExpectedGameBuild=%d"),
+        GetDefault<UCasinoOnlineSettings>()->BuildId);
     SetState(ECasinoOnlineState::Searching);
     FindHandle = Sessions->AddOnFindSessionsCompleteDelegate_Handle(
         FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::FindComplete));
@@ -173,21 +186,48 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
 {
     Sessions->ClearOnFindSessionsCompleteDelegate_Handle(FindHandle);
     Rooms.Reset();
+    const int32 ExpectedBuild = GetDefault<UCasinoOnlineSettings>()->BuildId;
+    UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Search completed. Success=%d RawResults=%d ExpectedGameBuild=%d"),
+        bSuccess, Search.IsValid() ? Search->SearchResults.Num() : 0, ExpectedBuild);
     if (bSuccess && Search)
     {
         for (int32 I = 0; I < Search->SearchResults.Num(); ++I)
         {
             const auto& Result = Search->SearchResults[I];
-            if (!Result.IsValid() || Result.Session.SessionSettings.BuildUniqueId != GetDefault<UCasinoOnlineSettings>()->BuildId) continue;
+            if (!Result.IsValid())
+            {
+                UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: invalid session."), I);
+                continue;
+            }
+            int32 RoomBuild = 0;
+            if (!Result.Session.SessionSettings.Get(CasinoOnline::BuildKey, RoomBuild))
+            {
+                UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: missing CASINO_BUILD_ID (recreate room with updated build)."), I);
+                continue;
+            }
+            if (RoomBuild != ExpectedBuild)
+            {
+                UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: GameBuild=%d Expected=%d EngineBuild=%d."),
+                    I, RoomBuild, ExpectedBuild, Result.Session.SessionSettings.BuildUniqueId);
+                continue;
+            }
+            if (Result.Session.NumOpenPublicConnections <= 0)
+            {
+                UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: no open public slots."), I);
+                continue;
+            }
             FCasinoRoomInfo Room;
             Room.SearchIndex = I;
             Result.Session.SessionSettings.Get(CasinoOnline::RoomKey, Room.RoomName);
             Room.HostName = Result.Session.OwningUserName;
             Room.Capacity = Result.Session.SessionSettings.NumPublicConnections;
             Room.Players = Room.Capacity - Result.Session.NumOpenPublicConnections;
-            if (Result.Session.NumOpenPublicConnections > 0) Rooms.Add(Room);
+            Rooms.Add(Room);
+            UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] accepted. GameBuild=%d OpenSlots=%d"),
+                I, RoomBuild, Result.Session.NumOpenPublicConnections);
         }
     }
+    UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Search visible rooms=%d"), Rooms.Num());
     SetState(ECasinoOnlineState::Ready);
     if (!bSuccess) Error(TEXT("FindRooms"), TEXT("EOS room search failed."));
 }
