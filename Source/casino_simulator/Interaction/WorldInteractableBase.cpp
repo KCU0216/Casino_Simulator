@@ -114,13 +114,17 @@ void AWorldInteractableBase::OnInteractionSphereBeginOverlap(
 	const FHitResult& SweepResult)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+	if (PlayerCharacter == nullptr)
+	{
+		return;
+	}
 
-	if (PlayerCharacter && !Players.Contains(PlayerCharacter))
+	if (!Players.Contains(PlayerCharacter))
 	{
 		Players.Add(PlayerCharacter);
 	}
 
-	if (InteractingPlayer == nullptr && PlayerCharacter != nullptr)
+	if (InteractingPlayer == nullptr)
 	{
 		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
@@ -136,6 +140,11 @@ void AWorldInteractableBase::OnInteractionSphereEndOverlap(
 	int32 OtherBodyIndex)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+
+	if (PlayerCharacter == nullptr)
+	{
+		return;
+	}
 
 	if (PlayerCharacter)
 	{

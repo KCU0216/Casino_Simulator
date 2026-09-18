@@ -10,6 +10,7 @@ class CASINO_SIMULATOR_API ACasinoLobbyGameMode : public AGameModeBase
     GENERATED_BODY()
 public:
     ACasinoLobbyGameMode();
+    // Requires a present listen host and readiness from every other player.
     UFUNCTION(BlueprintPure, Category="Casino|Lobby") bool AreAllPlayersReady() const;
     virtual void PreLogin(const FString& Options, const FString& Address,
         const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;

@@ -290,12 +290,19 @@ bool UCasinoOnlineSubsystem::IsRoomHost() const
     return Session && Session->bHosting && GetWorld() && GetWorld()->GetNetMode() != NM_Client;
 }
 
+bool UCasinoOnlineSubsystem::CanStartHostedGame() const
+{
+    if (State != ECasinoOnlineState::InRoom || !IsRoomHost()) return false;
+    const auto* Lobby = GetWorld()->GetAuthGameMode<ACasinoLobbyGameMode>();
+    return Lobby && Lobby->AreAllPlayersReady();
+}
+
 void UCasinoOnlineSubsystem::StartHostedGame()
 {
     if (State != ECasinoOnlineState::InRoom || !IsRoomHost()) return;
     auto* Lobby = GetWorld()->GetAuthGameMode<ACasinoLobbyGameMode>();
-    if (!Lobby || !Lobby->AreAllPlayersReady())
-    { Error(TEXT("StartGame"), TEXT("All lobby players must be ready.")); return; }
+    if (!CanStartHostedGame())
+    { Error(TEXT("StartGame"), TEXT("All other lobby players must be ready.")); return; }
     if (CasinoOnline::MapPath(GetDefault<UCasinoOnlineSettings>()->GameMap).IsEmpty())
     { Error(TEXT("StartGame"), TEXT("Set a valid Game Map in Casino Online settings.")); return; }
     ExpectedPlayers = Lobby->GetNumPlayers();
