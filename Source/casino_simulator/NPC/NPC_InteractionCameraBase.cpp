@@ -26,14 +26,14 @@ void ANPC_InteractionCameraBase::OnInteractionSphereBeginOverlap(UPrimitiveCompo
 	
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
 
-	if (PlayerCharacter == nullptr)
+	if (OverlappingPlayer == nullptr && PlayerCharacter != nullptr)
 	{
-		return;
-	}
+		OverlappingPlayer = PlayerCharacter;
 
-	if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-	{
-		Detector->RegisterCandidate(this);
+		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
+		{
+			Detector->RegisterCandidate(this);
+		}
 	}
 }
 

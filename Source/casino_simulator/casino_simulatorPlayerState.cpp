@@ -12,6 +12,7 @@ Acasino_simulatorPlayerState::Acasino_simulatorPlayerState()
 void Acasino_simulatorPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    DOREPLIFETIME(Acasino_simulatorPlayerState, bLobbyReady);
 
 	// Owner-only: a player's inventory contents aren't relevant to other clients.
 	DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, Inventory, COND_OwnerOnly);

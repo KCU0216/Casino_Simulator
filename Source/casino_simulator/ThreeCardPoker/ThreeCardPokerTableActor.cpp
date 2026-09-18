@@ -580,6 +580,7 @@ void AThreeCardPokerTableActor::FinishDecisionWindow()
 	}
 
 	RevealDealerHandAndResolve();
+	Reset();
 }
 
 void AThreeCardPokerTableActor::ScheduleDecisionWindowTimer()

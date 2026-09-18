@@ -15,6 +15,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBlackjackTableChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBlackjackRoundCompleted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBlackjackSeatChanged, int32, SeatIndex, const FBlackjackSeatState&, SeatState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBlackjackCardDealt, int32, SeatIndex, const FBlackjackCard&, Card);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FBlackjackHandCardDealt, int32, SeatIndex, int32, HandIndex, int32, CardIndex, const FBlackjackCard&, Card);
 
 /**
  * Server-owned blackjack table state for a 4-seat, mostly-3D blackjack setup.
@@ -28,6 +29,33 @@ class CASINO_SIMULATOR_API ABlackjackTableActor : public AActor
 	GENERATED_BODY()
 
 public:
+	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
+	bool CanOpenBetting(Acasino_simulatorCharacter* Player) const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
+	bool CanPlaceBet(Acasino_simulatorCharacter* Player, int32 Amount) const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
+	bool CanHit(Acasino_simulatorCharacter* Player) const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
+	bool CanStand(Acasino_simulatorCharacter* Player) const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
+	bool CanDoubleDown(Acasino_simulatorCharacter* Player) const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
+	bool CanSplit(Acasino_simulatorCharacter* Player) const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
+	bool CanPlaceInsurance(Acasino_simulatorCharacter* Player, int32 Amount) const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
+	bool CanSkipInsurance(Acasino_simulatorCharacter* Player) const;
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
+	bool CanSitOut(Acasino_simulatorCharacter* Player) const;
+
 	ABlackjackTableActor();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -98,12 +126,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Round")
 	void ResetRound();
 
+	/** Opens betting without a deadline until the first accepted bet. DurationSeconds is
+	 * retained for existing BP nodes; the countdown is always 15 seconds from that bet. */
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
 	bool StartBettingWindow(float DurationSeconds = -1.0f);
 
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
 	void FinishBettingWindow();
 
+	/** Legacy BP entry point. Fixed betting deadlines cannot be extended; returns false. */
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Betting")
 	bool ExtendBettingWindow(float MinRemainingSeconds);
 
@@ -119,6 +150,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
 	bool IsBettingWindowOpen() const { return bBettingWindowOpen; }
 
+	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
+	bool IsBettingCountdownActive() const { return bBettingWindowOpen && BettingWindowEndsAtServerTime > 0.0f; }
+
+	/** Returns -1 while accepting bets without a deadline, 0 when closed, otherwise seconds left. */
 	UFUNCTION(BlueprintPure, Category="Blackjack|Betting")
 	float GetBettingRemainingTime() const;
 
@@ -161,6 +196,17 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
 	FBlackjackCardDealt OnPlayerCardDealt;
 
+	/** Server presentation event for initial deal, hit and double down. Use instead of
+	 * OnPlayerCardDealt when rendering split hands; binding both would duplicate cards. */
+	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
+	FBlackjackHandCardDealt OnPlayerHandCardDealt;
+
+	/** Server presentation event after splitting and drawing both replacement cards.
+	 * Reconcile existing visuals with SeatState.Hands (do not spawn every card again).
+	 * Clients can reconcile replicated snapshots through the existing OnSeatChanged. */
+	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
+	FBlackjackSeatChanged OnPlayerHandsSplit;
+
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
 	FBlackjackCardDealt OnDealerCardDealt;
 
@@ -172,6 +218,9 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	UFUNCTION()
+	void HandleOccupantDestroyed(AActor* Actor);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USceneComponent> TableRoot;
@@ -206,6 +255,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Rules")
 	bool bDealerStandsOnSoft17 = true;
 
+	// Legacy serialized settings retained for BP compatibility. The fixed 15-second rule
+	// no longer uses these duration/extension values.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Betting", meta=(ClampMin="1.0"))
 	float DefaultBettingWindowSeconds = 15.0f;
 
@@ -263,6 +314,7 @@ private:
 	bool MoveToNextPlayableHand(int32 CurrentSeatIndex);
 	bool IsHandComplete(const FBlackjackHand& Hand) const;
 	bool HasAnyNonBustPlayerHand() const;
+	bool HaveAllSeatedPlayersBet() const;
 	bool TryStartRoundFromBettingWindow();
 	void ClearBettingWindowTimer();
 	void ScheduleBettingWindowTimer();

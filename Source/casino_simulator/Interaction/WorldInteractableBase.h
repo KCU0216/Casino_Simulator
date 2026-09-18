@@ -29,8 +29,14 @@ class CASINO_SIMULATOR_API AWorldInteractableBase : public AActor, public IWorld
 {
 	GENERATED_BODY()
 
+protected:
+	TWeakObjectPtr<Acasino_simulatorCharacter> InteractingPlayer;
+
 public:
 	AWorldInteractableBase();
+
+	UFUNCTION(BlueprintPure, Category = "World Interaction")
+	Acasino_simulatorCharacter* GetInteractingPlayer() const { return InteractingPlayer.Get(); }
 
 	//~ Begin IWorldInteractable interface
 	UFUNCTION(BlueprintCallable, Category = "World Interaction")

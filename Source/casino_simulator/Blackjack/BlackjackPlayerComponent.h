@@ -10,6 +10,30 @@
 class ABlackjackTableActor;
 class Acasino_simulatorCharacter;
 
+UENUM(BlueprintType)
+enum class EBlackjackRequestAction : uint8
+{
+	PlaceBet, NotifyBettingInteraction, StartRound, Hit, Stand, DoubleDown,
+	Split, PlaceInsurance, SkipInsurance, ToggleLeaveAfterRound, ToggleSitOut
+};
+
+UENUM(BlueprintType)
+enum class EBlackjackRequestResult : uint8
+{
+	Success, NotSeated, InvalidAmount, Rejected
+};
+
+USTRUCT()
+struct FBlackjackSeatSession
+{
+	GENERATED_BODY()
+	UPROPERTY() TObjectPtr<ABlackjackTableActor> Table = nullptr;
+	UPROPERTY() int32 SeatIndex = INDEX_NONE;
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FBlackjackRequestCompleted, ABlackjackTableActor*, Table,
+	EBlackjackRequestAction, Action, EBlackjackRequestResult, Result);
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBlackjackSeatModeChanged, ABlackjackTableActor*, Table, int32, SeatIndex);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBlackjackSeatExitRequested, ABlackjackTableActor*, Table, int32, SeatIndex);
 
@@ -92,6 +116,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Seat")
 	FBlackjackSeatModeChanged OnBlackjackSeatModeEnded;
 
+	/** Final server outcome for gameplay requests, delivered to the owning client.
+	 * Existing bool returns on clients still mean request dispatched, not accepted. */
+	UPROPERTY(BlueprintAssignable, Category="Blackjack|Actions")
+	FBlackjackRequestCompleted OnActionCompleted;
+
 	/**
 	 * Fired when Q asks to leave the table. If nothing is bound, the component exits immediately.
 	 * Bind this from BP when a stand-up montage should play before calling CompleteExitBlackjackSeat.
@@ -100,6 +129,9 @@ public:
 	FBlackjackSeatExitRequested OnBlackjackSeatExitRequested;
 
 protected:
+	UFUNCTION(Client, Reliable)
+	void ClientActionCompleted(ABlackjackTableActor* Table, EBlackjackRequestAction Action, EBlackjackRequestResult Result);
+
 	UFUNCTION(Server, Reliable)
 	void ServerEnterBlackjackSeatMode(ABlackjackTableActor* Table, int32 SeatIndex);
 
@@ -146,11 +178,20 @@ protected:
 	void OnRep_BlackjackSeatMode();
 
 private:
-	UPROPERTY(ReplicatedUsing=OnRep_BlackjackSeatMode)
+	UPROPERTY()
 	TObjectPtr<ABlackjackTableActor> CurrentBlackjackTable;
 
-	UPROPERTY(ReplicatedUsing=OnRep_BlackjackSeatMode)
+	UPROPERTY()
 	int32 CurrentSeatIndex = INDEX_NONE;
+
+	// Replicate table and index together to avoid mixed old/new seat notifications.
+	UPROPERTY(ReplicatedUsing=OnRep_BlackjackSeatMode)
+	FBlackjackSeatSession SeatSession;
+	UPROPERTY()
+	TObjectPtr<ABlackjackTableActor> NotifiedTable;
+	int32 NotifiedSeatIndex = INDEX_NONE;
+	void RefreshSeatNotifications();
+	bool ExecuteAction(EBlackjackRequestAction Action, int32 Amount = 0);
 
 	bool bMovementLockApplied = false;
 

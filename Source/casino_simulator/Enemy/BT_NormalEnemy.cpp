@@ -9,8 +9,8 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISense_Sight.h"
-#include "GameFramework/Character.h"
 #include "EnemyAIController_________.h"	
+#include "casino_simulatorCharacter.h"
 
 UBT_NormalEnemy::UBT_NormalEnemy()
 {
@@ -55,35 +55,61 @@ void UBT_NormalEnemy::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMem
 		}
 	}
 			break;
-	case 1:
-	{
-		UAIPerceptionComponent* Perception = AIController->GetPerceptionComponent();
+    case 1:
+    {
+		UAIPerceptionComponent* Perception =
+			AIController->GetPerceptionComponent();
+
 		if (!Perception)
 		{
 			return;
 		}
-		TArray<AActor*> SightedActors;
-		Perception->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), SightedActors);
 
-		AActor* FoundCharacter = nullptr;
+		TArray<AActor*> SightedActors;
+
+		Perception->GetCurrentlyPerceivedActors(
+			UAISense_Sight::StaticClass(),
+			SightedActors);
+
+		Acasino_simulatorCharacter* FoundPlayer = nullptr;
+
 		for (AActor* Actor : SightedActors)
 		{
-			if (Actor && Actor->IsA<ACharacter>())
+			Acasino_simulatorCharacter* Player =
+				Cast<Acasino_simulatorCharacter>(Actor);
+			if (Player && Player->IsPlayerControlled())
 			{
-				FoundCharacter = Actor;
+				FoundPlayer = Player;
 				break;
 			}
 		}
-		if (FoundCharacter)
+
+		const float CurrentTime =
+			AIController->GetWorld()->GetTimeSeconds();
+
+		if (FoundPlayer)
 		{
-			BB->SetValueAsObject(TEXT("Target"), FoundCharacter);
+			BB->SetValueAsObject(TEXT("Target"), FoundPlayer);
+			BB->SetValueAsFloat(TEXT("LastSeenTime"), CurrentTime);
 		}
 		else
 		{
-			BB->ClearValue(GetSelectedBlackboardKey());
+			const float LastSeenTime = BB->GetValueAsFloat(TEXT("LastSeenTime"));
+
+			const float LostTime = CurrentTime - LastSeenTime;
+
+			if (LostTime > LoseTargetDelay)
+			{
+				BB->ClearValue(TEXT("Target"));
+			}
 		}
-	}
-			break;
+		
+
+        }
+	break;
+ 
+
+
 	case 2:
 	{
 		BB->ClearValue(TEXT("Target"));

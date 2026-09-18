@@ -16,6 +16,8 @@
 		}
 	],
 	"Plugins": [
+        { "Name": "OnlineSubsystemEOS", "Enabled": true },
+        { "Name": "EOSVoiceChat", "Enabled": true },
 		{
 			"Name": "ModelingToolsEditorMode",
 			"Enabled": true,

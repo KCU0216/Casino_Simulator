@@ -155,7 +155,7 @@ void ANPC_Base::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacte
 	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
 	if (PlayerController != nullptr && OverlappingPlayer != nullptr && OverlappingPlayer == InteractingCharacter)
 	{
-		OverlappingPlayer = nullptr;
+		//OverlappingPlayer = nullptr;
 		PlayerController->SetWorldInteractionTargetFocused(false);
 		InteractingCharacter->SetCurrentSeatedMachine(nullptr);
 	}
@@ -184,5 +184,6 @@ void ANPC_Base::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedCom
 		{
 			Detector->UnregisterCandidate(this);
 		}
+		OverlappingPlayer = nullptr;
 	}
 }

@@ -509,7 +509,6 @@ void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* Play
 		if (Slot1Action)
 		{
 			EnhancedInputComponent->BindAction(Slot1Action, ETriggerEvent::Started, this, &Acasino_simulatorCharacter::Slot1Input);
-			UE_LOG(LogTemp, Log, TEXT("Bind"));
 		}
 
 		if (Slot2Action)
@@ -596,7 +595,6 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 			Cast<ASeatedMachineBase>(CurrentMachine.GetObject()))
 		{
 			Machine->HandleMachinePrimaryInput(this);
-			return;
 		}
 	}
 
