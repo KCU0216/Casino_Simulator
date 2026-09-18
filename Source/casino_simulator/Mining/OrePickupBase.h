@@ -103,10 +103,10 @@ protected:
 	int32 MaxCarryCount = 1;
 
 	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "OrePickup")
-	float CarryDistance = 500.f;
+	float CarryDistance = 300.f;
 
 	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "OrePickup")
-	float MaxCarryTargetDistance = 700.f;
+	float MaxCarryTargetDistance = 500.f;
 
 	UPROPERTY(EditDefaultsOnly, BluePrintReadWrite, Category = "OrePickup")
 	float CarrySpringStrength = 8000.f;

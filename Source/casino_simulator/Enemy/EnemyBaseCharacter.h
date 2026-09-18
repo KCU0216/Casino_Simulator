@@ -19,6 +19,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Enemy|Movement")
 	void SetEnemyMoveSpeed(float NewMoveSpeed);
 
+	int Job;
+
 protected:
 	/** Each child Blueprint can override this value independently. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Enemy|Movement", meta=(ClampMin="0.0"))

@@ -91,23 +91,21 @@ FGameplayAbilitySpecHandle ANPC_Base::GrantAbility(TSubclassOf<UGameplayAbility>
 	return Handle;
 }
 
-void ANPC_Base::SetCanInterection(bool value)
+void ANPC_Base::SetIsAnimPlay(bool Value)
 {
-	CanInterection = value;
-
-	if (value && OverlappingPlayer)
-	{
-		Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(OverlappingPlayer->GetController());
-		if (PC)
-		{
-			PC->OpenInteraction();
-		}
-	}
+	IsAnimPlay = Value;
 }
 
 bool ANPC_Base::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
 {
-	return CanInterection;
+	if (GetNPCType() == ENPCType::Shop)
+	{
+		return true;
+	}
+	else
+	{
+		return OverlappingPlayer == InteractingCharacter && IsAnimPlay == false;
+	}
 }
 
 void ANPC_Base::Interact(Acasino_simulatorCharacter* InteractingCharacter)
@@ -127,22 +125,39 @@ void ANPC_Base::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 
 void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	// NPCs use the same PlayerHUDWidget prompt flow as world interactables.
-	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
-		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
-		: nullptr)
+	// 위젯이 떠있으면 막기
+	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
+	if (PC == nullptr)
 	{
-		PlayerController->SetInteractionTarget(this);
+		return;
+	}
+	if (InteractingCharacter == nullptr || PC->IsInteractionUIOpen())
+	{
+		return;
+	}
+	// NPCs use the same PlayerHUDWidget prompt flow as world interactables.
+	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
+
+	if (PlayerController != nullptr && CanInteract(InteractingCharacter))
+	{
+		PlayerController->SetWorldInteractionTargetFocused(true);
+		InteractingCharacter->SetCurrentSeatedMachine(this);
 	}
 }
 
 void ANPC_Base::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	if (Acasino_simulatorPlayerController* PlayerController = InteractingCharacter
-		? Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController())
-		: nullptr)
+	if (InteractingCharacter == nullptr)
 	{
-		PlayerController->ClearInteractionTarget(this);
+		return;
+	}
+
+	Acasino_simulatorPlayerController* PlayerController = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
+	if (PlayerController != nullptr && OverlappingPlayer != nullptr && OverlappingPlayer == InteractingCharacter)
+	{
+		//OverlappingPlayer = nullptr;
+		PlayerController->SetWorldInteractionTargetFocused(false);
+		InteractingCharacter->SetCurrentSeatedMachine(nullptr);
 	}
 }
 
@@ -153,29 +168,22 @@ void ANPC_Base::OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedC
 	// interaction UI directly, like before) hands "who's actually focused" off to the player's own
 	// UWorldInteractionDetectorComponent, same as AWorldInteractableBase - see OnInteractionFocusStarted
 	// above for where the UI actually opens once this NPC wins that resolution.
-	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor))
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+	if (PlayerCharacter == nullptr)
 	{
-		OverlappingPlayer = PlayerCharacter;
-
-		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-		{
-			Detector->RegisterCandidate(this);
-		}
+		return;
 	}
 }
 
 void ANPC_Base::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
 {
-	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor))
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+	if (OverlappingPlayer != nullptr && OverlappingPlayer == PlayerCharacter)
 	{
-		if (OverlappingPlayer == PlayerCharacter)
-		{
-			OverlappingPlayer = nullptr;
-		}
-
 		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 		{
 			Detector->UnregisterCandidate(this);
 		}
+		OverlappingPlayer = nullptr;
 	}
 }

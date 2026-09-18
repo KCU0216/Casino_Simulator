@@ -27,7 +27,7 @@ public class casino_simulator : ModuleRules
             "OnlineBase", "VoiceChat", "DeveloperSettings"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "NavigationSystem" });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"casino_simulator",

@@ -12,7 +12,6 @@
 #include "Abilities/GameplayAbility.h"
 #include "casino_simulatorAbilitySystemComponent.h"
 #include "Blackjack/BlackjackPlayerComponent.h"
-#include "Economy/CasinoShopComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Machine/SeatedMachineBase.h"
 #include "Net/UnrealNetwork.h"
@@ -22,13 +21,18 @@
 #include "RaceGame/RaceManager.h"
 #include "Mining/MiningShopComponent.h"
 #include "Mining/OrePickupBase.h"
+#include "Mining/CartBase.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
 #include "Item/ItemData.h"
 #include "casino_simulator.h"
 #include "NativeGameplayTags.h"
+#include "Interaction/WorldInteractable.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Carry, "Ability.Ore.Carry");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Drop, "Ability.Ore.Drop");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Carry, "Ability.Cart.Carry");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Release, "Ability.Cart.Release");
 
 Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 {
@@ -73,7 +77,6 @@ Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 	// it when InitAbilityActorInfo runs.
 	AttributeSet = CreateDefaultSubobject<Ucasino_simulatorAttributeSet>(TEXT("AttributeSet"));
 
-	ShopComponent = CreateDefaultSubobject<UCasinoShopComponent>(TEXT("ShopComponent"));
 	WorldInteractionDetector = CreateDefaultSubobject<UWorldInteractionDetectorComponent>(TEXT("WorldInteractionDetector"));
 	BlackjackPlayerComponent = CreateDefaultSubobject<UBlackjackPlayerComponent>(TEXT("BlackjackPlayerComponent"));
 }
@@ -83,6 +86,7 @@ void Acasino_simulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(Acasino_simulatorCharacter, CarriedOre);
+	DOREPLIFETIME(Acasino_simulatorCharacter, CarriedCart);
 }
 
 UAbilitySystemComponent* Acasino_simulatorCharacter::GetAbilitySystemComponent() const
@@ -149,12 +153,12 @@ float Acasino_simulatorCharacter::GetCurrency() const
 	);
 }
 
-void Acasino_simulatorCharacter::SetCurrentSeatedMachine(ASeatedMachineBase* NewMachine)
+void Acasino_simulatorCharacter::SetCurrentSeatedMachine(TScriptInterface<IWorldInteractable> NewMachine)
 {
 	CurrentSeatedMachine = NewMachine;
 }
 
-void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(ASeatedMachineBase* MachineToClear)
+void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(IWorldInteractable* MachineToClear)
 {
 	if (!MachineToClear || CurrentSeatedMachine == MachineToClear)
 	{
@@ -166,6 +170,11 @@ void Acasino_simulatorCharacter::SetCarriedOre(AOrePickupBase* NewCarriedOre)
 {
 	CarriedOre = NewCarriedOre;
 	HandleCarriedOreChanged();
+}
+void Acasino_simulatorCharacter::SetCarriedCart(ACartBase* NewCarriedCart)
+{
+	CarriedCart = NewCarriedCart;
+	HandleCarriedCartChanged();
 }
 
 int32 Acasino_simulatorCharacter::GetPickaxeMiningPower() const
@@ -354,6 +363,11 @@ void Acasino_simulatorCharacter::OnRep_CarriedOre()
 	HandleCarriedOreChanged();
 }
 
+void Acasino_simulatorCharacter::OnRep_CarriedCart()
+{
+	HandleCarriedCartChanged();
+}
+
 void Acasino_simulatorCharacter::UpdateCarriedOreInteractionPrompt() const
 {
 	if (!IsLocallyControlled())
@@ -370,6 +384,28 @@ void Acasino_simulatorCharacter::UpdateCarriedOreInteractionPrompt() const
 	if (CarriedOre)
 	{
 		PC->OpenCarriedOreInteraction();
+		return;
+	}
+
+	PC->CloseInteraction();
+}
+
+void Acasino_simulatorCharacter::UpdateCarriedCartInteractionPrompt() const
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
+	if (!PC)
+	{
+		return;
+	}
+
+	if (CarriedCart)
+	{
+		PC->OpenCarriedCartInteraction();
 		return;
 	}
 
@@ -394,6 +430,24 @@ void Acasino_simulatorCharacter::HandleCarriedOreChanged() const
 	StopOreCarryAbility();
 }
 
+void Acasino_simulatorCharacter::HandleCarriedCartChanged() const
+{
+	UpdateCarriedCartInteractionPrompt();
+
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (CarriedCart)
+	{
+		StartCartCarryAbility();
+		return;
+	}
+
+	StopCartCarryAbility();
+}
+
 void Acasino_simulatorCharacter::StartOreCarryAbility() const
 {
 	if (!AbilitySystemComponent)
@@ -412,6 +466,26 @@ void Acasino_simulatorCharacter::StopOreCarryAbility() const
 	}
 
 	AbilitySystemComponent->CancelAbilitiesByTag(TAG_Ability_Ore_Carry);
+}
+
+void Acasino_simulatorCharacter::StartCartCarryAbility() const
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	AbilitySystemComponent->TryActivateAbilityByTag(TAG_Ability_Cart_Carry);
+}
+
+void Acasino_simulatorCharacter::StopCartCarryAbility() const
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	AbilitySystemComponent->CancelAbilitiesByTag(TAG_Ability_Cart_Carry);
 }
 
 void Acasino_simulatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -499,7 +573,18 @@ void Acasino_simulatorCharacter::LookInput(const FInputActionValue& Value)
 
 void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 {
-	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController()))
+	if (TScriptInterface<IWorldInteractable> CurrentMachine =
+		GetCurrentSeatedMachine())
+	{
+		if (ASeatedMachineBase* Machine =
+			Cast<ASeatedMachineBase>(CurrentMachine.GetObject()))
+		{
+			Machine->HandleMachinePrimaryInput(this);
+		}
+	}
+
+	if (Acasino_simulatorPlayerController* PC =
+		Cast<Acasino_simulatorPlayerController>(GetController()))
 	{
 		PC->InteractWithCurrentTarget();
 	}
@@ -674,7 +759,27 @@ void Acasino_simulatorCharacter::ServerUpdateCarriedOreTargetLocation_Implementa
 {
 	if (CarriedOre)
 	{
-		CarriedOre->UpdateCarryTargetLocation(this, TargetLocation);
+		if (!CarriedOre->UpdateCarryTargetLocation(this, TargetLocation))
+		{
+			if (AbilitySystemComponent)
+			{
+				AbilitySystemComponent->TryActivateAbilityByTag(TAG_Ability_Ore_Drop);
+			}
+		}
+	}
+}
+
+void Acasino_simulatorCharacter::ServerUpdateCarriedCartTargetLocation_Implementation(FVector TargetLocation)
+{
+	if (CarriedCart)
+	{
+		if (!CarriedCart->UpdateCarryTargetLocation(this, TargetLocation))
+		{
+			if (AbilitySystemComponent)
+			{
+				AbilitySystemComponent->TryActivateAbilityByTag(TAG_Ability_Cart_Release);
+			}
+		}
 	}
 }
 
@@ -691,22 +796,6 @@ void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerPlay_Implementation(AT
 	if (Table)
 	{
 		Table->ExecutePlacePlayGame(this, AnteAmount, PairBetAmount);
-	}
-}
-
-void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerAnte_Implementation(AThreeCardPokerTableActor* Table, int32 Amount, int32 PairBetAmout)
-{
-	if (Table)
-	{
-		Table->ExecutePlaceAnte(this, Amount, PairBetAmout);
-	}
-}
-
-void Acasino_simulatorCharacter::ServerPlaceThreeCardPokerPairPlus_Implementation(AThreeCardPokerTableActor* Table, int32 Amount)
-{
-	if (Table)
-	{
-		Table->ExecutePlacePairPlus(this, Amount);
 	}
 }
 
@@ -731,18 +820,5 @@ void Acasino_simulatorCharacter::ServerLeaveThreeCardPokerTable_Implementation(A
 	if (Table)
 	{
 		Table->ExecuteLeaveTable(this);
-	}
-}
-
-void Acasino_simulatorCharacter::SetCurrentThreeCardPokerTable(AThreeCardPokerTableActor* NewTable)
-{
-	CurrentThreeCardPokerTable = NewTable;
-}
-
-void Acasino_simulatorCharacter::ClearCurrentThreeCardPokerTable(AThreeCardPokerTableActor* TableToClear)
-{
-	if (!TableToClear || CurrentThreeCardPokerTable == TableToClear)
-	{
-		CurrentThreeCardPokerTable = nullptr;
 	}
 }

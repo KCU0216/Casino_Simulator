@@ -147,7 +147,7 @@ void AThreeCardPokerTableActor::OnLocalInteract_Implementation(Acasino_simulator
 	{
 		if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController()))
 		{
-			if (PC->GetCurrentInteractionTarget() || InteractingCharacter->GetCurrentSeatedMachine())
+			if (InteractingCharacter->GetCurrentSeatedMachine())
 			{
 				PC->CloseInteraction();
 			}
@@ -211,97 +211,6 @@ bool AThreeCardPokerTableActor::ExecutePlacePlayGame(Acasino_simulatorCharacter*
 
 	// No other seat to wait for — the Ante alone starts the round.
 	StartRound();
-	return true;
-}
-
-bool AThreeCardPokerTableActor::PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount)
-{
-	if (!Player || Amount < MinAnteBet)
-	{
-		return false;
-	}
-
-	if (HasAuthority())
-	{
-		return ExecutePlaceAnte(Player, Amount, PairBetAmount);
-	}
-
-	// This table isn't owned by any player's connection, so a Server RPC declared on it would just
-	// be dropped if called from a client. Route through Player's own Character instead, which IS
-	// owned by the calling client's connection (same forwarding trick as ANPC_Dice::PlaceBet).
-	Player->ServerPlaceThreeCardPokerAnte(this, Amount, PairBetAmount);
-	return true;
-}
-
-bool AThreeCardPokerTableActor::ExecutePlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount)
-{
-	if (!HasAuthority() || !Player || Amount < MinAnteBet)
-	{
-		return false;
-	}
-
-	// Only the player currently interacting with this table may place a bet on it.
-	if (InteractingPlayer.Get() != Player || RoundState != EThreeCardPokerRoundState::WaitingForBet || AnteBet > 0)
-	{
-		return false;
-	}
-
-	if (!Player->TrySpendCurrency(static_cast<float>(Amount)))
-	{
-		return false;
-	}
-
-	if (!PlacePairPlus(Player, PairBetAmount))
-	{
-		return false;
-	}
-
-	AnteBet = Amount;
-	OnTableChanged.Broadcast();
-
-	// No other seat to wait for — the Ante alone starts the round.
-	StartRound();
-	return true;
-}
-
-bool AThreeCardPokerTableActor::PlacePairPlus(Acasino_simulatorCharacter* Player, int32 Amount)
-{
-	if (!Player || Amount < MinPairPlusBet)
-	{
-		return false;
-	}
-
-	if (HasAuthority())
-	{
-		return ExecutePlacePairPlus(Player, Amount);
-	}
-
-	Player->ServerPlaceThreeCardPokerPairPlus(this, Amount);
-	return true;
-}
-
-bool AThreeCardPokerTableActor::ExecutePlacePairPlus(Acasino_simulatorCharacter* Player, int32 Amount)
-{
-	if (!HasAuthority() || !Player || Amount < MinPairPlusBet)
-	{
-		return false;
-	}
-
-	// Pair Plus rides on an Ante already being down (standard table rule), and both bets are only
-	// open while the hand hasn't been dealt yet.
-	if (InteractingPlayer.Get() != Player || RoundState != EThreeCardPokerRoundState::WaitingForBet
-		|| AnteBet <= 0 || PairPlusBet > 0)
-	{
-		return false;
-	}
-
-	if (!Player->TrySpendCurrency(static_cast<float>(Amount)))
-	{
-		return false;
-	}
-
-	PairPlusBet = Amount;
-	OnTableChanged.Broadcast();
 	return true;
 }
 
@@ -396,6 +305,11 @@ bool AThreeCardPokerTableActor::LeaveTable(Acasino_simulatorCharacter* Player)
 	}
 
 	Player->ServerLeaveThreeCardPokerTable(this);
+
+	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(Player->GetController()))
+	{
+		PC->SetIsInteractionUIOpen(false);
+	}
 	return true;
 }
 
@@ -562,8 +476,7 @@ void AThreeCardPokerTableActor::Multicast_ThreeCardPokerInteractionStarted_Imple
 {
 	if (Player)
 	{
-		Player->SetCurrentThreeCardPokerTable(this);
-		//BP_OnLocalThreeCardPokerInteract(Player);
+		//Player->SetCurrentThreeCardPokerTable(this);
 	}
 }
 
@@ -571,7 +484,7 @@ void AThreeCardPokerTableActor::Multicast_ThreeCardPokerInteractionEnded_Impleme
 {
 	if (Player)
 	{
-		Player->ClearCurrentThreeCardPokerTable(this);
+		//Player->ClearCurrentThreeCardPokerTable(this);
 	}
 }
 
@@ -667,6 +580,7 @@ void AThreeCardPokerTableActor::FinishDecisionWindow()
 	}
 
 	RevealDealerHandAndResolve();
+	Reset();
 }
 
 void AThreeCardPokerTableActor::ScheduleDecisionWindowTimer()

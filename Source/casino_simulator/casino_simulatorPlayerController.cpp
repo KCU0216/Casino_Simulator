@@ -32,12 +32,13 @@
 #include "Interaction/WorldInteractableBase.h"
 #include "Interaction/WorldInteractable.h"
 #include "Machine/SeatedMachineBase.h"
-#include "GameFramework/CharacterMovementComponent.h"
-#include "NPC/NPC_Base.h"
+#include "Mining/CartBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NativeGameplayTags.h"
+#include "NPC/NPC_Base.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_DropOre, "Input.DropOre");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_ReleaseCart, "Input.ReleaseCart");
 
 Acasino_simulatorPlayerController::Acasino_simulatorPlayerController()
 {
@@ -270,38 +271,6 @@ void Acasino_simulatorPlayerController::OnCurrencyChanged(const FOnAttributeChan
 	}
 }
 
-void Acasino_simulatorPlayerController::SetInteractionTarget(ANPC_Base* NewInteractionTarget)
-{
-	if (!NewInteractionTarget)
-	{
-		return;
-	}
-
-	CurrentInteractionTarget = NewInteractionTarget;
-	OpenInteraction();
-}
-
-void Acasino_simulatorPlayerController::ClearInteractionTarget(ANPC_Base* InteractionTargetToClear)
-{
-	if (InteractionTargetToClear && CurrentInteractionTarget != InteractionTargetToClear)
-	{
-		return;
-	}
-
-	CurrentInteractionTarget = nullptr;
-
-	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
-	{
-		if (PlayerCharacter->GetCarriedOre())
-		{
-			OpenCarriedOreInteraction();
-			return;
-		}
-	}
-
-	CloseInteraction();
-}
-
 void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 {
 	if (bInteractionUIOpen)
@@ -320,16 +289,8 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 		return;
 	}
 
-	if (ASeatedMachineBase* CurrentMachine = PlayerCharacter->GetCurrentSeatedMachine())
+	if (TryReleaseCarriedCart(PlayerCharacter))
 	{
-		if (HasAuthority())
-		{
-			CurrentMachine->HandleMachinePrimaryInput(PlayerCharacter);
-		}
-		else
-		{
-			Server_HandleMachinePrimaryInput(CurrentMachine);
-		}
 		return;
 	}
 
@@ -341,15 +302,7 @@ void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 			return;
 		}
 
-		UObject* FocusedObject = FocusedTarget.GetObject();
-		if (AWorldInteractableBase* WorldTarget = Cast<AWorldInteractableBase>(FocusedObject))
-		{
-			RequestWorldInteraction(WorldTarget);
-		}
-		else if (ANPC_Base* NPCTarget = Cast<ANPC_Base>(FocusedObject))
-		{
-			RequestNPCInteraction(NPCTarget);
-		}
+		RequestWorldInteraction(FocusedTarget);
 	}
 }
 
@@ -372,34 +325,59 @@ bool Acasino_simulatorPlayerController::TryDropCarriedOre(Acasino_simulatorChara
 	return true;
 }
 
+bool Acasino_simulatorPlayerController::TryReleaseCarriedCart(Acasino_simulatorCharacter* PlayerCharacter)
+{
+	if (!PlayerCharacter || !PlayerCharacter->GetCarriedCart())
+	{
+		return false;
+	}
+
+	Ucasino_simulatorAbilitySystemComponent* CasinoAbilitySystem =
+		Cast<Ucasino_simulatorAbilitySystemComponent>(PlayerCharacter->GetAbilitySystemComponent());
+	if (!CasinoAbilitySystem)
+	{
+		return false;
+	}
+
+	CasinoAbilitySystem->PressInputTag(TAG_Input_ReleaseCart);
+	CasinoAbilitySystem->ReleaseInputTag(TAG_Input_ReleaseCart);
+	return true;
+}
+
 void Acasino_simulatorPlayerController::ExitCurrentMachine()
 {
+	SetIsInteractionUIOpen(false);
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter)
 	{
 		return;
 	}
 
-	ASeatedMachineBase* CurrentMachine = PlayerCharacter->GetCurrentSeatedMachine();
+	TScriptInterface<IWorldInteractable> CurrentMachine = PlayerCharacter->GetCurrentSeatedMachine();
 	if (!CurrentMachine)
 	{
 		return;
 	}
 
-	if (HasAuthority())
+	ASeatedMachineBase* Machine = Cast<ASeatedMachineBase>(CurrentMachine.GetObject());
+	if (!Machine)
 	{
-		CurrentMachine->RequestReleaseMachine(PlayerCharacter);
+		return;
 	}
-	else
-	{
-		Server_ExitMachine(CurrentMachine);
-	}
+
+	/*IWorldInteractable::Execute_OnInteractionFocusEnded(
+		Machine,
+		PlayerCharacter
+	);*/
+
+	Machine->RequestReleaseMachine(PlayerCharacter);
 }
 
-void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractableBase* Target)
+void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface<IWorldInteractable> Target)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Target)
+	UObject* TargetObject = Target.GetObject();
+	if (!PlayerCharacter || !TargetObject)
 	{
 		return;
 	}
@@ -407,18 +385,19 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 	// OnLocalInteract is BlueprintNativeEvent (so a Blueprint-graph-only override still runs), which
 	// requires going through Execute_ rather than a direct call - see IWorldInteractable's class
 	// comment. CanInteract/Interact are plain virtual, so they're called directly below.
-	IWorldInteractable::Execute_OnLocalInteract(Target, PlayerCharacter);
+	IWorldInteractable::Execute_OnLocalInteract(TargetObject, PlayerCharacter);
 	CloseInteraction();
+
+	if (AWorldInteractableBase* WorldTarget = Cast<AWorldInteractableBase>(TargetObject);
+		WorldTarget && WorldTarget->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
+	{
+		WorldTarget->BeginLocalInteraction(PlayerCharacter);
+		return;
+	}
 
 	if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
 	{
 		MovementComponent->DisableMovement();
-	}
-
-	if (Target->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
-	{
-		Target->BeginLocalInteraction(PlayerCharacter);
-		return;
 	}
 
 	if (HasAuthority())
@@ -431,7 +410,7 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(AWorldInteractab
 	}
 }
 
-void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implementation(AWorldInteractableBase* Target)
+void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implementation(const TScriptInterface<IWorldInteractable>& Target)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter || !Target || !Target->CanInteract(PlayerCharacter))
@@ -439,47 +418,6 @@ void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implement
 		return;
 	}
 
-	Target->Interact(PlayerCharacter);
-}
-
-void Acasino_simulatorPlayerController::RequestNPCInteraction(ANPC_Base* Target)
-{
-	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Target || !Target->CanInteract(PlayerCharacter))
-	{
-		return;
-	}
-
-	CloseInteraction();
-
-	// Always run locally so BP_OnInteract (opening the UI, playing local effects, etc.) fires
-	// immediately on this player's own machine. On a client this only touches that client's
-	// non-authoritative copy of the NPC though, so also tell the server to run the same Interact()
-	// on its authoritative copy (e.g. so NPC_Dice's InteractingPlayer is set server-side too) - skip
-	// it on the server/host, which already just ran it above.
-	Target->Interact(PlayerCharacter);
-	if (!HasAuthority())
-	{
-		Server_InteractWithNPC(Target);
-	}
-
-	if (Target->GetNPCType() != ENPCType::Shop)
-	{
-		if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
-		{
-			MovementComponent->DisableMovement();
-		}
-	}
-}
-
-void Acasino_simulatorPlayerController::Server_InteractWithNPC_Implementation(ANPC_Base* Target)
-{
-	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Target || !Target->GetCanInterection())
-	{
-		return;
-	}
-	CurrentInteractionTarget = Target;
 	Target->Interact(PlayerCharacter);
 }
 
@@ -505,6 +443,11 @@ void Acasino_simulatorPlayerController::Server_ExitMachine_Implementation(ASeate
 	Machine->RequestReleaseMachine(PlayerCharacter);
 }
 
+void Acasino_simulatorPlayerController::SetIsInteractionUIOpen(bool Value)
+{
+	bInteractionUIOpen = Value;
+}
+
 void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSuppressed)
 {
 	if (bInteractionPromptSuppressed == bSuppressed)
@@ -520,7 +463,15 @@ void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSup
 		return;
 	}
 
-	if ((CurrentInteractionTarget || bWorldInteractionTargetFocused) && !bInteractionUIOpen)
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+	if (PlayerCharacter == nullptr)
+	{
+		return;
+	}
+
+	PlayerCharacter->GetCurrentSeatedMachine();
+
+	if ((PlayerCharacter->GetCurrentSeatedMachine() != nullptr || bWorldInteractionTargetFocused) && !bInteractionUIOpen)
 	{
 		OpenInteraction();
 	}
@@ -533,7 +484,7 @@ void Acasino_simulatorPlayerController::EnterInteractionUIMode(AActor* CameraTar
 		return;
 	}
 
-	bInteractionUIOpen = true;
+	SetIsInteractionUIOpen(true);
 	CloseInteraction();
 
 	bShowMouseCursor = true;
@@ -560,7 +511,7 @@ void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 		return;
 	}
 
-	bInteractionUIOpen = false;
+	SetIsInteractionUIOpen(false);
 
 	bShowMouseCursor = false;
 
@@ -576,13 +527,15 @@ void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 	}
 
 	SetLocalPawnMeshesHiddenForInteraction(false);
-
-	if (Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
+	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+	if (PlayerCharacter == nullptr)
 	{
-		PlayerCharacter->RefreshEquipmentVisuals();
+		return;
 	}
 
-	if (CurrentInteractionTarget || bWorldInteractionTargetFocused)
+	PlayerCharacter->RefreshEquipmentVisuals();
+
+	if (PlayerCharacter->GetCurrentSeatedMachine() != nullptr|| bWorldInteractionTargetFocused)
 	{
 		OpenInteraction();
 	}
@@ -650,15 +603,19 @@ void Acasino_simulatorPlayerController::OpenInteraction()
 {
 	if (const Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
 	{
-		if (PlayerCharacter->GetCarriedOre())
+		if (PlayerCharacter->GetCarriedOre() || PlayerCharacter->GetCarriedCart())
 		{
 			CloseInteraction();
 			return;
 		}
 	}
 
-	const bool bHasNPCTarget = CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection();
+	/*const bool bHasNPCTarget = CurrentInteractionTarget && CurrentInteractionTarget->GetCanInterection();
 	if ((!bHasNPCTarget && !bWorldInteractionTargetFocused) || bInteractionUIOpen || bInteractionPromptSuppressed)
+	{
+		return;
+	}*/
+	if (!bWorldInteractionTargetFocused || bInteractionUIOpen || bInteractionPromptSuppressed)
 	{
 		return;
 	}
@@ -712,6 +669,20 @@ void Acasino_simulatorPlayerController::OpenCarriedOreInteraction()
 	}
 }
 
+void Acasino_simulatorPlayerController::OpenCarriedCartInteraction()
+{
+	if (bInteractionUIOpen || bInteractionPromptSuppressed)
+	{
+		return;
+	}
+
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->BP_SetInteractionPromptText(FText::FromString(TEXT("Release")));
+		PlayerHUDWidget->BP_OpenInterection();
+	}
+}
+
 void Acasino_simulatorPlayerController::SetWorldInteractionTargetFocused(bool bFocused)
 {
 	bWorldInteractionTargetFocused = bFocused;
@@ -727,6 +698,12 @@ void Acasino_simulatorPlayerController::SetWorldInteractionTargetFocused(bool bF
 			if (PlayerCharacter->GetCarriedOre())
 			{
 				OpenCarriedOreInteraction();
+				return;
+			}
+
+			if (PlayerCharacter->GetCarriedCart())
+			{
+				OpenCarriedCartInteraction();
 				return;
 			}
 		}

@@ -265,3 +265,31 @@ bool Acasino_simulatorGameMode::PayBail(
 
     return CasinoPlayer->TrySpendCurrency(BailAmount);
 }
+
+void Acasino_simulatorGameMode::StealMoney(APawn* TargetPlayer, AActor* ThiefActor)
+{
+    if (!HasAuthority() || !TargetPlayer)
+    {
+        return;
+    }
+    
+    Acasino_simulatorCharacter* Player = Cast<Acasino_simulatorCharacter>(TargetPlayer);
+
+    if (!Player)
+    {
+        return;
+    }
+
+    const int32 StealAmount = FMath::RandRange(St_Money_Min / 50, St_Money_Max / 50) * 50;
+
+    const float ActualStealAmount = FMath::Min(static_cast<float>(StealAmount), Player->GetCurrency());
+
+    if (ActualStealAmount <= 0.0f)
+    {
+        return;
+    }
+
+    Player->TrySpendCurrency(ActualStealAmount);
+    
+    
+}

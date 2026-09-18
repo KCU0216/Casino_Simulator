@@ -65,9 +65,6 @@ public:
 	 * any round in progress when the player changes. */
 	void SetInteractingPlayer(Acasino_simulatorCharacter* Player);
 
-	UFUNCTION(BlueprintPure, Category="ThreeCardPoker")
-	Acasino_simulatorCharacter* GetInteractingPlayer() const { return InteractingPlayer.Get(); }
-
 	/** Entry point: places the mandatory Ante and, once it lands, immediately deals both hands
 	 * (there's no other seat to wait for). Routes through a Server RPC on Player when called from
 	 * a client, same as ANPC_Dice::PlaceBet. */
@@ -75,18 +72,6 @@ public:
 	bool PlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount);
 
 	bool ExecutePlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount);
-
-	UFUNCTION(BlueprintCallable, Category="ThreeCardPoker|Round")
-	bool PlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount);
-
-	/** Authoritative half of PlaceAnte. Server-only; validates Player is the one currently
-	 * interacting with this table. */
-	bool ExecutePlaceAnte(Acasino_simulatorCharacter* Player, int32 Amount, int32 PairBetAmount);
-
-	UFUNCTION(BlueprintCallable, Category="ThreeCardPoker|Round")
-	bool PlacePairPlus(Acasino_simulatorCharacter* Player, int32 Amount);
-
-	bool ExecutePlacePairPlus(Acasino_simulatorCharacter* Player, int32 Amount);
 
 	UFUNCTION(BlueprintCallable, Category="ThreeCardPoker|Round")
 	bool PlayHand(Acasino_simulatorCharacter* Player);
@@ -304,7 +289,6 @@ private:
 
 	// Server-only bookkeeping — not replicated, same as ANPC_Dice::InteractingPlayer. Clients don't
 	// need this object reference; they just read the replicated hand/bet state below.
-	TWeakObjectPtr<Acasino_simulatorCharacter> InteractingPlayer;
 
 	TWeakObjectPtr<AActor> DefaultOwner;
 	TArray<FBlackjackCard> ServerDealerHand;

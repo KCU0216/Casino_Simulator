@@ -31,6 +31,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Police|Jail")
 	bool PayBail(APawn* Player, float BailAmount);
 
+	UFUNCTION(BlueprintCallable, Category = "Thief")
+	void StealMoney(APawn* TargetPlayer, AActor* ThiefActor);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Thief")
+	int St_Money_Max = 1000;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Thief")
+	int St_Money_Min = 100;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="1"))
     int32 StartDay = 1;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="1"))
