@@ -24,7 +24,7 @@ void ANPC_InteractionCameraBase::OnInteractionSphereBeginOverlap(UPrimitiveCompo
 {
 	Super::OnInteractionSphereBeginOverlap(OverlappedComponent, OtherActor, OtherComp, OtherBodyIndex, bFromSweep, SweepResult);
 	
-	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+	/*Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
 
 	if (OverlappingPlayer == nullptr && PlayerCharacter != nullptr)
 	{
@@ -34,7 +34,7 @@ void ANPC_InteractionCameraBase::OnInteractionSphereBeginOverlap(UPrimitiveCompo
 		{
 			Detector->RegisterCandidate(this);
 		}
-	}
+	}*/
 }
 
 void ANPC_InteractionCameraBase::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
