@@ -135,7 +135,10 @@ void UCasinoOnlineSubsystem::CreateRoom(const FString& RoomName)
     Settings.NumPublicConnections = FMath::Clamp(Config->MaxPlayers, 2, 16);
     // OSS EOS replaces BuildUniqueId with the engine build ID during creation.
     // Keep our game protocol version in an independently advertised attribute.
-    Settings.Set(CasinoOnline::BuildKey, static_cast<int64>(Config->BuildId), EOnlineDataAdvertisementType::ViaOnlineService);
+    FOnlineSessionSetting BuildSetting;
+    BuildSetting.AdvertisementType = EOnlineDataAdvertisementType::ViaOnlineService;
+    BuildSetting.Data.SetValue(static_cast<int64>(Config->BuildId));
+    Settings.Set(CasinoOnline::BuildKey, BuildSetting);
     Settings.Set(SETTING_HOST_MIGRATION, false, EOnlineDataAdvertisementType::DontAdvertise);
     Settings.Set(CasinoOnline::RoomKey, RoomName.TrimStartAndEnd().Left(48), EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(CasinoOnline::ProjectKey, CasinoOnline::ProjectValue, EOnlineDataAdvertisementType::ViaOnlineService);
@@ -201,9 +204,25 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
             }
             // EOS deserializes all integer lobby attributes as Int64.
             int64 RoomBuild = 0;
-            if (!Result.Session.SessionSettings.Get(CasinoOnline::BuildKey, RoomBuild))
+            const FOnlineSessionSetting* BuildSetting = Result.Session.SessionSettings.Settings.Find(CasinoOnline::BuildKey);
+            if (!BuildSetting)
             {
                 UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: missing CASINO_BUILD_ID (recreate room with updated build)."), I);
+                continue;
+            }
+            if (BuildSetting->Data.GetType() == EOnlineKeyValuePairDataType::Int64)
+            {
+                BuildSetting->Data.GetValue(RoomBuild);
+            }
+            else if (BuildSetting->Data.GetType() == EOnlineKeyValuePairDataType::Int32)
+            {
+                int32 Value = 0;
+                BuildSetting->Data.GetValue(Value);
+                RoomBuild = Value;
+            }
+            else
+            {
+                UE_LOG(LogTemp, Warning, TEXT("CasinoOnline: Result[%d] excluded: CASINO_BUILD_ID has non-integer type."), I);
                 continue;
             }
             if (RoomBuild != ExpectedBuild)
