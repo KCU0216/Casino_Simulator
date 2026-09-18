@@ -63,6 +63,8 @@ public:
     UFUNCTION(BlueprintCallable, Category="Casino|Online") void LeaveRoom();
     UFUNCTION(BlueprintCallable, Category="Casino|Online") void StartHostedGame();
     UFUNCTION(BlueprintPure, Category="Casino|Online") bool IsRoomHost() const;
+    // Host UI only; returns false on clients and outside the lobby.
+    UFUNCTION(BlueprintPure, Category="Casino|Lobby") bool CanStartHostedGame() const;
     UFUNCTION(BlueprintPure, Category="Casino|Online") bool IsLoggedIn() const;
     UFUNCTION(BlueprintPure, Category="Casino|Online") FString GetLocalDisplayName() const;
 
