@@ -22,11 +22,9 @@
 #include "UI/InventoryWidget.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
-#include "casino_simulatorCharacter.h"
 #include "casino_simulatorAbilitySystemComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
-#include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Interaction/WorldInteractableBase.h"
@@ -371,6 +369,7 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 	);*/
 
 	Machine->RequestReleaseMachine(PlayerCharacter);
+	OpenInteraction();
 }
 
 void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface<IWorldInteractable> Target)
@@ -393,11 +392,6 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface
 	{
 		WorldTarget->BeginLocalInteraction(PlayerCharacter);
 		return;
-	}
-
-	if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
-	{
-		MovementComponent->DisableMovement();
 	}
 
 	if (HasAuthority())
