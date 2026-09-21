@@ -28,6 +28,7 @@
 #include "casino_simulator.h"
 #include "NativeGameplayTags.h"
 #include "Interaction/WorldInteractable.h"
+#include "UI/CasinoSettingsSubsystem.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Carry, "Ability.Ore.Carry");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Drop, "Ability.Ore.Drop");
@@ -735,9 +736,20 @@ void Acasino_simulatorCharacter::DoAim(float Yaw, float Pitch)
 {
 	if (GetController())
 	{
+		float Sensitivity = 1.0f;
+		float PitchDirection = 1.0f;
+		if (const UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (const UCasinoSettingsSubsystem* Settings = GameInstance->GetSubsystem<UCasinoSettingsSubsystem>())
+			{
+				Sensitivity = Settings->GetMouseSensitivity();
+				PitchDirection = Settings->IsMouseYInverted() ? -1.0f : 1.0f;
+			}
+		}
+
 		// pass the rotation inputs
-		AddControllerYawInput(Yaw);
-		AddControllerPitchInput(Pitch);
+		AddControllerYawInput(Yaw * Sensitivity);
+		AddControllerPitchInput(Pitch * Sensitivity * PitchDirection);
 	}
 }
 
