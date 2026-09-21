@@ -133,7 +133,7 @@ void AThreeCardPokerTableActor::Interact(Acasino_simulatorCharacter* Interacting
 	{
 		return;
 	}
-
+	//InteractingCharacter->GetMovementComponent()
 	SetInteractingPlayer(InteractingCharacter);
 }
 
