@@ -89,6 +89,7 @@ private:
     FTimerHandle PaymentTimer;
     FTimerHandle NextDayTimer;
     TArray<TWeakObjectPtr<AActor>> PaymentSpawns;
+    TArray<TWeakObjectPtr<class Acasino_simulatorPlayerState>> PaymentParticipants;
     bool bCollectingPayment = false;
     void BeginCasinoDay(int32 Day);
     void BeginPaymentPhase();

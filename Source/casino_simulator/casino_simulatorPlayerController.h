@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "Interaction/WorldInteractable.h"
+#include "casino_loop_gamestate.h"
 #include "casino_simulatorPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -51,6 +52,11 @@ public:
     void ClientDailyPaymentResult(bool bSuccess);
     UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")
     void OnDailyPaymentResult(bool bSuccess);
+    // Close payment/waiting widgets and show the supplied shared outcome.
+    UFUNCTION(Client, Reliable)
+    void ClientFinishDailyPayment(ECasinoLoopPhase Phase);
+    UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")
+    void OnFinishDailyPayment(ECasinoLoopPhase Phase);
 
 protected:
 

@@ -825,8 +825,8 @@ bool Acasino_simulatorPlayerController::ShouldUseTouchControls() const
 void Acasino_simulatorPlayerController::ServerSubmitDailyPayment_Implementation(int32 Amount)
 {
     auto* GM = GetWorld()->GetAuthGameMode<Acasino_simulatorGameMode>();
-    ClientDailyPaymentResult(GM && GM->SubmitDailyPayment(
-        Cast<Acasino_simulatorCharacter>(GetPawn()), Amount));
+    if (!GM || !GM->SubmitDailyPayment(Cast<Acasino_simulatorCharacter>(GetPawn()), Amount))
+        ClientDailyPaymentResult(false);
 }
 
 void Acasino_simulatorPlayerController::ServerSetLobbyReady_Implementation(bool bReady)
@@ -848,22 +848,33 @@ void Acasino_simulatorPlayerController::ClientDailyPaymentResult_Implementation(
 
 void Acasino_simulatorPlayerController::ClientPrepareDailyPayment_Implementation(FRotator Facing)
 {
-    OnPrepareDailyPayment();
     ResetIgnoreLookInput();
     ResetIgnoreMoveInput();
-    SetInputMode(FInputModeGameOnly());
-    bShowMouseCursor = false;
+    SetIgnoreLookInput(true);
+    SetIgnoreMoveInput(true);
+    if (auto* ControlledCharacter = Cast<ACharacter>(GetPawn()))
+        ControlledCharacter->GetCharacterMovement()->DisableMovement();
+    SetInputMode(FInputModeGameAndUI());
+    bShowMouseCursor = true;
     SetControlRotation(Facing);
     if (GetPawn()) SetViewTargetWithBlend(GetPawn(), 0.0f);
+    OnPrepareDailyPayment();
+}
+
+void Acasino_simulatorPlayerController::ClientFinishDailyPayment_Implementation(ECasinoLoopPhase Phase)
+{
+    OnFinishDailyPayment(Phase);
 }
 
 void Acasino_simulatorPlayerController::ClientPrepareCasinoDay_Implementation(FRotator Facing)
 {
-    OnPrepareCasinoDay();
     ResetIgnoreLookInput();
     ResetIgnoreMoveInput();
     SetInputMode(FInputModeGameOnly());
     bShowMouseCursor = false;
+    if (auto* ControlledCharacter = Cast<ACharacter>(GetPawn()))
+        ControlledCharacter->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
     SetControlRotation(Facing);
     if (GetPawn()) SetViewTargetWithBlend(GetPawn(), 0.0f);
+    OnPrepareCasinoDay();
 }

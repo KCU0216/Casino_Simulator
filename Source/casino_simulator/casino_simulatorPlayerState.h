@@ -36,6 +36,10 @@ public:
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category="Casino|Lobby")
     bool bLobbyReady = false;
+    UPROPERTY(Replicated, BlueprintReadOnly, Category="Casino|Loop")
+    bool bDailyPaymentSubmitted = false;
+    UPROPERTY(Replicated, BlueprintReadOnly, Category="Casino|Loop")
+    int32 DailyPaymentAmount = 0;
 
 	/** DataTable of FItemData rows this inventory resolves ItemIDs against (RowName is arbitrary; FItemData::UniqueID is the actual key) */
 	UPROPERTY(EditDefaultsOnly, Category = "Inventory")

@@ -37,6 +37,10 @@ struct FCasinoLoopStatus
 
     UPROPERTY(BlueprintReadOnly)
     int32 CollectedPayment = 0;
+    UPROPERTY(BlueprintReadOnly)
+    int32 PaymentParticipantCount = 0;
+    UPROPERTY(BlueprintReadOnly)
+    int32 PaymentSubmittedCount = 0;
 
     UPROPERTY(BlueprintReadOnly)
     double PaymentEndServerTime = 0.0;

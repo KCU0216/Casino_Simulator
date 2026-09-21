@@ -110,6 +110,14 @@ void Acasino_simulatorGameMode::BeginCasinoDay(int32 Day)
     auto* GS = GetGameState<ACasinoLoopGameState>();
     if (!GS) return;
     FCasinoLoopStatus Status;
+    PaymentParticipants.Reset();
+    for (APlayerState* BasePS : GS->PlayerArray)
+        if (auto* PS = Cast<Acasino_simulatorPlayerState>(BasePS))
+        {
+            PS->bDailyPaymentSubmitted = false;
+            PS->DailyPaymentAmount = 0;
+            PS->ForceNetUpdate();
+        }
     Status.Phase = ECasinoLoopPhase::Playing;
     Status.CurrentDay = Day;
     Status.FinalDay = FMath::Max(1, StartDay) + FMath::Max(1, DaysToPlay) - 1;
@@ -139,6 +147,7 @@ bool Acasino_simulatorGameMode::MovePlayersToCentralSpawns(bool bForPayment)
         Player->GetCharacterMovement()->StopMovementImmediately();
         Player->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
         const bool bMoved = Player->TeleportTo(Point->GetActorLocation(), Point->GetActorRotation());
+        if (bForPayment) Player->GetCharacterMovement()->DisableMovement();
         bAllMoved &= bMoved;
         PC->SetControlRotation(Point->GetActorRotation());
         if (auto* CasinoPC = Cast<Acasino_simulatorPlayerController>(PC))
@@ -160,12 +169,22 @@ void Acasino_simulatorGameMode::BeginPaymentPhase()
     GS->SetLoopStatus(Status);
     // This event must finish synchronously before teleporting players.
     ForceEndCasinoGamesForDay();
+    PaymentParticipants.Reset();
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+        if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
+            if (auto* PS = PC->GetPlayerState<Acasino_simulatorPlayerState>())
+                PaymentParticipants.Add(PS);
+    Status.PaymentParticipantCount = PaymentParticipants.Num();
+    Status.PaymentSubmittedCount = 0;
     const bool bAllMoved = MovePlayersToCentralSpawns(true);
     if (!bAllMoved)
     {
         UE_LOG(LogTemp, Error, TEXT("Day loop: payment teleport failed. Provide a clear tagged point per player."));
         Status.Phase = ECasinoLoopPhase::GameOver;
         GS->SetLoopStatus(Status);
+        for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+            if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
+                PC->ClientFinishDailyPayment(Status.Phase);
         return;
     }
     const float Duration = FMath::Max(1.0f, PaymentDurationSeconds);
@@ -178,9 +197,11 @@ void Acasino_simulatorGameMode::BeginPaymentPhase()
 bool Acasino_simulatorGameMode::SubmitDailyPayment(Acasino_simulatorCharacter* Player, int32 Amount)
 {
     auto* GS = GetGameState<ACasinoLoopGameState>();
-    if (bCollectingPayment || !HasAuthority() || !GS || !IsValid(Player) || Amount <= 0 ||
+    if (bCollectingPayment || !HasAuthority() || !GS || !IsValid(Player) || Amount < 0 ||
         GS->LoopStatus.Phase != ECasinoLoopPhase::Settling ||
         GS->GetRemainingPaymentSeconds() <= 0.0f) return false;
+    auto* PS = Player->GetPlayerState<Acasino_simulatorPlayerState>();
+    if (!PS || PS->bDailyPaymentSubmitted || !PaymentParticipants.Contains(PS)) return false;
     bool bNear = false;
     for (const auto& Point : PaymentSpawns)
         if (Point.IsValid() && FVector::DistSquared(Player->GetActorLocation(), Point->GetActorLocation())
@@ -188,12 +209,19 @@ bool Acasino_simulatorGameMode::SubmitDailyPayment(Acasino_simulatorCharacter* P
     if (!bNear) return false;
     FCasinoLoopStatus Status = GS->LoopStatus;
     const int32 Actual = FMath::Min(Amount, Status.RequiredPayment - Status.CollectedPayment);
-    if (Actual <= 0) return false;
     TGuardValue<bool> PaymentGuard(bCollectingPayment, true);
-    if (!Player->TrySpendCurrency(static_cast<float>(Actual))) return false;
+    if (Actual > 0 && !Player->TrySpendCurrency(static_cast<float>(Actual))) return false;
+    PS->bDailyPaymentSubmitted = true;
+    PS->DailyPaymentAmount = Actual;
+    PS->ForceNetUpdate();
     Status.CollectedPayment += Actual;
+    ++Status.PaymentSubmittedCount;
     GS->SetLoopStatus(Status);
-    if (Status.CollectedPayment >= Status.RequiredPayment) FinishPaymentPhase();
+    // Send acknowledgement before the outcome so the UI cannot reopen waiting after closing.
+    if (auto* PC = Cast<Acasino_simulatorPlayerController>(Player->GetController()))
+        PC->ClientDailyPaymentResult(true);
+    if (Status.CollectedPayment >= Status.RequiredPayment ||
+        Status.PaymentSubmittedCount >= Status.PaymentParticipantCount) FinishPaymentPhase();
     return true;
 }
 
@@ -203,10 +231,23 @@ void Acasino_simulatorGameMode::FinishPaymentPhase()
     if (!GS || GS->LoopStatus.Phase != ECasinoLoopPhase::Settling) return;
     GetWorldTimerManager().ClearTimer(PaymentTimer);
     FCasinoLoopStatus Status = GS->LoopStatus;
+    for (const auto& Entry : PaymentParticipants)
+        if (auto* PS = Entry.Get())
+            if (!PS->bDailyPaymentSubmitted)
+            {
+                PS->bDailyPaymentSubmitted = true;
+                PS->DailyPaymentAmount = 0;
+                PS->ForceNetUpdate();
+            }
+    // Disconnected participants also count as zero when the deadline expires.
+    Status.PaymentSubmittedCount = Status.PaymentParticipantCount;
     Status.PaymentEndServerTime = 0.0;
     Status.Phase = Status.CollectedPayment < Status.RequiredPayment ? ECasinoLoopPhase::GameOver
         : (Status.CurrentDay >= Status.FinalDay ? ECasinoLoopPhase::Cleared : ECasinoLoopPhase::DayPassed);
     GS->SetLoopStatus(Status);
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+        if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
+            PC->ClientFinishDailyPayment(Status.Phase);
     if (Status.Phase == ECasinoLoopPhase::DayPassed)
         GetWorldTimerManager().SetTimer(NextDayTimer, this,
             &Acasino_simulatorGameMode::AdvanceCasinoDay, FMath::Max(0.1f, ResultDurationSeconds), false);
