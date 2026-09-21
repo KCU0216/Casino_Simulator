@@ -34,6 +34,8 @@ public:
 
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Lobby")
     void ServerSetLobbyReady(bool bReady);
+    UFUNCTION(Client, Reliable)
+    void ClientEnterCasinoMatch();
 
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Loop")
     void ServerSubmitDailyPayment(int32 Amount);

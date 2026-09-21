@@ -14,6 +14,7 @@
 #include "Online/OnlineSessionNames.h"
 #include "IOnlineSubsystemEOS.h"
 #include "VoiceChat.h"
+#include "HAL/IConsoleManager.h"
 
 namespace CasinoOnline
 {
@@ -305,6 +306,16 @@ void UCasinoOnlineSubsystem::StartHostedGame()
     { Error(TEXT("StartGame"), TEXT("All other lobby players must be ready.")); return; }
     if (CasinoOnline::MapPath(GetDefault<UCasinoOnlineSettings>()->GameMap).IsEmpty())
     { Error(TEXT("StartGame"), TEXT("Set a valid Game Map in Casino Online settings.")); return; }
+    UClass* MatchMode = GetDefault<UCasinoOnlineSettings>()->GameplayGameMode.LoadSynchronous();
+    if (!MatchMode || MatchMode->HasAnyClassFlags(CLASS_Abstract) ||
+        !MatchMode->IsChildOf(Acasino_simulatorGameMode::StaticClass()))
+    { Error(TEXT("StartGame"), TEXT("Set a concrete Casino gameplay GameMode in Casino Online settings.")); return; }
+#if WITH_EDITOR
+    // PIE otherwise falls back to reconnecting, which closed match admission rejects.
+    if (GetWorld()->WorldType == EWorldType::PIE)
+        if (IConsoleVariable* AllowTravel = IConsoleManager::Get().FindConsoleVariable(TEXT("net.AllowPIESeamlessTravel")))
+            AllowTravel->Set(1, ECVF_SetByCode);
+#endif
     ExpectedPlayers = Lobby->GetNumPlayers();
     auto* Session = Sessions->GetNamedSession(NAME_GameSession);
     Session->SessionSettings.bAllowJoinInProgress = false;
@@ -332,7 +343,9 @@ void UCasinoOnlineSubsystem::StartComplete(FName Name, bool bSuccess)
     Sessions->ClearOnStartSessionCompleteDelegate_Handle(StartHandle);
     if (!bSuccess) { SetState(ECasinoOnlineState::InRoom); Error(TEXT("StartGame"), TEXT("Session start failed. Retry or recreate the room.")); return; }
     const FString URL = CasinoOnline::MapPath(GetDefault<UCasinoOnlineSettings>()->GameMap)
-        + FString::Printf(TEXT("?CasinoOnlineMatch=1?ExpectedPlayers=%d"), ExpectedPlayers);
+        + TEXT("?game=") + GetDefault<UCasinoOnlineSettings>()->GameplayGameMode.ToSoftObjectPath().ToString()
+        + FString::Printf(TEXT("?SeamlessTravel?CasinoOnlineMatch=1?ExpectedPlayers=%d"), ExpectedPlayers);
+    UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Starting match travel: %s"), *URL);
     SetState(ECasinoOnlineState::InGame);
     if (!GetWorld()->ServerTravel(URL, true))
     { Error(TEXT("Travel"), TEXT("Server travel failed.")); LeaveRoom(); }

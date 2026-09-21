@@ -16,6 +16,8 @@
 #include "InputAction.h"
 #include "casino_simulatorCameraManager.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "TimerManager.h"
 #include "casino_simulator.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "UI/casino_simulatorPlayerHUD.h"
@@ -42,6 +44,26 @@ Acasino_simulatorPlayerController::Acasino_simulatorPlayerController()
 {
 	// set the player camera manager class
 	PlayerCameraManagerClass = Acasino_simulatorCameraManager::StaticClass();
+}
+
+void Acasino_simulatorPlayerController::ClientEnterCasinoMatch_Implementation()
+{
+    TArray<UUserWidget*> Widgets;
+    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Widgets, UUserWidget::StaticClass(), false);
+    for (UUserWidget* Widget : Widgets)
+    {
+        if (Widget && Widget->GetOwningPlayer() == this &&
+            Widget->GetClass()->GetPathName() == TEXT("/Game/Blackjack/Level/WBP_LobbyUI.WBP_LobbyUI_C"))
+        {
+            GetWorldTimerManager().ClearAllTimersForObject(Widget);
+            Widget->RemoveFromParent();
+        }
+    }
+    ResetIgnoreMoveInput();
+    ResetIgnoreLookInput();
+    SetInputMode(FInputModeGameOnly());
+    bShowMouseCursor = false;
+    if (GetPawn()) SetViewTarget(GetPawn());
 }
 
 void Acasino_simulatorPlayerController::BeginPlay()

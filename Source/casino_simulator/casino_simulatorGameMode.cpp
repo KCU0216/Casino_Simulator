@@ -15,6 +15,19 @@ Acasino_simulatorGameMode::Acasino_simulatorGameMode()
     bUseSeamlessTravel = true;
 }
 
+void Acasino_simulatorGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+    Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+    // Called for both new players and players retained through seamless travel.
+    if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoOnlineMatch")))
+    {
+        if (auto* PC = Cast<Acasino_simulatorPlayerController>(NewPlayer))
+            PC->ClientEnterCasinoMatch();
+        UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Match player %s, pawn %s, mode %s"),
+            *GetNameSafe(NewPlayer), *GetNameSafe(NewPlayer ? NewPlayer->GetPawn() : nullptr), *GetClass()->GetName());
+    }
+}
+
 void Acasino_simulatorGameMode::BeginPlay()
 {
     Super::BeginPlay();

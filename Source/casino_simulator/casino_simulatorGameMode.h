@@ -24,6 +24,7 @@ class Acasino_simulatorGameMode : public AGameModeBase
 
 public:
 	Acasino_simulatorGameMode();
+    virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Police")
 	void ArrestPlayer(APawn* TargetPlayer, AActor* PoliceActor, AActor* JailPoint);

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "casino_simulatorGameMode.h"
 #include "CasinoOnlineSettings.generated.h"
 
 // Project Settings > Game > Casino Online. Never store developer credentials here.
@@ -17,6 +18,10 @@ public:
     TSoftObjectPtr<UWorld> LobbyMap;
     UPROPERTY(Config, EditAnywhere, Category="Maps")
     TSoftObjectPtr<UWorld> GameMap;
+    // Explicit override prevents the lobby game mode from carrying into the match.
+    UPROPERTY(Config, EditAnywhere, Category="Maps")
+    TSoftClassPtr<Acasino_simulatorGameMode> GameplayGameMode = TSoftClassPtr<Acasino_simulatorGameMode>(
+        FSoftObjectPath(TEXT("/Game/FirstPerson/Blueprints/BP_FirstPersonGameMode.BP_FirstPersonGameMode_C")));
     UPROPERTY(Config, EditAnywhere, Category="Rooms", meta=(ClampMin="2", ClampMax="16"))
     int32 MaxPlayers = 4;
     // Change this when the network protocol / gameplay build is incompatible.
