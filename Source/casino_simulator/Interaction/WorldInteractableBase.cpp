@@ -4,6 +4,7 @@
 #include "Components/SphereComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "casino_simulatorCharacter.h"
+#include "GameFramework/CharacterMovementComponent.h"	
 #include "casino_simulatorPlayerController.h"
 
 AWorldInteractableBase::AWorldInteractableBase()
@@ -160,6 +161,28 @@ void AWorldInteractableBase::OnInteractionSphereEndOverlap(
 	}
 }
 
+void AWorldInteractableBase::RequestReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
+{
+	if (HasAuthority())
+	{
+		Server_ReleaseMachine_Implementation(RequestingCharacter);
+		return;
+	}
+		
+	Server_ReleaseMachine(RequestingCharacter);
+}
+
+void AWorldInteractableBase::Server_ReleaseMachine_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
+{
+	HandleMachineReleaseMachine(RequestingCharacter);
+
+	Multicast_MachineReleased(RequestingCharacter);
+}
+
+void AWorldInteractableBase::HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
+{
+}
+
 void AWorldInteractableBase::HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)
 {
 }
@@ -192,4 +215,8 @@ void AWorldInteractableBase::Server_RequestUseMachine_Implementation(Acasino_sim
 {
 	HandleMachineRequestUseMachine(RequestingCharacter);
 	Multicast_MachineUseStarted(RequestingCharacter);
+	if (UCharacterMovementComponent* MovementComponent = RequestingCharacter->GetCharacterMovement())
+	{
+		MovementComponent->DisableMovement();
+	}
 }

@@ -35,8 +35,8 @@ public:
 	virtual void Interact(Acasino_simulatorCharacter* RequestingCharacter) override;
 
 	
-	UFUNCTION(BlueprintCallable, Category = "Machine|Interaction")
-	void RequestReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
+	/*UFUNCTION(BlueprintCallable, Category = "Machine|Interaction")
+	void RequestReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);*/
 
 	UFUNCTION(BlueprintCallable, Category = "Machine|Interaction")
 	void HandleMachinePrimaryInput(Acasino_simulatorCharacter* RequestingCharacter);
@@ -107,13 +107,12 @@ protected:
 	bool bCanExitMachine = true;
 
 	UFUNCTION(Server, Reliable)
-	void Server_ReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
-
-	UFUNCTION(Server, Reliable)
 	void Server_HandleMachinePrimaryInput(Acasino_simulatorCharacter* RequestingCharacter);
 
 	UFUNCTION(Server, Reliable)
 	void Server_SetCanExitMachine(bool bCanExit);
+
+	virtual void HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
 
 	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
 

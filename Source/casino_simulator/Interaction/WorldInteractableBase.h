@@ -87,8 +87,15 @@ protected:
 
 	UFUNCTION()
 	void OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+public:
+	UFUNCTION(BlueprintCallable, Category = "Machine|Interaction")
+	void RequestReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 
 protected:
+	UFUNCTION(Server, Reliable)
+	void Server_ReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
+	virtual void HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
+
 	UFUNCTION(Server, Reliable)
 	void Server_RequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
