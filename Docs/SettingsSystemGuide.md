@@ -21,8 +21,8 @@ flowchart LR
 | 구성 요소 | 담당 역할 | 수명 / 저장 위치 |
 |---|---|---|
 | `WBP_MainMenu` | 화면 표시, 버튼과 슬라이더 입력 | 위젯이 열려 있는 동안 |
-| `UCasinoMainMenuWidget` | 현재는 설정 UI 생성과 이벤트 연결까지 담당 | 위젯이 열려 있는 동안 |
-| `UCasinoSettingsSubsystem` | 마스터 음량, 감도, Y축 반전 관리 | `GameInstance`와 같은 수명 |
+| `UCasinoMainMenuWidget` | `WBP_MainMenu`가 상속하는 비어 있는 C++ 기반 클래스 | 위젯이 열려 있는 동안 |
+| `UCasinoSettingsSubsystem` | 그래픽 적용 API와 마스터 음량, 감도, Y축 반전 관리 | `GameInstance`와 같은 수명 |
 | `UGameUserSettings` | 해상도, 화면 모드, 품질, VSync, 프레임 제한 | 언리얼이 관리 |
 | `GameUserSettings.ini` | 게임을 껐다 켜도 로컬 설정 유지 | 사용자 PC의 디스크 |
 | `casino_simulatorCharacter` | 저장된 감도를 실제 시점 회전에 사용 | 현재 플레이어 캐릭터의 수명 |
@@ -186,7 +186,7 @@ INI는 모든 게임 데이터를 저장하는 파일이 아니다.
 
 ## 6. 사용자가 적용 버튼을 누를 때
 
-현재 `UCasinoMainMenuWidget::ApplyCurrentSelections()`가 그래픽 설정과 플레이어 설정을 함께 저장한다.
+BP 위젯의 적용 버튼이 `UCasinoSettingsSubsystem`에 그래픽 설정과 플레이어 설정을 전달한다.
 
 ```mermaid
 sequenceDiagram
@@ -197,9 +197,9 @@ sequenceDiagram
     participant INI as GameUserSettings.ini
 
     Player->>UI: 적용 버튼 클릭
-    UI->>GUS: 화면 모드·해상도·품질 전달
-    UI->>GUS: ApplySettings()
-    UI->>GUS: SaveSettings()
+    UI->>SS: ApplyGraphicsSettings(그래픽 설정 구조체)
+    SS->>GUS: 화면 모드·해상도·품질 전달
+    SS->>GUS: ApplySettings() / SaveSettings()
     UI->>SS: SavePlayerSettings(음량, 감도, 반전)
     SS->>SS: 값을 허용 범위로 Clamp
     SS->>INI: GConfig로 값 기록
@@ -275,31 +275,29 @@ Master
 
 ## 9. C++ 위젯과 BP 위젯의 현재 연결
 
-현재 `WBP_MainMenu`는 `UCasinoMainMenuWidget`을 부모 클래스로 사용한다.
-C++은 BP 위젯 트리에서 이름으로 버튼을 찾는다.
+`WBP_MainMenu`는 `UCasinoMainMenuWidget`을 부모 클래스로 사용하지만, 부모 클래스는 이제 UI를 만들거나 버튼을 자동으로 찾지 않는다.
 
 ```cpp
-WidgetTree->FindWidget(TEXT("GraphicButton"));
-WidgetTree->FindWidget(TEXT("AudioButton"));
-WidgetTree->FindWidget(TEXT("KeySettingsButton"));
+UCLASS()
+class CASINO_SIMULATOR_API UCasinoMainMenuWidget : public UUserWidget
+{
+    GENERATED_BODY()
+};
 ```
 
-그 후 C++에서 클릭 이벤트를 연결한다.
+따라서 현재 역할은 다음처럼 분리되어 있다.
 
-```cpp
-GraphicsButton->OnClicked.AddDynamic(
-    this,
-    &UCasinoMainMenuWidget::ShowGraphicsTab);
-```
+| 위치 | 역할 |
+|---|---|
+| `WBP_MainMenu` | 위젯 배치, `WidgetSwitcher`, 버튼 이벤트, 현재 값 표시 |
+| `UCasinoMainMenuWidget` | BP가 상속할 C++ 타입 제공 |
+| `UCasinoSettingsSubsystem` | BP가 호출할 설정 조회·적용·초기화 함수 제공 |
 
-즉, 현재 구조에서는 C++이 다음 일을 모두 한다.
-
-1. BP에 있는 일부 버튼을 이름으로 찾는다.
-2. 나머지 설정 위젯을 실행 중에 동적으로 생성한다.
-3. 버튼과 슬라이더 이벤트를 연결한다.
-4. 설정을 읽고 적용하고 저장한다.
+C++은 더 이상 `WidgetTree->FindWidget()`이나 `AddDynamic()`으로 BP 위젯을 조작하지 않는다.
 
 ## 10. `Transient`의 의미
+
+리팩터링 전 동적 UI 코드에는 다음과 같은 포인터가 있었다.
 
 ```cpp
 UPROPERTY(Transient)
@@ -330,32 +328,67 @@ Get Game Instance
 → 원하는 설정 함수 호출
 ```
 
-단, 현재 상태에서 BP에 공개된 함수는 읽기 함수들이다.
+현재 다음 함수들이 BP에 공개되어 있다.
 
-| 현재 BP 호출 가능 | 용도 |
+| BP 함수 | 용도 |
 |---|---|
+| `GetGraphicsSettings()` | 현재 그래픽 설정 구조체 읽기 |
+| `ApplyGraphicsSettings()` | 그래픽 설정 검증·적용·저장 |
+| `ResetGraphicsSettings()` | 그래픽 기본값 적용 |
+| `GetPlayerSettings()` | 음량·감도·반전 구조체 읽기 |
 | `GetMasterVolume()` | 현재 마스터 음량 읽기 |
 | `GetMouseSensitivity()` | 현재 감도 읽기 |
 | `IsMouseYInverted()` | Y축 반전 여부 읽기 |
+| `SavePlayerSettings()` | 음량·감도·반전 검증·적용·저장 |
+| `ResetPlayerSettings()` | 플레이어 설정 기본값 적용 |
 
-`SavePlayerSettings()`와 `ResetPlayerSettings()`에는 아직 `BlueprintCallable`이 붙어 있지 않다.
-따라서 BP에서 저장까지 담당하게 리팩터링할 때 이 함수들을 BP에 공개해야 한다.
+### BP 연결 순서
 
-```cpp
-UFUNCTION(BlueprintCallable, Category = "Settings")
-void SavePlayerSettings(
-    float InMasterVolume,
-    float InMouseSensitivity,
-    bool bInInvertMouseY);
+`WBP_MainMenu`의 `Event Construct`에서 현재 설정을 UI에 채운다.
 
-UFUNCTION(BlueprintCallable, Category = "Settings")
-void ResetPlayerSettings();
+```text
+Event Construct
+→ Get Game Instance Subsystem (CasinoSettingsSubsystem)
+→ Promote to Variable: SettingsSubsystem
+→ Get Graphics Settings
+→ Break CasinoGraphicsSettings
+→ 각 콤보박스·체크박스에 현재 값 표시
+→ Get Player Settings
+→ Break CasinoPlayerSettings
+→ 음량·감도 슬라이더와 Y축 반전 체크박스에 현재 값 표시
 ```
 
-## 12. 목표 리팩터링 구조
+적용 버튼에서는 UI의 현재 값을 구조체와 함수 인자로 전달한다.
 
-현재 동작하는 코드는 C++이 UI 생성까지 맡고 있다.
-최종적으로는 **화면 구성과 이벤트는 BP**, **실제 설정 로직은 C++**로 나누는 것이 관리하기 쉽다.
+```text
+ApplyButton.OnClicked
+→ Make CasinoGraphicsSettings
+   - Window Mode
+   - Resolution
+   - Quality Level
+   - Frame Rate Limit
+   - VSync Enabled
+→ SettingsSubsystem.Apply Graphics Settings
+→ SettingsSubsystem.Save Player Settings
+   - Master Volume
+   - Mouse Sensitivity
+   - Invert Mouse Y
+```
+
+기본값 버튼은 두 초기화 함수를 호출한 뒤 `Get` 함수들로 UI 표시값을 다시 채운다.
+
+```text
+DefaultsButton.OnClicked
+→ Reset Graphics Settings
+→ Reset Player Settings
+→ 현재 설정을 UI에 다시 표시
+```
+
+카테고리 버튼과 뒤로 가기는 설정 저장 함수와 연결하지 않고 BP의 `WidgetSwitcher`와 패널 표시 상태만 바꾼다.
+
+## 12. 리팩터링된 구조
+
+현재는 **화면 구성과 이벤트는 BP**, **실제 설정 로직은 C++**로 역할을 나눴다.
 
 ```mermaid
 flowchart TB
@@ -433,10 +466,10 @@ IA_MouseLook
 
 | 파일 | 내용 |
 |---|---|
-| `Source/casino_simulator/UI/CasinoSettingsSubsystem.h` | 플레이어 설정 API와 변수 선언 |
-| `Source/casino_simulator/UI/CasinoSettingsSubsystem.cpp` | INI 로드·저장과 오디오 적용 |
-| `Source/casino_simulator/UI/CasinoMainMenuWidget.h` | 설정 위젯 클래스 선언 |
-| `Source/casino_simulator/UI/CasinoMainMenuWidget.cpp` | 현재 동적 UI 생성과 설정 적용 |
+| `Source/casino_simulator/UI/CasinoSettingsSubsystem.h` | BP용 설정 구조체와 설정 API 선언 |
+| `Source/casino_simulator/UI/CasinoSettingsSubsystem.cpp` | 그래픽 적용, INI 로드·저장, 오디오 적용 |
+| `Source/casino_simulator/UI/CasinoMainMenuWidget.h` | BP가 상속하는 얇은 위젯 기반 클래스 |
+| `Source/casino_simulator/UI/CasinoMainMenuWidget.cpp` | 위젯 기반 클래스 구현 파일 |
 | `Source/casino_simulator/casino_simulatorCharacter.cpp` | 감도와 Y축 반전을 시점 입력에 사용 |
 | `Saved/Config/WindowsEditor/GameUserSettings.ini` | 에디터에서 사용하는 로컬 설정값 |
 
