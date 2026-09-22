@@ -403,6 +403,8 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface
 		return;
 	}
 
+	PlayerCharacter->SetLastInteractionTarget(Target);
+
 	// OnLocalInteract is BlueprintNativeEvent (so a Blueprint-graph-only override still runs), which
 	// requires going through Execute_ rather than a direct call - see IWorldInteractable's class
 	// comment. CanInteract/Interact are plain virtual, so they're called directly below.
@@ -434,6 +436,7 @@ void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implement
 		return;
 	}
 
+	PlayerCharacter->SetLastInteractionTarget(Target);
 	Target->Interact(PlayerCharacter);
 }
 

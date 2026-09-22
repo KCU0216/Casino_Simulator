@@ -4,12 +4,14 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Engine/HitResult.h"
 #include "Logging/LogMacros.h"
 #include "AbilitySystemInterface.h"
 #include "ActiveGameplayEffectHandle.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "GameplayTagContainer.h"
 #include "Mining/MiningShopComponent.h"
+#include "Interaction/WorldInteractable.h"
 #include "casino_simulatorCharacter.generated.h"
 
 class UInputComponent;
@@ -25,6 +27,8 @@ class UBlackjackPlayerComponent;
 class UGameplayEffect;
 class UGameplayAbility;
 class ASeatedMachineBase;
+class USphereComponent;
+class UPrimitiveComponent;
 struct FInputActionValue;
 class ARaceManager;
 class ANPC_Dice;
@@ -51,7 +55,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
  *  A basic first person character
  */
 UCLASS(abstract)
-class Acasino_simulatorCharacter : public ACharacter, public IAbilitySystemInterface
+class Acasino_simulatorCharacter : public ACharacter, public IAbilitySystemInterface, public IWorldInteractable
 {
 	GENERATED_BODY()
 
@@ -159,6 +163,13 @@ protected:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Machine|Interaction", meta = (AllowPrivateAccess = "true"))
 	TScriptInterface<IWorldInteractable> CurrentSeatedMachine;
 
+	/** Most recent IWorldInteractable this character actually interacted with (E-pressed and passed
+	 * CanInteract), regardless of type - set from Acasino_simulatorPlayerController::RequestWorldInteraction
+	 * and Server_RequestWorldInteraction_Implementation. Kept even after the target goes out of range,
+	 * unlike WorldInteractionDetectorComponent's FocusedTarget which only tracks what's currently aimed at. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true"))
+	TScriptInterface<IWorldInteractable> LastInteractionTarget;
+
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Three Card Poker", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AThreeCardPokerTableActor> CurrentThreeCardPokerTable;
 
@@ -166,6 +177,12 @@ protected:
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Interaction", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UWorldInteractionDetectorComponent> WorldInteractionDetector;
+
+	/** Overlap sphere other characters' WorldInteractionDetectorComponent uses to discover this
+	 * character as an IWorldInteractable candidate (same pattern as ANPC_Base/AWorldInteractableBase's
+	 * own InteractionSphere - see OnInteractionSphereBeginOverlap/EndOverlap below). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Interaction", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USphereComponent> InteractionSphere;
 
 	/** The one ore pickup currently carried by this character. Set and cleared by the server-side pickup/drop flow. */
 	UPROPERTY(ReplicatedUsing = OnRep_CarriedOre, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup", meta = (AllowPrivateAccess = "true"))
@@ -191,11 +208,17 @@ public:
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	UWorldInteractionDetectorComponent* GetWorldInteractionDetector() const { return WorldInteractionDetector; }
 
+	UFUNCTION(BlueprintPure, Category="Interaction")
+	USphereComponent* GetInteractionSphere() const { return InteractionSphere; }
+
 	UFUNCTION(BlueprintPure, Category="Blackjack")
 	UBlackjackPlayerComponent* GetBlackjackPlayerComponent() const { return BlackjackPlayerComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
 	TScriptInterface<IWorldInteractable> GetCurrentSeatedMachine() const { return CurrentSeatedMachine; }
+
+	UFUNCTION(BlueprintPure, Category = "Interaction")
+	TScriptInterface<IWorldInteractable> GetLastInteractionTarget() const { return LastInteractionTarget; }
 
 	UFUNCTION(BlueprintPure, Category = "Three Card Poker")
 	AThreeCardPokerTableActor* GetCurrentThreeCardPokerTable() const { return CurrentThreeCardPokerTable; }
@@ -277,13 +300,35 @@ public:
 	void SetCurrentSeatedMachine(TScriptInterface<IWorldInteractable> NewMachine);
 	void ClearCurrentSeatedMachine(IWorldInteractable* MachineToClear);
 
+	void SetLastInteractionTarget(TScriptInterface<IWorldInteractable> NewTarget) { LastInteractionTarget = NewTarget; }
+
 	/** Lets Blueprint-owned equipment meshes restore their visibility after shared UI/camera flows. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment")
 	void RefreshEquipmentVisuals();
 
+	//~ Begin IWorldInteractable interface
+	/** Lets another player aim-and-E at this character. Interact() itself is intentionally a no-op -
+	 * OnLocalInteract_Implementation below is what actually opens the trade widget, same pattern as
+	 * AThreeCardPokerTableActor/ABlackjackTableInteractionActor. */
+	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
+	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
+	virtual void OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
+	virtual void OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
+	virtual void OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
+	//~ End IWorldInteractable interface
+
+	/** Fired from OnLocalInteract_Implementation, on the interacting player's own machine before the
+	 * server even processes the interaction (see IWorldInteractable::OnLocalInteract) - lets the
+	 * Blueprint character spawn/open its trade widget (e.g. WBP_Trade) immediately, same pattern as
+	 * AThreeCardPokerTableActor::BP_OnLocalThreeCardPokerInteract. 'this' is the character being
+	 * interacted with; InteractingCharacter is the player who pressed E. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Trade", meta = (DisplayName = "On Local Trade Interact"))
+	void BP_OnLocalTradeInteract(Acasino_simulatorCharacter* InteractingCharacter);
+
 protected:
 
 	//~ Begin AActor interface
+	virtual void BeginPlay() override;
 	virtual void PossessedBy(AController* NewController) override;
 	//~ End AActor interface
 
@@ -310,6 +355,15 @@ protected:
 	void OnRep_CarriedOre();
 	UFUNCTION()
 	void OnRep_CarriedCart();
+
+	/** Bound to InteractionSphere's begin/end-overlap events - registers/unregisters this character as
+	 * an IWorldInteractable candidate on the OTHER character's WorldInteractionDetectorComponent, same
+	 * pattern as AWorldInteractableBase/ANPC_Base's own sphere. Each character owning its own sphere
+	 * makes registration mutual: A's sphere overlapping B registers A on B's detector, and vice versa. */
+	UFUNCTION()
+	void OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+	UFUNCTION()
+	void OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
 	void UpdateCarriedOreInteractionPrompt() const;
 	void UpdateCarriedCartInteractionPrompt() const;

@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/SphereComponent.h"
 #include "EnhancedInputComponent.h"
 #include "InputActionValue.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -82,6 +83,13 @@ Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 
 	WorldInteractionDetector = CreateDefaultSubobject<UWorldInteractionDetectorComponent>(TEXT("WorldInteractionDetector"));
 	BlackjackPlayerComponent = CreateDefaultSubobject<UBlackjackPlayerComponent>(TEXT("BlackjackPlayerComponent"));
+
+	// Pure overlap detection so other characters can discover this one as an IWorldInteractable
+	// candidate (see OnInteractionSphereBeginOverlap) - mirrors ANPC_Base's own InteractionSphere.
+	InteractionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("InteractionSphere"));
+	InteractionSphere->SetupAttachment(GetCapsuleComponent());
+	InteractionSphere->InitSphereRadius(200.0f);
+	InteractionSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 }
 
 void Acasino_simulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -90,6 +98,17 @@ void Acasino_simulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 
 	DOREPLIFETIME(Acasino_simulatorCharacter, CarriedOre);
 	DOREPLIFETIME(Acasino_simulatorCharacter, CarriedCart);
+}
+
+void Acasino_simulatorCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (InteractionSphere)
+	{
+		InteractionSphere->OnComponentBeginOverlap.AddDynamic(this, &Acasino_simulatorCharacter::OnInteractionSphereBeginOverlap);
+		InteractionSphere->OnComponentEndOverlap.AddDynamic(this, &Acasino_simulatorCharacter::OnInteractionSphereEndOverlap);
+	}
 }
 
 UAbilitySystemComponent* Acasino_simulatorCharacter::GetAbilitySystemComponent() const
@@ -166,6 +185,91 @@ void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(IWorldInteractable* M
 	if (!MachineToClear || CurrentSeatedMachine == MachineToClear)
 	{
 		CurrentSeatedMachine = nullptr;
+	}
+}
+
+bool Acasino_simulatorCharacter::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
+{
+	return InteractingCharacter && InteractingCharacter != this;
+}
+
+void Acasino_simulatorCharacter::Interact(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	// Always reached with authority already - casino_simulatorPlayerController::RequestWorldInteraction
+	// calls Interact() directly when it has authority, or routes through Server_RequestWorldInteraction
+	// otherwise (see IWorldInteractable's class comment).
+	// Intentionally a no-op - opening the trade widget is purely local/cosmetic and already handled by
+	// OnLocalInteract_Implementation below; nothing server-authoritative needs to happen on E press itself.
+	InteractingCharacter->BP_OnLocalTradeInteract(this);
+}
+
+void Acasino_simulatorCharacter::OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	/*if (CanInteract(InteractingCharacter))
+	{
+		BP_OnLocalTradeInteract(InteractingCharacter);
+	}*/
+}
+
+void Acasino_simulatorCharacter::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	if (InteractingCharacter == nullptr)
+	{
+		return;
+	}
+
+	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
+	if (PC == nullptr || PC->IsInteractionUIOpen())
+	{
+		return;
+	}
+
+	if (CanInteract(InteractingCharacter))
+	{
+		PC->SetWorldInteractionTargetFocused(true);
+	}
+}
+
+void Acasino_simulatorCharacter::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
+{
+	if (InteractingCharacter == nullptr)
+	{
+		return;
+	}
+
+	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController()))
+	{
+		PC->SetWorldInteractionTargetFocused(false);
+	}
+}
+
+void Acasino_simulatorCharacter::OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	// Registers THIS character (the sphere's owner) as a candidate on the OTHER character's detector -
+	// same "who's overlapping me is a candidate for them" direction as ANPC_Base/AWorldInteractableBase.
+	Acasino_simulatorCharacter* OtherCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+	if (!OtherCharacter || OtherCharacter == this)
+	{
+		return;
+	}
+
+	if (UWorldInteractionDetectorComponent* Detector = OtherCharacter->GetWorldInteractionDetector())
+	{
+		Detector->RegisterCandidate(this);
+	}
+}
+
+void Acasino_simulatorCharacter::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+	Acasino_simulatorCharacter* OtherCharacter = Cast<Acasino_simulatorCharacter>(OtherActor);
+	if (!OtherCharacter || OtherCharacter == this)
+	{
+		return;
+	}
+
+	if (UWorldInteractionDetectorComponent* Detector = OtherCharacter->GetWorldInteractionDetector())
+	{
+		Detector->UnregisterCandidate(this);
 	}
 }
 
