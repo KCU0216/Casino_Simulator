@@ -208,10 +208,9 @@ bool Acasino_simulatorGameMode::SubmitDailyPayment(Acasino_simulatorCharacter* P
             <= FMath::Square(FMath::Max(1.0f, PaymentRadius))) { bNear = true; break; }
     if (!bNear) return false;
     FCasinoLoopStatus Status = GS->LoopStatus;
-    // Each player's limit is the full daily target, independent of other contributions.
-    // Reject oversized submissions instead of silently changing the confirmed amount.
-    if (Amount > Status.RequiredPayment || Amount > MAX_int32 - Status.CollectedPayment) return false;
-    const int32 Actual = Amount;
+    // Cap each contribution at the full daily target, not the remaining shared balance.
+    const int32 Actual = FMath::Min(Amount, Status.RequiredPayment);
+    if (Actual > MAX_int32 - Status.CollectedPayment) return false;
     TGuardValue<bool> PaymentGuard(bCollectingPayment, true);
     if (Actual > 0 && !Player->TrySpendCurrency(static_cast<float>(Actual))) return false;
     PS->bDailyPaymentSubmitted = true;
