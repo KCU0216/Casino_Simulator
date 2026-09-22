@@ -16,6 +16,7 @@ class UAbilitySystemComponent;
 class ANPC_Base;
 class ASeatedMachineBase;
 class UInventoryWidget;
+class UCasinoShopComponent;
 struct FOnAttributeChangeData;
 
 /**
@@ -32,6 +33,13 @@ public:
 
 	/** Constructor */
 	Acasino_simulatorPlayerController();
+
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Shop")
+    void ServerBuyShopItem(UCasinoShopComponent* Shop, FName ItemId, int32 Quantity);
+    UFUNCTION(Client, Reliable)
+    void ClientShopPurchaseResult(UCasinoShopComponent* Shop, FName ItemId, int32 Quantity, int32 TotalPrice, bool bSuccess, const FString& Reason);
+    UFUNCTION(BlueprintImplementableEvent, Category="Casino|Shop")
+    void OnShopPurchaseResult(UCasinoShopComponent* Shop, FName ItemId, int32 Quantity, int32 TotalPrice, bool bSuccess, const FString& Reason);
 
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Lobby")
     void ServerSetLobbyReady(bool bReady);

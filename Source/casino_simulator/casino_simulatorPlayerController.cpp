@@ -2,6 +2,7 @@
 
 
 #include "casino_simulatorPlayerController.h"
+#include "Economy/CasinoShopComponent.h"
 #include "Online/CasinoLobbyGameMode.h"
 #include "Online/CasinoOnlineSubsystem.h"
 #include "casino_simulatorGameMode.h"
@@ -64,6 +65,28 @@ void Acasino_simulatorPlayerController::ClientEnterCasinoMatch_Implementation()
     SetInputMode(FInputModeGameOnly());
     bShowMouseCursor = false;
     if (GetPawn()) SetViewTarget(GetPawn());
+}
+
+void Acasino_simulatorPlayerController::ServerBuyShopItem_Implementation(UCasinoShopComponent* Shop, FName ItemId, int32 Quantity)
+{
+    int32 TotalPrice = 0;
+    FString Reason = TEXT("Invalid shop or buyer.");
+    auto* Buyer = Cast<Acasino_simulatorCharacter>(GetPawn());
+    const bool bSuccess = IsValid(Shop) && Shop->GetWorld() == GetWorld() &&
+        Shop->ProcessPurchase(Buyer, ItemId, Quantity, TotalPrice, Reason);
+    if (bSuccess) Reason.Reset();
+    ClientShopPurchaseResult(IsValid(Shop) ? Shop : nullptr, ItemId, Quantity, TotalPrice, bSuccess, Reason);
+}
+
+void Acasino_simulatorPlayerController::ClientShopPurchaseResult_Implementation(UCasinoShopComponent* Shop, FName ItemId, int32 Quantity, int32 TotalPrice, bool bSuccess, const FString& Reason)
+{
+    // Only the purchasing client's UI receives the response, including the listen host.
+    if (IsValid(Shop))
+    {
+        if (bSuccess) Shop->OnPurchaseCompleted.Broadcast(ItemId, Quantity, TotalPrice);
+        else Shop->OnPurchaseFailed.Broadcast(Reason);
+    }
+    OnShopPurchaseResult(Shop, ItemId, Quantity, TotalPrice, bSuccess, Reason);
 }
 
 void Acasino_simulatorPlayerController::BeginPlay()

@@ -11,6 +11,7 @@
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorAttributeSet.h"
 #include "casino_simulatorPlayerState.h"
+#include "casino_simulatorCharacter.h"
 
 UCasinoShopComponent::UCasinoShopComponent()
 {
@@ -132,18 +133,14 @@ int32 UCasinoShopComponent::GetItemUnitPrice(FName ItemId) const
 
 int32 UCasinoShopComponent::GetItemTotalPrice(FName ItemId, int32 Quantity) const
 {
-	return GetItemUnitPrice(ItemId) * FMath::Max(Quantity, 0);
+	const int64 Total = static_cast<int64>(GetItemUnitPrice(ItemId)) * FMath::Max(Quantity, 0);
+	return Total <= MAX_int32 ? static_cast<int32>(Total) : 0;
 }
 
 bool UCasinoShopComponent::BuyShopItem(FName ItemId, int32 Quantity)
 {
-	if (GetOwner() && !GetOwner()->HasAuthority())
-	{
-		ServerBuyShopItem(ItemId, Quantity);
-		return true;
-	}
-
-	return ProcessPurchase(ItemId, Quantity);
+    FailPurchase(TEXT("Use PlayerController.ServerBuyShopItem with this shop."));
+    return false;
 }
 
 bool UCasinoShopComponent::BuyCigarette(int32 Quantity)
@@ -175,86 +172,54 @@ void UCasinoShopComponent::ReloadShopItems()
 	}
 }
 
-void UCasinoShopComponent::ServerBuyShopItem_Implementation(FName ItemId, int32 Quantity)
+bool UCasinoShopComponent::ProcessPurchase(Acasino_simulatorCharacter* Buyer, FName ItemId, int32 Quantity, int32& OutPrice, FString& OutReason)
 {
-	ProcessPurchase(ItemId, Quantity);
+    OutPrice = 0;
+    if (!IsValid(Buyer) || !Buyer->HasAuthority() || !IsValid(GetOwner()) ||
+        !GetOwner()->HasAuthority() || Buyer->GetWorld() != GetWorld())
+    { OutReason = TEXT("Invalid buyer or shop."); return false; }
+    if (!FMath::IsFinite(PurchaseRadius) || FVector::DistSquared(Buyer->GetActorLocation(), GetOwner()->GetActorLocation()) > FMath::Square(FMath::Max(1.0f, PurchaseRadius)))
+    { OutReason = TEXT("Too far from the shop."); return false; }
+    if (!ValidateQuantity(Quantity, OutReason)) return false;
+    const FCasinoShopItemData* FoundItem = FindShopItem(ItemId);
+    if (!FoundItem) { OutReason = TEXT("Shop item was not found."); return false; }
+    FCasinoShopItemData Item = *FoundItem;
+    ApplyInventoryItemData(Item);
+    const int64 Price = static_cast<int64>(GetItemUnitPrice(ItemId)) * Quantity;
+    if (Price <= 0 || Price > MAX_int32)
+    { OutReason = TEXT("Invalid total price."); return false; }
+    const int32 TotalPrice = static_cast<int32>(Price);
+    if (!CanGrantPurchasedItems(Buyer, Item, OutReason)) return false;
+    if (!TrySpendForPurchase(Buyer, TotalPrice))
+    { OutReason = TEXT("Not enough personal money."); return false; }
+    if (!GrantPurchasedItems(Buyer, Item, Quantity))
+    { RefundPurchase(Buyer, TotalPrice); OutReason = TEXT("Could not add item to inventory."); return false; }
+    const bool bShouldApplyEffects = Item.bApplyEffectsOnPurchase || Item.InventoryItemID == INDEX_NONE;
+    if (bShouldApplyEffects && !ApplyItemEffects(Buyer, Item, Quantity))
+    {
+        if (Item.InventoryItemID != INDEX_NONE)
+            if (auto* PS = Buyer->GetPlayerState<Acasino_simulatorPlayerState>())
+                PS->RemoveItem(Item.InventoryItemID, Quantity);
+        RefundPurchase(Buyer, TotalPrice);
+        OutReason = TEXT("Could not apply item effect."); return false;
+    }
+    OutPrice = TotalPrice;
+    return true;
 }
 
-void UCasinoShopComponent::ClientPurchaseCompleted_Implementation(FName ItemId, int32 Quantity, int32 TotalPrice)
-{
-	OnPurchaseCompleted.Broadcast(ItemId, Quantity, TotalPrice);
-}
-
-void UCasinoShopComponent::ClientPurchaseFailed_Implementation(const FString& Reason)
-{
-	OnPurchaseFailed.Broadcast(Reason);
-}
-
-bool UCasinoShopComponent::ProcessPurchase(FName ItemId, int32 Quantity)
-{
-	FString Reason;
-	if (!ValidateQuantity(Quantity, Reason))
-	{
-		FailPurchase(Reason);
-		return false;
-	}
-
-	const FCasinoShopItemData* FoundItem = FindShopItem(ItemId);
-	if (!FoundItem)
-	{
-		FailPurchase(TEXT("Shop item was not found."));
-		return false;
-	}
-
-	FCasinoShopItemData Item = *FoundItem;
-	ApplyInventoryItemData(Item);
-
-	const int32 TotalPrice = GetItemTotalPrice(ItemId, Quantity);
-	if (!CanGrantPurchasedItems(Item, Reason))
-	{
-		FailPurchase(Reason);
-		return false;
-	}
-
-	if (!TrySpendForPurchase(TotalPrice))
-	{
-		FailPurchase(TEXT("Not enough personal money."));
-		return false;
-	}
-
-	if (!GrantPurchasedItems(Item, Quantity))
-	{
-		RefundPurchase(TotalPrice);
-		FailPurchase(TEXT("Could not add item to inventory."));
-		return false;
-	}
-
-	const bool bShouldApplyEffects = Item.bApplyEffectsOnPurchase || Item.InventoryItemID == INDEX_NONE;
-	if (bShouldApplyEffects && !ApplyItemEffects(Item, Quantity))
-	{
-		RefundPurchase(TotalPrice);
-		FailPurchase(TEXT("Could not apply item effect."));
-		return false;
-	}
-
-	ClientPurchaseCompleted(ItemId, Quantity, TotalPrice);
-	OnPurchaseCompleted.Broadcast(ItemId, Quantity, TotalPrice);
-	return true;
-}
-
-bool UCasinoShopComponent::TrySpendForPurchase(int32 Price)
+bool UCasinoShopComponent::TrySpendForPurchase(Acasino_simulatorCharacter* Buyer, int32 Price)
 {
 	if (Price <= 0)
 	{
 		return true;
 	}
 
-	const AActor* Owner = GetOwner();
+	const AActor* Owner = Buyer;
 	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(Owner);
 	UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
 	if (!AbilitySystemComponent)
 	{
-		return bAllowFreePurchasesUntilEconomyExists;
+		return false;
 	}
 
 	const FGameplayAttribute CurrencyAttribute = Ucasino_simulatorAttributeSet::GetCurrencyAttribute();
@@ -268,14 +233,14 @@ bool UCasinoShopComponent::TrySpendForPurchase(int32 Price)
 	return true;
 }
 
-void UCasinoShopComponent::RefundPurchase(int32 Price)
+void UCasinoShopComponent::RefundPurchase(Acasino_simulatorCharacter* Buyer, int32 Price)
 {
 	if (Price <= 0)
 	{
 		return;
 	}
 
-	const AActor* Owner = GetOwner();
+	const AActor* Owner = Buyer;
 	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(Owner);
 	UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
 	if (!AbilitySystemComponent)
@@ -286,14 +251,14 @@ void UCasinoShopComponent::RefundPurchase(int32 Price)
 	AbilitySystemComponent->ApplyModToAttribute(Ucasino_simulatorAttributeSet::GetCurrencyAttribute(), EGameplayModOp::Additive, static_cast<float>(Price));
 }
 
-bool UCasinoShopComponent::CanGrantPurchasedItems(const FCasinoShopItemData& Item, FString& OutReason) const
+bool UCasinoShopComponent::CanGrantPurchasedItems(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, FString& OutReason) const
 {
 	if (Item.InventoryItemID == INDEX_NONE)
 	{
 		return true;
 	}
 
-	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	const APawn* OwnerPawn = Buyer;
 	const Acasino_simulatorPlayerState* CasinoPlayerState = OwnerPawn ? OwnerPawn->GetPlayerState<Acasino_simulatorPlayerState>() : nullptr;
 	if (!CasinoPlayerState)
 	{
@@ -304,14 +269,14 @@ bool UCasinoShopComponent::CanGrantPurchasedItems(const FCasinoShopItemData& Ite
 	return true;
 }
 
-bool UCasinoShopComponent::GrantPurchasedItems(const FCasinoShopItemData& Item, int32 Quantity)
+bool UCasinoShopComponent::GrantPurchasedItems(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, int32 Quantity)
 {
 	if (Item.InventoryItemID == INDEX_NONE)
 	{
 		return true;
 	}
 
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	APawn* OwnerPawn = Buyer;
 	Acasino_simulatorPlayerState* CasinoPlayerState = OwnerPawn ? OwnerPawn->GetPlayerState<Acasino_simulatorPlayerState>() : nullptr;
 	if (!CasinoPlayerState)
 	{
@@ -321,26 +286,26 @@ bool UCasinoShopComponent::GrantPurchasedItems(const FCasinoShopItemData& Item, 
 	return CasinoPlayerState->AddItem(Item.InventoryItemID, Quantity) == Quantity;
 }
 
-bool UCasinoShopComponent::ApplyItemEffects(const FCasinoShopItemData& Item, int32 Quantity)
+bool UCasinoShopComponent::ApplyItemEffects(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, int32 Quantity)
 {
 	bool bAppliedAnyEffect = false;
 	const float EffectLevel = FMath::Max(static_cast<float>(Quantity), 1.0f);
 
-	if (ApplyGameplayEffect(Item.RecoveryEffectClass, EffectLevel))
+	if (ApplyGameplayEffect(Buyer, Item.RecoveryEffectClass, EffectLevel))
 	{
 		bAppliedAnyEffect = true;
 	}
 
 	for (const TSubclassOf<UGameplayEffect>& BonusEffectClass : Item.BonusEffectClasses)
 	{
-		if (ApplyGameplayEffect(BonusEffectClass, EffectLevel))
+		if (ApplyGameplayEffect(Buyer, BonusEffectClass, EffectLevel))
 		{
 			bAppliedAnyEffect = true;
 		}
 	}
 
 	const float TotalRecovery = Item.RestoreAmount * Quantity;
-	if (ApplyFallbackAttributeRecovery(Item, TotalRecovery))
+	if (ApplyFallbackAttributeRecovery(Buyer, Item, TotalRecovery))
 	{
 		bAppliedAnyEffect = true;
 	}
@@ -348,14 +313,14 @@ bool UCasinoShopComponent::ApplyItemEffects(const FCasinoShopItemData& Item, int
 	return bAppliedAnyEffect || Item.RecoveryType == ECasinoShopRecoveryType::None;
 }
 
-bool UCasinoShopComponent::ApplyGameplayEffect(TSubclassOf<UGameplayEffect> EffectClass, float Level)
+bool UCasinoShopComponent::ApplyGameplayEffect(Acasino_simulatorCharacter* Buyer, TSubclassOf<UGameplayEffect> EffectClass, float Level)
 {
 	if (!EffectClass)
 	{
 		return false;
 	}
 
-	AActor* Owner = GetOwner();
+	AActor* Owner = Buyer;
 	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(Owner);
 	UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
 	if (!AbilitySystemComponent)
@@ -376,14 +341,14 @@ bool UCasinoShopComponent::ApplyGameplayEffect(TSubclassOf<UGameplayEffect> Effe
 	return true;
 }
 
-bool UCasinoShopComponent::ApplyFallbackAttributeRecovery(const FCasinoShopItemData& Item, float TotalRecovery)
+bool UCasinoShopComponent::ApplyFallbackAttributeRecovery(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, float TotalRecovery)
 {
 	if (Item.RecoveryType == ECasinoShopRecoveryType::None || TotalRecovery <= 0.0f)
 	{
 		return false;
 	}
 
-	AActor* Owner = GetOwner();
+	AActor* Owner = Buyer;
 	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(Owner);
 	UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
 	if (!AbilitySystemComponent)
@@ -445,9 +410,7 @@ const UDataTable* UCasinoShopComponent::GetResolvedItemDataTable() const
 		return ItemDataTable;
 	}
 
-	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	const Acasino_simulatorPlayerState* CasinoPlayerState = OwnerPawn ? OwnerPawn->GetPlayerState<Acasino_simulatorPlayerState>() : nullptr;
-	return CasinoPlayerState ? CasinoPlayerState->ItemDataTable : nullptr;
+	return nullptr;
 }
 
 bool UCasinoShopComponent::ApplyInventoryItemData(FCasinoShopItemData& Item) const
@@ -458,7 +421,7 @@ bool UCasinoShopComponent::ApplyInventoryItemData(FCasinoShopItemData& Item) con
 	}
 
 	const UDataTable* ResolvedItemDataTable = GetResolvedItemDataTable();
-	if (!ResolvedItemDataTable)
+	if (!ResolvedItemDataTable || ResolvedItemDataTable->GetRowStruct() != FItemData::StaticStruct())
 	{
 		return false;
 	}
@@ -485,7 +448,7 @@ bool UCasinoShopComponent::ApplyInventoryItemData(FCasinoShopItemData& Item) con
 
 bool UCasinoShopComponent::LoadShopItemsFromDataTable()
 {
-	if (!ShopItemDataTable)
+	if (!ShopItemDataTable || ShopItemDataTable->GetRowStruct() != FCasinoShopItemData::StaticStruct())
 	{
 		return false;
 	}
@@ -515,6 +478,5 @@ bool UCasinoShopComponent::LoadShopItemsFromDataTable()
 
 void UCasinoShopComponent::FailPurchase(const FString& Reason)
 {
-	ClientPurchaseFailed(Reason);
 	OnPurchaseFailed.Broadcast(Reason);
 }

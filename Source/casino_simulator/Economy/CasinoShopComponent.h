@@ -9,6 +9,7 @@
 
 class UGameplayEffect;
 class UTexture2D;
+class Acasino_simulatorCharacter;
 
 UENUM(BlueprintType)
 enum class ECasinoShopItemCategory : uint8
@@ -77,6 +78,9 @@ class CASINO_SIMULATOR_API UCasinoShopComponent : public UActorComponent
 
 public:
 	UCasinoShopComponent();
+	bool ProcessPurchase(Acasino_simulatorCharacter* Buyer, FName ItemId, int32 Quantity, int32& OutPrice, FString& OutReason);
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Casino|Shop", meta=(ClampMin="1.0"))
+	float PurchaseRadius = 400.0f;
 
 	UFUNCTION(BlueprintPure, Category="Casino|Shop")
 	TArray<FCasinoShopItemData> GetShopItems() const;
@@ -137,29 +141,19 @@ protected:
 	float PriceIncreasePerDay = 0.25f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Shop|Prototype")
-	bool bAllowFreePurchasesUntilEconomyExists = true;
+	bool bAllowFreePurchasesUntilEconomyExists = false;
 
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 private:
-	UFUNCTION(Server, Reliable)
-	void ServerBuyShopItem(FName ItemId, int32 Quantity);
-
-	UFUNCTION(Client, Reliable)
-	void ClientPurchaseCompleted(FName ItemId, int32 Quantity, int32 TotalPrice);
-
-	UFUNCTION(Client, Reliable)
-	void ClientPurchaseFailed(const FString& Reason);
-
-	bool ProcessPurchase(FName ItemId, int32 Quantity);
-	bool TrySpendForPurchase(int32 Price);
-	void RefundPurchase(int32 Price);
-	bool CanGrantPurchasedItems(const FCasinoShopItemData& Item, FString& OutReason) const;
-	bool GrantPurchasedItems(const FCasinoShopItemData& Item, int32 Quantity);
-	bool ApplyItemEffects(const FCasinoShopItemData& Item, int32 Quantity);
-	bool ApplyGameplayEffect(TSubclassOf<UGameplayEffect> EffectClass, float Level);
-	bool ApplyFallbackAttributeRecovery(const FCasinoShopItemData& Item, float TotalRecovery);
+	bool TrySpendForPurchase(Acasino_simulatorCharacter* Buyer, int32 Price);
+	void RefundPurchase(Acasino_simulatorCharacter* Buyer, int32 Price);
+	bool CanGrantPurchasedItems(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, FString& OutReason) const;
+	bool GrantPurchasedItems(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, int32 Quantity);
+	bool ApplyItemEffects(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, int32 Quantity);
+	bool ApplyGameplayEffect(Acasino_simulatorCharacter* Buyer, TSubclassOf<UGameplayEffect> EffectClass, float Level);
+	bool ApplyFallbackAttributeRecovery(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, float TotalRecovery);
 	bool ValidateQuantity(int32 Quantity, FString& OutReason) const;
 	int32 GetScaledPrice(int32 BasePrice) const;
 	const FCasinoShopItemData* FindShopItem(FName ItemId) const;
