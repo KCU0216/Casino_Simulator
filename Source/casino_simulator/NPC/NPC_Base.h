@@ -16,6 +16,8 @@ class Acasino_simulatorCharacter;
 class UAbilitySystemComponent;
 class Ucasino_simulatorAttributeSet;
 class UGameplayAbility;
+class UWorldInteractionCandidateComponent;
+class UMachineInteractionComponent;
 
 /** Identifies what kind of NPC this is (e.g. which minigame/interaction it hosts). */
 UENUM(BlueprintType)
@@ -77,6 +79,12 @@ protected:
 	UPROPERTY()
 	TArray<TObjectPtr<Acasino_simulatorCharacter>> Players;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UWorldInteractionCandidateComponent> InteractionCandidateComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UMachineInteractionComponent> MachineInteractionComponent;
+
 public:
 
 	ANPC_Base();
@@ -137,15 +145,17 @@ protected:
 	void GrantStartupAbilities();
 
 protected:
-	UFUNCTION(Server, Reliable)
-	void Server_RequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
-
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_MachineUseStarted(Acasino_simulatorCharacter* RequestingCharacter);
 	virtual void HandleMachineUseStarted(Acasino_simulatorCharacter* Character);
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_MachineReleased(Acasino_simulatorCharacter* ReleasingCharacter);
 	virtual void HandleMachineUseReleased(Acasino_simulatorCharacter* Character);
+
+private:
+	/** Bound to MachineInteractionComponent's OnUseStarted - mirrors the old
+	 * Multicast_MachineUseStarted_Implementation body (sets OverlappingPlayer, hands this NPC to
+	 * RequestingCharacter, fires BP_OnInteract for the locally controlled interactor, then calls the
+	 * Handle hook). */
+	void HandleMachineUseStartedMulticast(Acasino_simulatorCharacter* RequestingCharacter);
 };

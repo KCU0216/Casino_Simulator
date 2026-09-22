@@ -2,9 +2,9 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
-#include "Interaction/WorldInteractionDetectorComponent.h"
+#include "Interaction/WorldInteractionCandidateComponent.h"
+#include "Interaction/MachineInteractionComponent.h"
 #include "casino_simulatorCharacter.h"
-#include "GameFramework/CharacterMovementComponent.h"	
 #include "casino_simulatorPlayerController.h"
 
 AWorldInteractableBase::AWorldInteractableBase()
@@ -20,6 +20,12 @@ AWorldInteractableBase::AWorldInteractableBase()
 	InteractionSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 
 	InteractionPromptText = FText::FromString(TEXT("E Use"));
+
+	InteractionCandidateComponent = CreateDefaultSubobject<UWorldInteractionCandidateComponent>(TEXT("InteractionCandidateComponent"));
+
+	MachineInteractionComponent = CreateDefaultSubobject<UMachineInteractionComponent>(TEXT("MachineInteractionComponent"));
+	MachineInteractionComponent->OnRequestUseMachine.BindUObject(this, &AWorldInteractableBase::HandleMachineRequestUseMachine);
+	MachineInteractionComponent->OnUseStarted.BindUObject(this, &AWorldInteractableBase::HandleMachineUseStartedMulticast);
 }
 
 void AWorldInteractableBase::BeginPlay()
@@ -35,16 +41,7 @@ void AWorldInteractableBase::BeginPlay()
 
 void AWorldInteractableBase::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	InteractingPlayer = InteractingCharacter;
-	InteractingCharacter->SetCurrentSeatedMachine(this);
-
-	if (HasAuthority())
-	{
-		Server_RequestUseMachine_Implementation(InteractingCharacter);
-		return;
-	}
-
-	Server_RequestUseMachine(InteractingCharacter);
+	MachineInteractionComponent->RequestUseMachine(InteractingCharacter);
 }
 
 void AWorldInteractableBase::BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter)
@@ -61,7 +58,6 @@ void AWorldInteractableBase::OnInteractionFocusStarted_Implementation(Acasino_si
 	{
 		return;
 	}
-	// 위젯이 떠있으면 막기
 	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
 	if (PC == nullptr || PC->IsInteractionUIOpen())
 	{
@@ -127,10 +123,7 @@ void AWorldInteractableBase::OnInteractionSphereBeginOverlap(
 
 	if (InteractingPlayer == nullptr)
 	{
-		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-		{
-			Detector->RegisterCandidate(this);
-		}
+		InteractionCandidateComponent->RegisterOwnerAsCandidate(PlayerCharacter);
 	}
 }
 
@@ -154,10 +147,7 @@ void AWorldInteractableBase::OnInteractionSphereEndOverlap(
 
 	if (InteractingPlayer != nullptr && InteractingPlayer == PlayerCharacter)
 	{
-		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-		{
-			Detector->UnregisterCandidate(this);
-		}
+		InteractionCandidateComponent->UnregisterOwnerAsCandidate(PlayerCharacter);
 	}
 }
 
@@ -195,14 +185,6 @@ void AWorldInteractableBase::HandleMachineUseReleased(Acasino_simulatorCharacter
 {
 }
 
-void AWorldInteractableBase::Multicast_MachineUseStarted_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
-{
-	InteractingPlayer = RequestingCharacter;
-	RequestingCharacter->SetCurrentSeatedMachine(this);
-
-	HandleMachineUseStarted(RequestingCharacter);
-}
-
 void AWorldInteractableBase::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
 {
 	InteractingPlayer = nullptr;
@@ -211,12 +193,13 @@ void AWorldInteractableBase::Multicast_MachineReleased_Implementation(Acasino_si
 	HandleMachineUseReleased(ReleasingCharacter);
 }
 
-void AWorldInteractableBase::Server_RequestUseMachine_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
+void AWorldInteractableBase::HandleMachineUseStartedMulticast(Acasino_simulatorCharacter* RequestingCharacter)
 {
-	HandleMachineRequestUseMachine(RequestingCharacter);
-	Multicast_MachineUseStarted(RequestingCharacter);
-	if (UCharacterMovementComponent* MovementComponent = RequestingCharacter->GetCharacterMovement())
+	InteractingPlayer = RequestingCharacter;
+	if (RequestingCharacter)
 	{
-		MovementComponent->DisableMovement();
+		RequestingCharacter->SetCurrentSeatedMachine(this);
 	}
+
+	HandleMachineUseStarted(RequestingCharacter);
 }

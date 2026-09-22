@@ -9,6 +9,8 @@ class Acasino_simulatorCharacter;
 class USceneComponent;
 class USphereComponent;
 class UPrimitiveComponent;
+class UWorldInteractionCandidateComponent;
+class UMachineInteractionComponent;
 
 UENUM(BlueprintType)
 enum class EWorldInteractionExecutionType : uint8
@@ -34,6 +36,12 @@ protected:
 	UPROPERTY()
 	TArray<TObjectPtr<Acasino_simulatorCharacter>> Players;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Interaction|Components")
+	TObjectPtr<UWorldInteractionCandidateComponent> InteractionCandidateComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "World Interaction|Components")
+	TObjectPtr<UMachineInteractionComponent> MachineInteractionComponent;
+
 public:
 	AWorldInteractableBase();
 
@@ -57,6 +65,9 @@ public:
 	virtual void OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
 	virtual void OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacter* InteractingCharacter) override;
 	//~ End IWorldInteractable interface
+
+	UFUNCTION(BlueprintPure, Category = "World Interaction")
+	UMachineInteractionComponent* GetMachineInteractionComponent() const { return MachineInteractionComponent; }
 
 	/** Selects whether this interaction begins through the server RPC or a locally predicted ability. */
 	virtual EWorldInteractionExecutionType GetInteractionExecutionType() const
@@ -96,16 +107,16 @@ protected:
 	void Server_ReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 	virtual void HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 
-	UFUNCTION(Server, Reliable)
-	void Server_RequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
-	
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_MachineUseStarted(Acasino_simulatorCharacter* RequestingCharacter);
 	virtual void HandleMachineUseStarted(Acasino_simulatorCharacter* Character);
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_MachineReleased(Acasino_simulatorCharacter* ReleasingCharacter);
 	virtual void HandleMachineUseReleased(Acasino_simulatorCharacter* Character);
 
+private:
+	/** Bound to MachineInteractionComponent's OnUseStarted - mirrors the old
+	 * Multicast_MachineUseStarted_Implementation body (sets InteractingPlayer, hands this machine to
+	 * InteractingCharacter, then calls the Handle hook). */
+	void HandleMachineUseStartedMulticast(Acasino_simulatorCharacter* RequestingCharacter);
 };

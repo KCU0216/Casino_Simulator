@@ -14,6 +14,7 @@
 #include "casino_simulatorAbilitySystemComponent.h"
 #include "Blackjack/BlackjackPlayerComponent.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
+#include "Interaction/WorldInteractionCandidateComponent.h"
 #include "Machine/SeatedMachineBase.h"
 #include "Net/UnrealNetwork.h"
 #include "NPC/NPC_Dice.h"
@@ -90,6 +91,8 @@ Acasino_simulatorCharacter::Acasino_simulatorCharacter()
 	InteractionSphere->SetupAttachment(GetCapsuleComponent());
 	InteractionSphere->InitSphereRadius(200.0f);
 	InteractionSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+
+	InteractionCandidateComponent = CreateDefaultSubobject<UWorldInteractionCandidateComponent>(TEXT("InteractionCandidateComponent"));
 }
 
 void Acasino_simulatorCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -253,10 +256,7 @@ void Acasino_simulatorCharacter::OnInteractionSphereBeginOverlap(UPrimitiveCompo
 		return;
 	}
 
-	if (UWorldInteractionDetectorComponent* Detector = OtherCharacter->GetWorldInteractionDetector())
-	{
-		Detector->RegisterCandidate(this);
-	}
+	InteractionCandidateComponent->RegisterOwnerAsCandidate(OtherCharacter);
 }
 
 void Acasino_simulatorCharacter::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
@@ -267,10 +267,7 @@ void Acasino_simulatorCharacter::OnInteractionSphereEndOverlap(UPrimitiveCompone
 		return;
 	}
 
-	if (UWorldInteractionDetectorComponent* Detector = OtherCharacter->GetWorldInteractionDetector())
-	{
-		Detector->UnregisterCandidate(this);
-	}
+	InteractionCandidateComponent->UnregisterOwnerAsCandidate(OtherCharacter);
 }
 
 void Acasino_simulatorCharacter::SetCarriedOre(AOrePickupBase* NewCarriedOre)

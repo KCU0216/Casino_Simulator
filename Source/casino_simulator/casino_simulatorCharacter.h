@@ -35,6 +35,7 @@ class ANPC_Dice;
 class AThreeCardPokerTableActor;
 class AOrePickupBase;
 class ACartBase;
+class UWorldInteractionCandidateComponent;
 
 /** A startup ability and the semantic input tag used to activate it (empty for passive/event abilities). */
 USTRUCT(BlueprintType)
@@ -183,6 +184,9 @@ protected:
 	 * own InteractionSphere - see OnInteractionSphereBeginOverlap/EndOverlap below). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Interaction", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent> InteractionSphere;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Interaction", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UWorldInteractionCandidateComponent> InteractionCandidateComponent;
 
 	/** The one ore pickup currently carried by this character. Set and cleared by the server-side pickup/drop flow. */
 	UPROPERTY(ReplicatedUsing = OnRep_CarriedOre, VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup", meta = (AllowPrivateAccess = "true"))

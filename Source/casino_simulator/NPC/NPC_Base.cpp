@@ -9,8 +9,8 @@
 #include "casino_simulatorPlayerController.h"
 #include "casino_simulatorAttributeSet.h"
 #include "casino_simulator.h"
-#include "GameFramework/CharacterMovementComponent.h"	
-#include "Interaction/WorldInteractionDetectorComponent.h"
+#include "Interaction/WorldInteractionCandidateComponent.h"
+#include "Interaction/MachineInteractionComponent.h"
 
 ANPC_Base::ANPC_Base()
 {
@@ -19,6 +19,12 @@ ANPC_Base::ANPC_Base()
 	InteractionSphere->SetupAttachment(GetCapsuleComponent());
 	InteractionSphere->InitSphereRadius(150.0f);
 	InteractionSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+
+	InteractionCandidateComponent = CreateDefaultSubobject<UWorldInteractionCandidateComponent>(TEXT("InteractionCandidateComponent"));
+
+	MachineInteractionComponent = CreateDefaultSubobject<UMachineInteractionComponent>(TEXT("MachineInteractionComponent"));
+	MachineInteractionComponent->OnRequestUseMachine.BindUObject(this, &ANPC_Base::HandleMachineRequestUseMachine);
+	MachineInteractionComponent->OnUseStarted.BindUObject(this, &ANPC_Base::HandleMachineUseStartedMulticast);
 
 	// Create the ability system component. Attributes/abilities/effects are replicated
 	// via the ASC itself, so the actor doesn't need to replicate it separately.
@@ -70,30 +76,24 @@ void ANPC_Base::GrantStartupAbilities()
 	}
 }
 
-void ANPC_Base::Server_RequestUseMachine_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
-{
-	HandleMachineRequestUseMachine(RequestingCharacter);
-	Multicast_MachineUseStarted(RequestingCharacter);
-
-	if (UCharacterMovementComponent* MovementComponent = RequestingCharacter->GetCharacterMovement())
-	{
-		MovementComponent->DisableMovement();
-	}
-}
-
 void ANPC_Base::HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)
 {
 }
 
-void ANPC_Base::Multicast_MachineUseStarted_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
+void ANPC_Base::HandleMachineUseStartedMulticast(Acasino_simulatorCharacter* RequestingCharacter)
 {
 	OverlappingPlayer = RequestingCharacter;
-	RequestingCharacter->SetCurrentSeatedMachine(this);
+	if (RequestingCharacter)
+	{
+		RequestingCharacter->SetCurrentSeatedMachine(this);
+	}
 
 	if (OverlappingPlayer && OverlappingPlayer->IsLocallyControlled())
 	{
 		BP_OnInteract(OverlappingPlayer);
-	}                                                                                                                                                                                                                                                                                                                                                                                                                                   	HandleMachineUseStarted(RequestingCharacter);
+	}
+
+	HandleMachineUseStarted(RequestingCharacter);
 }
 
 void ANPC_Base::HandleMachineUseStarted(Acasino_simulatorCharacter* Character)
@@ -166,16 +166,7 @@ void ANPC_Base::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 		return;
 	}
 
-	/*OverlappingPlayer = InteractingCharacter;
-	InteractingCharacter->SetCurrentSeatedMachine(this);*/
-
-	if (HasAuthority())
-	{
-		Server_RequestUseMachine_Implementation(InteractingCharacter);
-		return;
-	}
-
-	Server_RequestUseMachine(InteractingCharacter);
+	MachineInteractionComponent->RequestUseMachine(InteractingCharacter);
 }
 
 void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
@@ -184,7 +175,6 @@ void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharac
 	{
 		return;
 	}
-	// 위젯이 떠있으면 막기
 	Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController());
 	if (PC == nullptr || PC->IsInteractionUIOpen())
 	{
@@ -231,22 +221,9 @@ void ANPC_Base::OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedC
 		Players.Add(PlayerCharacter);
 	}
 
-	if (NPCType == ENPCType::Shop)
+	if (NPCType == ENPCType::Shop || OverlappingPlayer == nullptr)
 	{
-		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-		{
-			Detector->RegisterCandidate(this);
-		}
-	}
-	else
-	{
-		if (OverlappingPlayer == nullptr)
-		{
-			if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-			{
-				Detector->RegisterCandidate(this);
-			}
-		}
+		InteractionCandidateComponent->RegisterOwnerAsCandidate(PlayerCharacter);
 	}
 }
 
@@ -266,9 +243,6 @@ void ANPC_Base::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedCom
 
 	if (OverlappingPlayer != nullptr && OverlappingPlayer == PlayerCharacter)
 	{
-		if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
-		{
-			Detector->UnregisterCandidate(this);
-		}
+		InteractionCandidateComponent->UnregisterOwnerAsCandidate(PlayerCharacter);
 	}
 }
