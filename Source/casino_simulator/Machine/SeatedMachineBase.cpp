@@ -66,7 +66,7 @@ void ASeatedMachineBase::HandleMachinePrimaryInput(Acasino_simulatorCharacter* R
 	if (!RequestingCharacter)
 	{
 		return;
-	}
+	}6
 
 	if (HasAuthority())
 	{
