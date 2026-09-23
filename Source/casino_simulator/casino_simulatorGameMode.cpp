@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
-
 #include "casino_simulatorGameMode.h"
+
+#include "Enemy/ThiefCharacter.h"
 #include "casino_simulatorPlayerState.h"
 #include "GameFramework/Pawn.h"
 #include "casino_simulatorCharacter.h"
@@ -322,30 +323,29 @@ bool Acasino_simulatorGameMode::PayBail(
     return CasinoPlayer->TrySpendCurrency(BailAmount);
 }
 
-void Acasino_simulatorGameMode::StealMoney(APawn* TargetPlayer, AActor* ThiefActor)
+bool Acasino_simulatorGameMode::StealMoney(
+    APawn* TargetPlayer,
+    AActor* ThiefActor)
 {
-    if (!HasAuthority() || !TargetPlayer)
+    if (!HasAuthority())
     {
-        return;
-    }
-    
-    Acasino_simulatorCharacter* Player = Cast<Acasino_simulatorCharacter>(TargetPlayer);
-
-    if (!Player)
-    {
-        return;
+        return false;
     }
 
-    const int32 StealAmount = FMath::RandRange(St_Money_Min / 50, St_Money_Max / 50) * 50;
+    Acasino_simulatorCharacter* Player =
+        Cast<Acasino_simulatorCharacter>(TargetPlayer);
 
-    const float ActualStealAmount = FMath::Min(static_cast<float>(StealAmount), Player->GetCurrency());
+    AThiefCharacter* Thief =
+        Cast<AThiefCharacter>(ThiefActor);
 
-    if (ActualStealAmount <= 0.0f)
+    if (!IsValid(Player) || !IsValid(Thief) || !Thief->CanSteal())
     {
-        return;
+        return false;
     }
 
-    Player->TrySpendCurrency(ActualStealAmount);
-    
-    
+    const int32 StealAmount =
+        FMath::RandRange(St_Money_Min / 50, St_Money_Max / 50) * 50;
+
+    return Thief->TryStealFrom(
+        Player, static_cast<float>(StealAmount));
 }

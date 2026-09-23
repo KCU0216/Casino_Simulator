@@ -21,6 +21,10 @@ AEnemyAIController_________::AEnemyAIController_________()
 	SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
 	SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
 
+	SightConfig->SightRadius = 600.0f;
+	SightConfig->LoseSightRadius = 800.0f;
+	SightConfig->PeripheralVisionAngleDegrees = 30.0f;
+
 	AIPerceptionComp->ConfigureSense(*SightConfig);
 	AIPerceptionComp->SetDominantSense(SightConfig->GetSenseImplementation());
 
