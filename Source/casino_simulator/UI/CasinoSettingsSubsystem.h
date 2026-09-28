@@ -4,32 +4,28 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "CasinoSettingsSubsystem.generated.h"
 
-UENUM(BlueprintType)
-enum class ECasinoWindowMode : uint8
-{
-	Windowed UMETA(DisplayName = "창 모드"),
-	Borderless UMETA(DisplayName = "테두리 없는 창"),
-	Fullscreen UMETA(DisplayName = "전체 화면")
-};
-
+/** UI-facing values for ComboBox (String) widgets. */
 USTRUCT(BlueprintType)
-struct FCasinoGraphicsSettings
+struct FCasinoGraphicsMenuSettings
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings|Graphics")
-	ECasinoWindowMode WindowMode = ECasinoWindowMode::Borderless;
+	UPROPERTY(BlueprintReadOnly, Category = "Settings|Graphics|Menu")
+	TArray<FString> ResolutionOptions;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings|Graphics")
-	FIntPoint Resolution = FIntPoint(1920, 1080);
+	UPROPERTY(BlueprintReadOnly, Category = "Settings|Graphics|Menu")
+	int32 WindowModeIndex = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings|Graphics", meta = (ClampMin = "0", ClampMax = "3"))
-	int32 QualityLevel = 2;
+	UPROPERTY(BlueprintReadOnly, Category = "Settings|Graphics|Menu")
+	int32 ResolutionIndex = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings|Graphics", meta = (ClampMin = "0.0"))
-	float FrameRateLimit = 60.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Settings|Graphics|Menu")
+	int32 QualityIndex = 2;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings|Graphics")
+	UPROPERTY(BlueprintReadOnly, Category = "Settings|Graphics|Menu")
+	int32 FrameRateIndex = 1;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Settings|Graphics|Menu")
 	bool bVSyncEnabled = false;
 };
 
@@ -56,14 +52,19 @@ class CASINO_SIMULATOR_API UCasinoSettingsSubsystem : public UGameInstanceSubsys
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
-	UFUNCTION(BlueprintPure, Category = "Settings|Graphics")
-	FCasinoGraphicsSettings GetGraphicsSettings() const;
-
-	UFUNCTION(BlueprintCallable, Category = "Settings|Graphics")
-	void ApplyGraphicsSettings(const FCasinoGraphicsSettings& NewSettings);
-
 	UFUNCTION(BlueprintCallable, Category = "Settings|Graphics")
 	void ResetGraphicsSettings();
+
+	UFUNCTION(BlueprintPure, Category = "Settings|Graphics|Menu")
+	FCasinoGraphicsMenuSettings GetGraphicsMenuSettings() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings|Graphics|Menu")
+	void ApplyGraphicsMenuSettings(
+		int32 WindowModeIndex,
+		int32 ResolutionIndex,
+		int32 QualityIndex,
+		int32 FrameRateIndex,
+		bool bVSyncEnabled);
 
 	UFUNCTION(BlueprintPure, Category = "Settings|Player")
 	FCasinoPlayerSettings GetPlayerSettings() const;
