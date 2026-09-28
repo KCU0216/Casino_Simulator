@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -237,6 +237,17 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Interaction")
 	void ExitInteractionUIMode(float BlendTime = 0.25f);
+
+ UFUNCTION(BlueprintCallable, Category="Interaction")
+ void CloseCurrentInteraction();
+ UFUNCTION(Server, Reliable)
+ void Server_CloseCurrentInteraction(AActor* ExpectedTarget);
+ UFUNCTION(Client, Reliable)
+ void Client_CompleteInteractionClose(AActor* ExpectedTarget);
+ bool IsDailyPaymentControlLocked() const { return bDailyPaymentControlLocked; }
+private:
+ bool bDailyPaymentControlLocked = false;
+public:
 
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void OpenInteraction();

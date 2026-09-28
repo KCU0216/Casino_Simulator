@@ -1,6 +1,7 @@
-#include "Machine/SeatedMachineBase.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Interaction/MachineInteractionComponent.h"
+#include "Machine/SeatedMachineBase.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -150,13 +151,13 @@ void ASeatedMachineBase::HandleMachineReleaseMachine(Acasino_simulatorCharacter*
 	{
 		return;
 	}
-		
+
 	if (!bCanExitMachine)
 	{
 		OnMachineExitRejected(RequestingCharacter);
 		return;
 	}
-		
+
 	Acasino_simulatorCharacter* ReleasingCharacter = CurrentUser;
 	CurrentUser = nullptr;
 	bCanOperate = false;
@@ -248,7 +249,7 @@ void ASeatedMachineBase::EnterMachineUseView(Acasino_simulatorCharacter* Request
 	{
 		FGameplayTagContainer TagContainer;
 		TagContainer.AddTag(FGameplayTag::RequestGameplayTag(FName("State.Sit")));
-	
+
 		RequestingCharacter->GetAbilitySystemComponent()->TryActivateAbilitiesByTag(TagContainer, true);
 
 		FVector SeatLocation = SeatPoint->GetComponentLocation();
@@ -299,6 +300,14 @@ void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* Releasin
 		return;
 	}
 
+ // Day-end payment/result flow owns the camera and movement after forced relocation.
+ if (!UMachineInteractionComponent::CanRestoreMovement(ReleasingCharacter))
+ {
+  if (MachineCamera) MachineCamera->SetActive(false);
+  ReleasingCharacter->ClearCurrentSeatedMachine(this);
+  return;
+ }
+
 	APlayerController* PlayerController = Cast<APlayerController>(ReleasingCharacter->GetController());
 	if (PlayerController && PlayerController->IsLocalController())
 	{
@@ -309,7 +318,7 @@ void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* Releasin
 	{
 		if (UCharacterMovementComponent* MovementComponent = ReleasingCharacter->GetCharacterMovement())
 		{
-			MovementComponent->SetMovementMode(MOVE_Walking);
+			UMachineInteractionComponent::RestoreMovementAfterUse(ReleasingCharacter);
 		}
 	}
 

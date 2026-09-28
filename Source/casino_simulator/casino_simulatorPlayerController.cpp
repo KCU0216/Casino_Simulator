@@ -2,6 +2,7 @@
 
 
 #include "casino_simulatorPlayerController.h"
+#include "Interaction/MachineInteractionComponent.h"
 #include "Economy/CasinoShopComponent.h"
 #include "Online/CasinoLobbyGameMode.h"
 #include "Online/CasinoOnlineSubsystem.h"
@@ -93,7 +94,7 @@ void Acasino_simulatorPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	
+
 	// only spawn touch controls on local player controllers
 	if (ShouldUseTouchControls() && IsLocalPlayerController())
 	{
@@ -548,6 +549,14 @@ void Acasino_simulatorPlayerController::EnterInteractionUIMode(AActor* CameraTar
 
 void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 {
+    if (auto* InteractionCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+        InteractionCharacter && !UMachineInteractionComponent::CanRestoreMovement(InteractionCharacter))
+    {
+        SetIsInteractionUIOpen(false);
+        SetLocalPawnMeshesHiddenForInteraction(false);
+        return; // Payment/result UI owns input and camera.
+    }
+
 	if (!bInteractionUIOpen)
 	{
 		return;
@@ -874,6 +883,7 @@ void Acasino_simulatorPlayerController::ClientDailyPaymentResult_Implementation(
 
 void Acasino_simulatorPlayerController::ClientPrepareDailyPayment_Implementation(FRotator Facing)
 {
+    bDailyPaymentControlLocked = true;
     ResetIgnoreLookInput();
     ResetIgnoreMoveInput();
     SetIgnoreLookInput(true);
@@ -894,6 +904,7 @@ void Acasino_simulatorPlayerController::ClientFinishDailyPayment_Implementation(
 
 void Acasino_simulatorPlayerController::ClientPrepareCasinoDay_Implementation(FRotator Facing)
 {
+    bDailyPaymentControlLocked = false;
     ResetIgnoreLookInput();
     ResetIgnoreMoveInput();
     SetInputMode(FInputModeGameOnly());
@@ -903,4 +914,35 @@ void Acasino_simulatorPlayerController::ClientPrepareCasinoDay_Implementation(FR
     SetControlRotation(Facing);
     if (GetPawn()) SetViewTargetWithBlend(GetPawn(), 0.0f);
     OnPrepareCasinoDay();
+}
+
+
+void Acasino_simulatorPlayerController::CloseCurrentInteraction()
+{
+    auto* InteractionCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+    if (!InteractionCharacter) return;
+    auto* Target = Cast<AActor>(InteractionCharacter->GetCurrentSeatedMachine().GetObject());
+    if (IsValid(Target)) Server_CloseCurrentInteraction(Target);
+    else ExitInteractionUIMode();
+}
+
+void Acasino_simulatorPlayerController::Server_CloseCurrentInteraction_Implementation(AActor* ExpectedTarget)
+{
+    auto* InteractionCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+    if (!InteractionCharacter || !IsValid(ExpectedTarget) || InteractionCharacter->GetCurrentSeatedMachine().GetObject() != ExpectedTarget) return;
+    if (auto* NPC = Cast<ANPC_Base>(ExpectedTarget)) NPC->ReleaseInteraction(InteractionCharacter);
+    else if (auto* Machine = Cast<ASeatedMachineBase>(ExpectedTarget)) Machine->RequestReleaseMachine(InteractionCharacter);
+    else return;
+    if (!InteractionCharacter->GetCurrentSeatedMachine()) Client_CompleteInteractionClose(ExpectedTarget);
+}
+
+void Acasino_simulatorPlayerController::Client_CompleteInteractionClose_Implementation(AActor* ExpectedTarget)
+{
+    auto* InteractionCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+    if (!InteractionCharacter) return;
+    UObject* Current = InteractionCharacter->GetCurrentSeatedMachine().GetObject();
+    if (Current && Current != ExpectedTarget) return;
+    if (Current) InteractionCharacter->ClearCurrentSeatedMachine(Cast<IWorldInteractable>(ExpectedTarget));
+    UMachineInteractionComponent::RestoreMovementAfterUse(InteractionCharacter);
+    ExitInteractionUIMode();
 }

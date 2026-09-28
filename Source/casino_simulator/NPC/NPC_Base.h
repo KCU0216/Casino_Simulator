@@ -89,6 +89,9 @@ public:
 
 	ANPC_Base();
 
+	// Called through the owning PlayerController on the server.
+	void ReleaseInteraction(Acasino_simulatorCharacter* Character);
+
 	/** Returns the interaction/detection sphere component **/
 	USphereComponent* GetInteractionSphere() const { return InteractionSphere; }
 
