@@ -33,6 +33,21 @@ public:
     virtual void GetLifetimeReplicatedProps(
         TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+    UFUNCTION(BlueprintPure, Category = "Enemy|Thief")
+
+    bool IsEscaping() const
+    {
+        return ThiefState == EThiefState::Escaping;
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "Thief|Escape")
+    void ApplyEscapeSpeed();
+
+    AActor* GetEscapeFromActor() const
+    {
+        return EscapeFromActor.Get();
+    }
+
 protected:
     
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,

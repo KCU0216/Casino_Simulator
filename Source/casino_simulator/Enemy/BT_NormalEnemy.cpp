@@ -2,6 +2,7 @@
 
 
 #include "Enemy/BT_NormalEnemy.h"
+#include "Enemy/ThiefCharacter.h"
 #include "AIController.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
@@ -35,8 +36,13 @@ void UBT_NormalEnemy::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMem
 		return;
 	}
 	
-
+	const AThiefCharacter* Thief =
+		Cast<AThiefCharacter>(AIController->GetPawn());
 	
+	const bool bEscaping =
+		IsValid(Thief) && Thief->IsEscaping();
+
+	BB->SetValueAsBool(TEXT("IsEscaping"), bEscaping);
 
 	switch (BB->GetValueAsInt(TEXT("Job")))
 	{

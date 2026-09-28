@@ -4,6 +4,7 @@
 
 #include "ThiefCharacter.h"
 #include "casino_simulatorCharacter.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 
 AThiefCharacter::AThiefCharacter()
@@ -97,4 +98,12 @@ void AThiefCharacter::HandleEnemyHitReaction(AActor* Attacker)
         }
     }
     Super::HandleEnemyHitReaction(Attacker);
+}
+
+void AThiefCharacter::ApplyEscapeSpeed()
+{
+    if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+    {
+        MovementComponent->MaxWalkSpeed = EscapeSpeed;
+    }
 }
