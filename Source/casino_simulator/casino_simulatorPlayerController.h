@@ -115,7 +115,7 @@ protected:
 	TSubclassOf<Ucasino_simulatorPlayerHUD> PlayerHUDWidgetClass;
 
 	/** Pointer to the spawned player HUD widget */
-	UPROPERTY()
+	UPROPERTY(BlueprintReadOnly, Category="HUD", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<Ucasino_simulatorPlayerHUD> PlayerHUDWidget;
 
 	/** Ability system component we're currently listening to for attribute changes, so we can unbind cleanly when the pawn changes */
