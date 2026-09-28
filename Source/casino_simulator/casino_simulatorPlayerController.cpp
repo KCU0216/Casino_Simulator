@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 
 #include "casino_simulatorPlayerController.h"
@@ -24,6 +24,7 @@
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "UI/casino_simulatorPlayerHUD.h"
 #include "UI/InventoryWidget.h"
+#include "UI/PauseMenuWidget.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
 #include "casino_simulatorAbilitySystemComponent.h"
@@ -803,12 +804,24 @@ void Acasino_simulatorPlayerController::SetupInputComponent()
 		{
 			EnhancedInputComponent->BindAction(ToggleInventoryAction, ETriggerEvent::Started, this, &Acasino_simulatorPlayerController::ToggleInventoryInput);
 		}
+		if (TogglePauseMenuAction)
+		{
+			EnhancedInputComponent->BindAction(TogglePauseMenuAction, ETriggerEvent::Started, this, &Acasino_simulatorPlayerController::TogglePauseMenuInput);
+		}
+
 	}
+
+	
 }
 
 void Acasino_simulatorPlayerController::ToggleInventoryInput()
 {
 	ToggleInventory();
+}
+
+void Acasino_simulatorPlayerController::TogglePauseMenuInput()
+{
+	TogglePauseMenu();
 }
 
 void Acasino_simulatorPlayerController::ToggleInventory()
@@ -844,6 +857,72 @@ void Acasino_simulatorPlayerController::ToggleInventory()
 		InventoryWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	SetShowMouseCursor(InventoryWidget->GetVisibility() == ESlateVisibility::SelfHitTestInvisible);
+}
+void Acasino_simulatorPlayerController::TogglePauseMenu()
+{
+	//위젯클래스 없으면 종료
+	if (!PauseMenuWidgetClass)
+	{
+		UE_LOG(Logcasino_simulator, Warning, TEXT("'%s' has no InventoryWidgetClass set - cannot toggle inventory."), *GetNameSafe(this));
+		return;
+	}
+
+	//PuaseMenu가 없으면 생성 후 열기
+	if (!PauseMenuWidget)
+	{
+		PauseMenuWidget = CreateWidget<UPauseMenuWidget>(this, PauseMenuWidgetClass);
+		if (PauseMenuWidget)
+		{
+			PauseMenuWidget->AddToViewport();
+			SetShowMouseCursor(PauseMenuWidget->GetVisibility() == ESlateVisibility::SelfHitTestInvisible);
+			FInputModeGameAndUI InputMode;
+			InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
+			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+			InputMode.SetHideCursorDuringCapture(false);
+			SetInputMode(InputMode);
+
+			if (APawn* ControlledPawn = GetPawn())
+			{
+				ControlledPawn->DisableInput(this);
+			}
+			return;
+		}
+	}
+
+	if (!PauseMenuWidget)
+	{
+		return;
+	}
+
+	if (PauseMenuWidget->GetVisibility() == ESlateVisibility::Collapsed)
+	{
+		PauseMenuWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(InputMode);
+
+		if (APawn* ControlledPawn = GetPawn())
+		{
+			ControlledPawn->DisableInput(this);
+		}
+	}
+	else
+	{
+		PauseMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
+		FInputModeGameOnly InputMode;
+		InputMode.SetConsumeCaptureMouseDown(false);
+		SetInputMode(InputMode);
+
+
+		if (APawn* ControlledPawn = GetPawn())
+		{
+			ControlledPawn->EnableInput(this);
+		}
+	}
+	SetShowMouseCursor(PauseMenuWidget->GetVisibility() == ESlateVisibility::SelfHitTestInvisible);
 }
 
 bool Acasino_simulatorPlayerController::IsInventoryOpen() const
