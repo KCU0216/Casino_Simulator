@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -16,6 +16,7 @@ class UAbilitySystemComponent;
 class ANPC_Base;
 class ASeatedMachineBase;
 class UInventoryWidget;
+class UPauseMenuWidget;
 class UCasinoShopComponent;
 struct FOnAttributeChangeData;
 
@@ -80,13 +81,22 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Input|Input Actions")
 	TObjectPtr<UInputAction> ToggleInventoryAction;
 
+	UPROPERTY(EditAnywhere, Category = "Input|Input Actions")
+	TObjectPtr<UInputAction> TogglePauseMenuAction;
+
 	/** Inventory widget class to spawn (e.g. WBP_Inventory) */
 	UPROPERTY(EditAnywhere, Category="Inventory")
 	TSubclassOf<UInventoryWidget> InventoryWidgetClass;
 
+	UPROPERTY(EditAnywhere, Category = "PauseMenu")
+	TSubclassOf<UPauseMenuWidget> PauseMenuWidgetClass;
+
 	/** Pointer to the spawned inventory widget, created lazily the first time it's toggled on */
 	UPROPERTY()
 	TObjectPtr<UInventoryWidget> InventoryWidget;
+
+	UPROPERTY()
+	TObjectPtr<UPauseMenuWidget> PauseMenuWidget;
 
 	/** Mobile controls widget to spawn */
 	UPROPERTY(EditAnywhere, Category="Input|Touch Controls")
@@ -192,6 +202,8 @@ protected:
 	/** Bound to ToggleInventoryAction; toggles the inventory widget on/off */
 	void ToggleInventoryInput();
 
+	void TogglePauseMenuInput();
+
 	/** Uses the existing DropOre ability when E is pressed while carrying ore. */
 	bool TryDropCarriedOre(class Acasino_simulatorCharacter* PlayerCharacter);
 
@@ -202,6 +214,9 @@ public:
 	/** Shows the inventory widget if hidden, hides it if shown. Spawns it from InventoryWidgetClass on first use. */
 	UFUNCTION(BlueprintCallable, Category="Inventory")
 	void ToggleInventory();
+
+	UFUNCTION(BlueprintCallable, Category = "PauseMenu")
+	void TogglePauseMenu();
 
 	UFUNCTION(BlueprintPure, Category="Inventory")
 	bool IsInventoryOpen() const;
