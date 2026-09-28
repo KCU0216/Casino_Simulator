@@ -1,7 +1,7 @@
+#include "Machine/SeatedMachineBase.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Interaction/MachineInteractionComponent.h"
-#include "Machine/SeatedMachineBase.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
