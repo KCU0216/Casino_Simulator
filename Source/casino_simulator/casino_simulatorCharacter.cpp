@@ -725,21 +725,11 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 
 void Acasino_simulatorCharacter::Slot1Input(const FInputActionValue& Value)
 {
-	if (IsGameplayInputBlocked())
-	{
-		return;
-	}
-
 	UseNumberSlotItem(0);
 }
 
 void Acasino_simulatorCharacter::Slot2Input(const FInputActionValue& Value)
 {
-	if (IsGameplayInputBlocked())
-	{
-		return;
-	}
-
 	UseNumberSlotItem(1);
 }
 
