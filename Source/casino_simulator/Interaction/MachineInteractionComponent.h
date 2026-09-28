@@ -30,6 +30,9 @@ class CASINO_SIMULATOR_API UMachineInteractionComponent : public UActorComponent
 public:
 	UMachineInteractionComponent();
 
+	static bool CanRestoreMovement(const Acasino_simulatorCharacter* Character);
+	static void RestoreMovementAfterUse(Acasino_simulatorCharacter* Character);
+
 	/** Fired server-only, before the multicast goes out - mirrors the old
 	 * Server_RequestUseMachine_Implementation's call to HandleMachineRequestUseMachine. */
 	FMachineInteractionPlayerEvent OnRequestUseMachine;

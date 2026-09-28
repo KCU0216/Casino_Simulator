@@ -100,15 +100,19 @@ void ANPC_Base::HandleMachineUseStarted(Acasino_simulatorCharacter* Character)
 {
 }
 
+void ANPC_Base::ReleaseInteraction(Acasino_simulatorCharacter* Character)
+{
+ if (HasAuthority() && IsValid(Character) && Character->GetCurrentSeatedMachine().GetObject() == this)
+  Multicast_MachineReleased(Character);
+}
+
 void ANPC_Base::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
 {
-	if (OverlappingPlayer && OverlappingPlayer == ReleasingCharacter)
-	{
-		OverlappingPlayer = nullptr;
-		ReleasingCharacter->SetCurrentSeatedMachine(nullptr);
-
-		HandleMachineUseReleased(ReleasingCharacter);
-	}
+ if (!IsValid(ReleasingCharacter) || ReleasingCharacter->GetCurrentSeatedMachine().GetObject() != this) return;
+ if (OverlappingPlayer == ReleasingCharacter) OverlappingPlayer = nullptr;
+ ReleasingCharacter->ClearCurrentSeatedMachine(this);
+ HandleMachineUseReleased(ReleasingCharacter);
+ UMachineInteractionComponent::RestoreMovementAfterUse(ReleasingCharacter);
 }
 
 void ANPC_Base::HandleMachineUseReleased(Acasino_simulatorCharacter* Character)

@@ -15,7 +15,8 @@ UENUM(BlueprintType)
 enum class ECasinoShopItemCategory : uint8
 {
 	Cigarette UMETA(DisplayName="Cigarette"),
-	Alcohol UMETA(DisplayName="Alcohol")
+	Alcohol UMETA(DisplayName="Alcohol"),
+	Other UMETA(DisplayName="Other")
 };
 
 UENUM(BlueprintType)
@@ -125,13 +126,18 @@ public:
 	FOnShopPurchaseFailed OnPurchaseFailed;
 
 protected:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Shop|Items")
+	// Legacy serialized data only. Products are now resolved from ItemDataTable and SoldItemIDs.
+	UPROPERTY()
 	TObjectPtr<UDataTable> ShopItemDataTable;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Shop|Items")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Casino|Shop|Items", meta=(RequiredAssetDataTags="RowStructure=/Script/casino_simulator.ItemData"))
 	TObjectPtr<UDataTable> ItemDataTable;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Shop|Items")
+	// UniqueID values from the shared inventory item definition table, in display order.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Casino|Shop|Items")
+	TArray<int32> SoldItemIDs;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category="Casino|Shop|Items")
 	TArray<FCasinoShopItemData> ShopItems;
 
 	UPROPERTY(Replicated, EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Shop|Price", meta=(ClampMin="1"))
@@ -151,15 +157,9 @@ private:
 	void RefundPurchase(Acasino_simulatorCharacter* Buyer, int32 Price);
 	bool CanGrantPurchasedItems(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, FString& OutReason) const;
 	bool GrantPurchasedItems(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, int32 Quantity);
-	bool ApplyItemEffects(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, int32 Quantity);
-	bool ApplyGameplayEffect(Acasino_simulatorCharacter* Buyer, TSubclassOf<UGameplayEffect> EffectClass, float Level);
-	bool ApplyFallbackAttributeRecovery(Acasino_simulatorCharacter* Buyer, const FCasinoShopItemData& Item, float TotalRecovery);
 	bool ValidateQuantity(int32 Quantity, FString& OutReason) const;
 	int32 GetScaledPrice(int32 BasePrice) const;
-	const FCasinoShopItemData* FindShopItem(FName ItemId) const;
 	const UDataTable* GetResolvedItemDataTable() const;
 	bool ApplyInventoryItemData(FCasinoShopItemData& Item) const;
-	void BuildDefaultShopItems();
-	bool LoadShopItemsFromDataTable();
 	void FailPurchase(const FString& Reason);
 };
