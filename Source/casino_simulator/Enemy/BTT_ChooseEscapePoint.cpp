@@ -30,9 +30,23 @@ EBTNodeResult::Type UBTT_ChooseEscapePoint::ExecuteTask(
         ? Cast<AThiefCharacter>(AIController->GetPawn())
         : nullptr;
 
-    AActor* Threat = IsValid(Thief)
-        ? Thief->GetEscapeFromActor()
-        : nullptr;
+    if (!IsValid(Thief) || !IsValid(Blackboard))
+    {
+        return EBTNodeResult::Failed;
+    }
+
+    if (!Thief->IsEscaping())
+    {
+        return EBTNodeResult::Failed;
+    }
+
+    // 도망칠 대상인 플레이어를 가져옵니다.
+    AActor* Threat = Thief->GetEscapeFromActor();
+
+    if (!IsValid(Threat))
+    {
+        return EBTNodeResult::Failed;
+    }
 
     FVector AwayDirection =
         Thief->GetActorLocation() - Threat->GetActorLocation();
