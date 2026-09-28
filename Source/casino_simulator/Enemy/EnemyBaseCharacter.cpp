@@ -2,6 +2,9 @@
 
 #include "Enemy/EnemyBaseCharacter.h"
 #include "AIController.h"
+
+#include "Animation/AnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimMontage.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -130,12 +133,26 @@ void AEnemyBaseCharacter::HandleEnemyHitReaction(AActor* Attacker)
 	MulticastPlayHitReaction(HitMontage);
 }
 
-void AEnemyBaseCharacter::MulticastPlayHitReaction_Implementation(UAnimMontage* HitMontage)
+void AEnemyBaseCharacter::MulticastPlayHitReaction_Implementation(
+	UAnimMontage* HitMontage)
 {
-	if (!IsValid(HitMontage))
+	if (!IsValid(HitMontage) || !GetMesh())
 	{
 		return;
 	}
 
-	PlayAnimMontage(HitMontage);
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+
+	if (!AnimInstance)
+	{
+		return;
+	}
+
+	AnimInstance->Montage_Play(
+		HitMontage,
+		1.0f,
+		EMontagePlayReturnType::MontageLength,
+		0.0f,
+		false
+	);
 }

@@ -55,7 +55,8 @@ protected:
     float EscapeSpeed = 500.0f;
 
 
-    UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly,
+    UPROPERTY(ReplicatedUsing = OnRep_ThiefState,
+        VisibleInstanceOnly, BlueprintReadOnly,
         Category = "Enemy|Thief")
     EThiefState ThiefState = EThiefState::Roaming;
 
@@ -67,4 +68,13 @@ protected:
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly,
         Category = "Enemy|Thief")
     TObjectPtr<AActor> EscapeFromActor = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "Enemy|Thief")
+    TObjectPtr<UAnimMontage> EscapeMontage;
+
+    UFUNCTION()
+    void OnRep_ThiefState();
+
+    void UpdateEscapeMontage();
 };

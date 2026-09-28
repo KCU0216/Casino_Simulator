@@ -660,9 +660,20 @@ void Acasino_simulatorCharacter::SetMousePoint(bool value)
 	}
 }
 
+bool Acasino_simulatorCharacter::IsGameplayInputBlocked() const
+{
+	const Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
+	return PC && PC->IsAnyGameplayUIOpen();
+}
+
 
 void Acasino_simulatorCharacter::MoveInput(const FInputActionValue& Value)
 {
+	if (IsGameplayInputBlocked())
+	{
+		return;
+	}
+
 	// get the Vector2D move axis
 	FVector2D MovementVector = Value.Get<FVector2D>();
 
@@ -675,7 +686,7 @@ void Acasino_simulatorCharacter::LookInput(const FInputActionValue& Value)
 {
 	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController()))
 	{
-		if (PC->bShowMouseCursor == true)
+		if (PC->bShowMouseCursor || PC->IsAnyGameplayUIOpen())
 		{
 			return;
 		}
@@ -690,6 +701,11 @@ void Acasino_simulatorCharacter::LookInput(const FInputActionValue& Value)
 
 void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 {
+	if (IsGameplayInputBlocked())
+	{
+		return;
+	}
+
 	if (TScriptInterface<IWorldInteractable> CurrentMachine =
 		GetCurrentSeatedMachine())
 	{
@@ -789,6 +805,12 @@ void Acasino_simulatorCharacter::ApplyNumberSlotItemEffect(int32 SlotIndex)
 
 void Acasino_simulatorCharacter::MachineExitInput()
 {
+	if (const Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
+		PC && (PC->IsPauseMenuOpen() || PC->IsInventoryOpen()))
+	{
+		return;
+	}
+
 	if (BlackjackPlayerComponent && BlackjackPlayerComponent->IsInBlackjackSeat())
 	{
 		BlackjackPlayerComponent->RequestExitBlackjackSeat();
@@ -803,6 +825,11 @@ void Acasino_simulatorCharacter::MachineExitInput()
 
 void Acasino_simulatorCharacter::EquipPickaxeInputStarted()
 {
+	if (IsGameplayInputBlocked())
+	{
+		return;
+	}
+
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->PressInputTag(TAG_Input_EquipPickaxe);
@@ -819,6 +846,11 @@ void Acasino_simulatorCharacter::EquipPickaxeInputCompleted()
 
 void Acasino_simulatorCharacter::MiningInputStarted()
 {
+	if (IsGameplayInputBlocked())
+	{
+		return;
+	}
+
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->PressInputTag(TAG_Input_Mining);
@@ -866,6 +898,11 @@ void Acasino_simulatorCharacter::DoMove(float Right, float Forward)
 
 void Acasino_simulatorCharacter::DoJumpStart()
 {
+	if (IsGameplayInputBlocked())
+	{
+		return;
+	}
+
 	// pass Jump to the character
 	Jump();
 }
