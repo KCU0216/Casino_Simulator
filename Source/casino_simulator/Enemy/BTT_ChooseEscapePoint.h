@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "BehaviorTree/BTTaskNode.h"
-#include "BehaviorTree/Blackboard/BlackboardKeySelector.h"
+#include "BehaviorTree/BehaviorTreeTypes.h"
 #include "BTT_ChooseEscapePoint.generated.h"
 
 UCLASS()
