@@ -221,6 +221,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="Inventory")
 	bool IsInventoryOpen() const;
 
+	UFUNCTION(BlueprintPure, Category="PauseMenu")
+	bool IsPauseMenuOpen() const;
+
+	/** True while inventory, pause, or interaction UI owns normal gameplay input. */
+	UFUNCTION(BlueprintPure, Category="Input")
+	bool IsAnyGameplayUIOpen() const;
+
 	UFUNCTION(BlueprintCallable, Category="Interaction")
 	void InteractWithCurrentTarget();
 

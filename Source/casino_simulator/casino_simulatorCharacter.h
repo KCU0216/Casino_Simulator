@@ -381,6 +381,9 @@ protected:
 	/** Called from Input Actions for movement input */
 	void MoveInput(const FInputActionValue& Value);
 
+	/** Returns true while a modal gameplay UI should suppress normal character actions. */
+	bool IsGameplayInputBlocked() const;
+
 	/** Called from Input Actions for looking input */
 	void LookInput(const FInputActionValue& Value);
 

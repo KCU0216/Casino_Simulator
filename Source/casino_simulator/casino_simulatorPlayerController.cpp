@@ -816,11 +816,21 @@ void Acasino_simulatorPlayerController::SetupInputComponent()
 
 void Acasino_simulatorPlayerController::ToggleInventoryInput()
 {
+	if (!IsInventoryOpen() && (IsPauseMenuOpen() || IsInteractionUIOpen()))
+	{
+		return;
+	}
+
 	ToggleInventory();
 }
 
 void Acasino_simulatorPlayerController::TogglePauseMenuInput()
 {
+	if (!IsPauseMenuOpen() && (IsInventoryOpen() || IsInteractionUIOpen()))
+	{
+		return;
+	}
+
 	TogglePauseMenu();
 }
 
@@ -838,7 +848,10 @@ void Acasino_simulatorPlayerController::ToggleInventory()
 		if (InventoryWidget)
 		{
 			InventoryWidget->AddToViewport();
-			SetShowMouseCursor(InventoryWidget->GetVisibility() == ESlateVisibility::SelfHitTestInvisible);
+			InventoryWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			SetIgnoreMoveInput(true);
+			SetIgnoreLookInput(true);
+			SetShowMouseCursor(true);
 			return;
 		}
 	}
@@ -851,12 +864,16 @@ void Acasino_simulatorPlayerController::ToggleInventory()
 	if (InventoryWidget->GetVisibility() == ESlateVisibility::Collapsed)
 	{
 		InventoryWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		SetIgnoreMoveInput(true);
+		SetIgnoreLookInput(true);
 	}
 	else
 	{
 		InventoryWidget->SetVisibility(ESlateVisibility::Collapsed);
+		SetIgnoreMoveInput(false);
+		SetIgnoreLookInput(false);
 	}
-	SetShowMouseCursor(InventoryWidget->GetVisibility() == ESlateVisibility::SelfHitTestInvisible);
+	SetShowMouseCursor(IsInventoryOpen());
 }
 void Acasino_simulatorPlayerController::TogglePauseMenu()
 {
@@ -874,17 +891,15 @@ void Acasino_simulatorPlayerController::TogglePauseMenu()
 		if (PauseMenuWidget)
 		{
 			PauseMenuWidget->AddToViewport();
-			SetShowMouseCursor(PauseMenuWidget->GetVisibility() == ESlateVisibility::SelfHitTestInvisible);
+			PauseMenuWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			SetShowMouseCursor(true);
 			FInputModeGameAndUI InputMode;
 			InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
 			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 			InputMode.SetHideCursorDuringCapture(false);
 			SetInputMode(InputMode);
-
-			if (APawn* ControlledPawn = GetPawn())
-			{
-				ControlledPawn->DisableInput(this);
-			}
+			SetIgnoreMoveInput(true);
+			SetIgnoreLookInput(true);
 			return;
 		}
 	}
@@ -903,11 +918,8 @@ void Acasino_simulatorPlayerController::TogglePauseMenu()
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		InputMode.SetHideCursorDuringCapture(false);
 		SetInputMode(InputMode);
-
-		if (APawn* ControlledPawn = GetPawn())
-		{
-			ControlledPawn->DisableInput(this);
-		}
+		SetIgnoreMoveInput(true);
+		SetIgnoreLookInput(true);
 	}
 	else
 	{
@@ -915,19 +927,25 @@ void Acasino_simulatorPlayerController::TogglePauseMenu()
 		FInputModeGameOnly InputMode;
 		InputMode.SetConsumeCaptureMouseDown(false);
 		SetInputMode(InputMode);
-
-
-		if (APawn* ControlledPawn = GetPawn())
-		{
-			ControlledPawn->EnableInput(this);
-		}
+		SetIgnoreMoveInput(false);
+		SetIgnoreLookInput(false);
 	}
-	SetShowMouseCursor(PauseMenuWidget->GetVisibility() == ESlateVisibility::SelfHitTestInvisible);
+	SetShowMouseCursor(IsPauseMenuOpen());
 }
 
 bool Acasino_simulatorPlayerController::IsInventoryOpen() const
 {
-	return InventoryWidget && InventoryWidget->IsInViewport();
+	return InventoryWidget && InventoryWidget->IsVisible();
+}
+
+bool Acasino_simulatorPlayerController::IsPauseMenuOpen() const
+{
+	return PauseMenuWidget && PauseMenuWidget->IsVisible();
+}
+
+bool Acasino_simulatorPlayerController::IsAnyGameplayUIOpen() const
+{
+	return bInteractionUIOpen || IsPauseMenuOpen() || IsInventoryOpen();
 }
 
 bool Acasino_simulatorPlayerController::ShouldUseTouchControls() const
