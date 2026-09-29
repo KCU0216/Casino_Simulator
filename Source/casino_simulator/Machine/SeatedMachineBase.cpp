@@ -253,7 +253,10 @@ void ASeatedMachineBase::EnterMachineUseView(Acasino_simulatorCharacter* Request
 
 		FVector SeatLocation = SeatPoint->GetComponentLocation();
 		SeatLocation.Z += SeatHeightOffset;
-		SeatLocation.Y += SeatHeightOffset/2;
+
+		// Apply the horizontal seat offset along the machine's local Y axis.
+		SeatLocation += GetActorRightVector() * (SeatHeightOffset / 2.0f);
+
 		FRotator SeatRoator = SeatPoint->GetComponentRotation();
 		RequestingCharacter->SetActorLocationAndRotation(
 			SeatLocation,

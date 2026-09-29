@@ -3,7 +3,10 @@
 #include "Blackjack/BlackjackPlayerComponent.h"
 
 #include "Blackjack/BlackjackTableActor.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Interaction/MachineInteractionComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
 
@@ -496,6 +499,17 @@ void UBlackjackPlayerComponent::ApplyMovementLock()
 		return;
 	}
 
+	// Activate once on the server; GAS replicates the sitting ability/montage.
+	if (Character->HasAuthority())
+	{
+		if (UAbilitySystemComponent* ASC = Character->GetAbilitySystemComponent())
+		{
+			FGameplayTagContainer Tags;
+			Tags.AddTag(FGameplayTag::RequestGameplayTag(FName("State.Sit")));
+			ASC->TryActivateAbilitiesByTag(Tags, true);
+		}
+	}
+
 	if (UCharacterMovementComponent* MovementComponent = Character->GetCharacterMovement())
 	{
 		MovementComponent->DisableMovement();
@@ -523,10 +537,15 @@ void UBlackjackPlayerComponent::ClearMovementLock()
 		return;
 	}
 
-	if (UCharacterMovementComponent* MovementComponent = Character->GetCharacterMovement())
+	// End the sitting ability even when payment currently owns movement.
+	if (Character->HasAuthority())
 	{
-		MovementComponent->SetMovementMode(MOVE_Walking);
+		FGameplayEventData EventData;
+		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
+			Character, FGameplayTag::RequestGameplayTag(FName("State.Walk")), EventData);
 	}
+
+	UMachineInteractionComponent::RestoreMovementAfterUse(Character);
 
 	if (AController* Controller = Character->GetController())
 	{
