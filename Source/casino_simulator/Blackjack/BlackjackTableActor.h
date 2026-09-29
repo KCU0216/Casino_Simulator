@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
 #include "Blackjack/BlackjackTypes.h"
+#include "Interaction/CasinoDayParticipant.h"
 #include "BlackjackTableActor.generated.h"
 
 class Acasino_simulatorCharacter;
@@ -24,11 +25,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FBlackjackHandCardDealt, int32, Se
  * This actor owns rules/state: shoe, seats, hands, bets, hit/stand/dealer resolve.
  */
 UCLASS()
-class CASINO_SIMULATOR_API ABlackjackTableActor : public AActor
+class CASINO_SIMULATOR_API ABlackjackTableActor : public AActor, public ICasinoDayParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual void EndCasinoDay_Implementation() override;
+	virtual void BeginCasinoDay_Implementation() override;
 	UFUNCTION(BlueprintPure, Category="Blackjack|Availability")
 	bool CanOpenBetting(Acasino_simulatorCharacter* Player) const;
 

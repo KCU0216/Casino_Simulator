@@ -302,6 +302,12 @@ void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* Releasin
 		return;
 	}
 
+ if (ReleasingCharacter->HasAuthority())
+ {
+  FGameplayEventData EndSitEvent;
+  UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(ReleasingCharacter,
+   FGameplayTag::RequestGameplayTag(FName("State.Walk")), EndSitEvent);
+ }
  // Day-end payment/result flow owns the camera and movement after forced relocation.
  if (!UMachineInteractionComponent::CanRestoreMovement(ReleasingCharacter))
  {
@@ -328,14 +334,6 @@ void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* Releasin
 	{
 		MachineCamera->SetActive(false);
 	}
-
-	// 착석 해제 시 "State.Walk" 게임플레이 이벤트를 보낸다. 실행 중인 어빌리티가
-	// Wait Gameplay Event 노드로 이 태그를 리슨하고 있으면 그쪽에서 받아 처리한다.
-	FGameplayEventData EventData;
-	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
-		ReleasingCharacter,
-		FGameplayTag::RequestGameplayTag(FName("State.Walk")),
-		EventData);
 
 	ReleasingCharacter->ClearCurrentInteractionTarget(this);
 }

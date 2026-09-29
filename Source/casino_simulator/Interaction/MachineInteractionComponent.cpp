@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Interaction/MachineInteractionComponent.h"
+#include "Interaction/CasinoDayParticipant.h"
 
 #include "GameFramework/CharacterMovementComponent.h"
 #include "casino_simulatorCharacter.h"
@@ -27,6 +28,7 @@ void UMachineInteractionComponent::RequestUseMachine(Acasino_simulatorCharacter*
 
 void UMachineInteractionComponent::Server_RequestUseMachine_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
 {
+	if (!IsCasinoGameplayAllowed(this)) return;
 	OnRequestUseMachine.ExecuteIfBound(RequestingCharacter);
 	Multicast_MachineUseStarted(RequestingCharacter);
 

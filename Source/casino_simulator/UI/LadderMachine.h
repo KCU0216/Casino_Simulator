@@ -12,6 +12,7 @@
 #include "CoreMinimal.h"
 #include "LadderGenerator.h"   // FLadderPlan / FLadderRungRow / ULadderGenerator
 #include "Machine/SeatedMachineBase.h"
+#include "Interaction/CasinoDayParticipant.h"
 #include "LadderMachine.generated.h"
 
 /** 전환 버튼으로 순환하는 조작 모드. */
@@ -45,11 +46,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLadderPlayEvent, FLadderPlan, Plan)
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FLadderResultEvent, bool, bWin, int32, DestRail, int32, Multiplier, int32, Winnings);
 
 UCLASS()
-class CASINO_SIMULATOR_API ALadderMachine : public ASeatedMachineBase
+class CASINO_SIMULATOR_API ALadderMachine : public ASeatedMachineBase, public ICasinoDayParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual void EndCasinoDay_Implementation() override;
 	ALadderMachine();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
