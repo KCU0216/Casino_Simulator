@@ -194,17 +194,29 @@ float Acasino_simulatorCharacter::GetCurrency() const
 	);
 }
 
+void Acasino_simulatorCharacter::SetCurrentInteractionTarget(TScriptInterface<IWorldInteractable> NewTarget)
+{
+	CurrentInteractionTarget = NewTarget;
+	CurrentSeatedMachine = NewTarget;
+}
+
+void Acasino_simulatorCharacter::ClearCurrentInteractionTarget(IWorldInteractable* TargetToClear)
+{
+	if (!TargetToClear || CurrentInteractionTarget == TargetToClear || CurrentSeatedMachine == TargetToClear)
+	{
+		CurrentInteractionTarget = nullptr;
+		CurrentSeatedMachine = nullptr;
+	}
+}
+
 void Acasino_simulatorCharacter::SetCurrentSeatedMachine(TScriptInterface<IWorldInteractable> NewMachine)
 {
-	CurrentSeatedMachine = NewMachine;
+	SetCurrentInteractionTarget(NewMachine);
 }
 
 void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(IWorldInteractable* MachineToClear)
 {
-	if (!MachineToClear || CurrentSeatedMachine == MachineToClear)
-	{
-		CurrentSeatedMachine = nullptr;
-	}
+	ClearCurrentInteractionTarget(MachineToClear);
 }
 
 bool Acasino_simulatorCharacter::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
@@ -679,7 +691,10 @@ void Acasino_simulatorCharacter::SetMousePoint(bool value)
 bool Acasino_simulatorCharacter::IsGameplayInputBlocked() const
 {
 	const Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
-	return PC && PC->IsAnyGameplayUIOpen();
+	const bool bIsInBlackjackSeat = BlackjackPlayerComponent &&
+		BlackjackPlayerComponent->IsInBlackjackSeat();
+	return CurrentInteractionTarget != nullptr || bIsInBlackjackSeat ||
+		(PC && PC->IsAnyGameplayUIOpen());
 }
 
 
@@ -700,9 +715,14 @@ void Acasino_simulatorCharacter::MoveInput(const FInputActionValue& Value)
 
 void Acasino_simulatorCharacter::LookInput(const FInputActionValue& Value)
 {
+	if (IsGameplayInputBlocked())
+	{
+		return;
+	}
+
 	if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController()))
 	{
-		if (PC->bShowMouseCursor || PC->IsAnyGameplayUIOpen())
+		if (PC->bShowMouseCursor)
 		{
 			return;
 		}
@@ -726,7 +746,7 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 	}
 
 	if (TScriptInterface<IWorldInteractable> CurrentMachine =
-		GetCurrentSeatedMachine())
+		GetCurrentInteractionTarget())
 	{
 		if (ASeatedMachineBase* Machine =
 			Cast<ASeatedMachineBase>(CurrentMachine.GetObject()))

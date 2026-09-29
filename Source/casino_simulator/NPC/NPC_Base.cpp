@@ -85,7 +85,7 @@ void ANPC_Base::HandleMachineUseStartedMulticast(Acasino_simulatorCharacter* Req
 	OverlappingPlayer = RequestingCharacter;
 	if (RequestingCharacter)
 	{
-		RequestingCharacter->SetCurrentSeatedMachine(this);
+		RequestingCharacter->SetCurrentInteractionTarget(this);
 	}
 
 	if (OverlappingPlayer && OverlappingPlayer->IsLocallyControlled())
@@ -102,15 +102,15 @@ void ANPC_Base::HandleMachineUseStarted(Acasino_simulatorCharacter* Character)
 
 void ANPC_Base::ReleaseInteraction(Acasino_simulatorCharacter* Character)
 {
- if (HasAuthority() && IsValid(Character) && Character->GetCurrentSeatedMachine().GetObject() == this)
+ if (HasAuthority() && IsValid(Character) && Character->GetCurrentInteractionTarget().GetObject() == this)
   Multicast_MachineReleased(Character);
 }
 
 void ANPC_Base::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
 {
- if (!IsValid(ReleasingCharacter) || ReleasingCharacter->GetCurrentSeatedMachine().GetObject() != this) return;
+ if (!IsValid(ReleasingCharacter) || ReleasingCharacter->GetCurrentInteractionTarget().GetObject() != this) return;
  if (OverlappingPlayer == ReleasingCharacter) OverlappingPlayer = nullptr;
- ReleasingCharacter->ClearCurrentSeatedMachine(this);
+ ReleasingCharacter->ClearCurrentInteractionTarget(this);
  HandleMachineUseReleased(ReleasingCharacter);
  UMachineInteractionComponent::RestoreMovementAfterUse(ReleasingCharacter);
 }
@@ -188,7 +188,7 @@ void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharac
 	if (PC != nullptr && CanInteract(InteractingCharacter))
 	{
 		PC->SetWorldInteractionTargetFocused(true);
-		//InteractingCharacter->SetCurrentSeatedMachine(this);
+		//InteractingCharacter->SetCurrentInteractionTarget(this);
 	}
 }
 
@@ -203,7 +203,7 @@ void ANPC_Base::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacte
 	if (PlayerController != nullptr)
 	{
 		PlayerController->SetWorldInteractionTargetFocused(false);
-		//InteractingCharacter->SetCurrentSeatedMachine(nullptr);
+		//InteractingCharacter->SetCurrentInteractionTarget(nullptr);
 	}
 }
 

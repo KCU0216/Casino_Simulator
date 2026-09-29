@@ -147,7 +147,7 @@ void AThreeCardPokerTableActor::OnLocalInteract_Implementation(Acasino_simulator
 	{
 		if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController()))
 		{
-			if (InteractingCharacter->GetCurrentSeatedMachine())
+			if (InteractingCharacter->GetCurrentInteractionTarget())
 			{
 				PC->CloseInteraction();
 			}

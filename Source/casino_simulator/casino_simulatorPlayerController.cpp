@@ -397,7 +397,7 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 		return;
 	}
 
-	TScriptInterface<IWorldInteractable> CurrentMachine = PlayerCharacter->GetCurrentSeatedMachine();
+	TScriptInterface<IWorldInteractable> CurrentMachine = PlayerCharacter->GetCurrentInteractionTarget();
 	if (!CurrentMachine)
 	{
 		return;
@@ -467,7 +467,7 @@ void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implement
 void Acasino_simulatorPlayerController::Server_HandleMachinePrimaryInput_Implementation(ASeatedMachineBase* Machine)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Machine || PlayerCharacter->GetCurrentSeatedMachine() != Machine)
+	if (!PlayerCharacter || !Machine || PlayerCharacter->GetCurrentInteractionTarget() != Machine)
 	{
 		return;
 	}
@@ -478,7 +478,7 @@ void Acasino_simulatorPlayerController::Server_HandleMachinePrimaryInput_Impleme
 void Acasino_simulatorPlayerController::Server_ExitMachine_Implementation(ASeatedMachineBase* Machine)
 {
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-	if (!PlayerCharacter || !Machine || PlayerCharacter->GetCurrentSeatedMachine() != Machine)
+	if (!PlayerCharacter || !Machine || PlayerCharacter->GetCurrentInteractionTarget() != Machine)
 	{
 		return;
 	}
@@ -512,9 +512,9 @@ void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSup
 		return;
 	}
 
-	PlayerCharacter->GetCurrentSeatedMachine();
+	PlayerCharacter->GetCurrentInteractionTarget();
 
-	if ((PlayerCharacter->GetCurrentSeatedMachine() != nullptr || bWorldInteractionTargetFocused) && !bInteractionUIOpen)
+	if ((PlayerCharacter->GetCurrentInteractionTarget() != nullptr || bWorldInteractionTargetFocused) && !bInteractionUIOpen)
 	{
 		OpenInteraction();
 	}
@@ -586,7 +586,7 @@ void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 
 	PlayerCharacter->RefreshEquipmentVisuals();
 
-	if (PlayerCharacter->GetCurrentSeatedMachine() != nullptr|| bWorldInteractionTargetFocused)
+	if (PlayerCharacter->GetCurrentInteractionTarget() != nullptr|| bWorldInteractionTargetFocused)
 	{
 		OpenInteraction();
 	}
@@ -1017,7 +1017,7 @@ void Acasino_simulatorPlayerController::CloseCurrentInteraction()
 {
     auto* InteractionCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
     if (!InteractionCharacter) return;
-    auto* Target = Cast<AActor>(InteractionCharacter->GetCurrentSeatedMachine().GetObject());
+    auto* Target = Cast<AActor>(InteractionCharacter->GetCurrentInteractionTarget().GetObject());
     if (IsValid(Target)) Server_CloseCurrentInteraction(Target);
     else ExitInteractionUIMode();
 }
@@ -1025,20 +1025,20 @@ void Acasino_simulatorPlayerController::CloseCurrentInteraction()
 void Acasino_simulatorPlayerController::Server_CloseCurrentInteraction_Implementation(AActor* ExpectedTarget)
 {
     auto* InteractionCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-    if (!InteractionCharacter || !IsValid(ExpectedTarget) || InteractionCharacter->GetCurrentSeatedMachine().GetObject() != ExpectedTarget) return;
+    if (!InteractionCharacter || !IsValid(ExpectedTarget) || InteractionCharacter->GetCurrentInteractionTarget().GetObject() != ExpectedTarget) return;
     if (auto* NPC = Cast<ANPC_Base>(ExpectedTarget)) NPC->ReleaseInteraction(InteractionCharacter);
     else if (auto* Machine = Cast<ASeatedMachineBase>(ExpectedTarget)) Machine->RequestReleaseMachine(InteractionCharacter);
     else return;
-    if (!InteractionCharacter->GetCurrentSeatedMachine()) Client_CompleteInteractionClose(ExpectedTarget);
+    if (!InteractionCharacter->GetCurrentInteractionTarget()) Client_CompleteInteractionClose(ExpectedTarget);
 }
 
 void Acasino_simulatorPlayerController::Client_CompleteInteractionClose_Implementation(AActor* ExpectedTarget)
 {
     auto* InteractionCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
     if (!InteractionCharacter) return;
-    UObject* Current = InteractionCharacter->GetCurrentSeatedMachine().GetObject();
+    UObject* Current = InteractionCharacter->GetCurrentInteractionTarget().GetObject();
     if (Current && Current != ExpectedTarget) return;
-    if (Current) InteractionCharacter->ClearCurrentSeatedMachine(Cast<IWorldInteractable>(ExpectedTarget));
+    if (Current) InteractionCharacter->ClearCurrentInteractionTarget(Cast<IWorldInteractable>(ExpectedTarget));
     UMachineInteractionComponent::RestoreMovementAfterUse(InteractionCharacter);
     ExitInteractionUIMode();
 }
