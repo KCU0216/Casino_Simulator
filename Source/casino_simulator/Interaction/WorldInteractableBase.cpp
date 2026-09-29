@@ -192,7 +192,7 @@ void AWorldInteractableBase::HandleMachineUseReleased(Acasino_simulatorCharacter
 void AWorldInteractableBase::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
 {
 	InteractingPlayer = nullptr;
-	ReleasingCharacter->SetCurrentInteractionTarget(nullptr);
+	ReleasingCharacter->SetCurrentSeatedMachine(nullptr);
 
 	HandleMachineUseReleased(ReleasingCharacter);
 }
@@ -202,7 +202,7 @@ void AWorldInteractableBase::HandleMachineUseStartedMulticast(Acasino_simulatorC
 	InteractingPlayer = RequestingCharacter;
 	if (RequestingCharacter)
 	{
-		RequestingCharacter->SetCurrentInteractionTarget(this);
+		RequestingCharacter->SetCurrentSeatedMachine(this);
 	}
 
 	HandleMachineUseStarted(RequestingCharacter);

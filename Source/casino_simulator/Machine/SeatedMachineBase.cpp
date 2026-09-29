@@ -292,7 +292,7 @@ void ASeatedMachineBase::EnterMachineUseView(Acasino_simulatorCharacter* Request
 		PlayerController->SetViewTargetWithBlend(this, MachineCameraBlendTime);
 	}
 
-	RequestingCharacter->SetCurrentInteractionTarget(this);
+	RequestingCharacter->SetCurrentSeatedMachine(this);
 }
 
 void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* ReleasingCharacter)
@@ -312,7 +312,7 @@ void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* Releasin
  if (!UMachineInteractionComponent::CanRestoreMovement(ReleasingCharacter))
  {
   if (MachineCamera) MachineCamera->SetActive(false);
-  ReleasingCharacter->ClearCurrentInteractionTarget(this);
+  ReleasingCharacter->ClearCurrentSeatedMachine(this);
   return;
  }
 
@@ -335,5 +335,5 @@ void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* Releasin
 		MachineCamera->SetActive(false);
 	}
 
-	ReleasingCharacter->ClearCurrentInteractionTarget(this);
+	ReleasingCharacter->ClearCurrentSeatedMachine(this);
 }

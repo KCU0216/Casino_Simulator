@@ -161,11 +161,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Blackjack", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBlackjackPlayerComponent> BlackjackPlayerComponent;
 
-	/** Active persistent interaction such as a machine, casino NPC, or race NPC. */
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Interaction", meta = (AllowPrivateAccess = "true"))
-	TScriptInterface<IWorldInteractable> CurrentInteractionTarget;
-
-	/** Read-only compatibility mirror for existing Blueprint property nodes. */
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Machine|Interaction", meta = (AllowPrivateAccess = "true"))
 	TScriptInterface<IWorldInteractable> CurrentSeatedMachine;
 
@@ -223,16 +218,8 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack")
 	UBlackjackPlayerComponent* GetBlackjackPlayerComponent() const { return BlackjackPlayerComponent; }
 
-	UFUNCTION(BlueprintPure, Category = "Interaction")
-	TScriptInterface<IWorldInteractable> GetCurrentInteractionTarget() const { return CurrentInteractionTarget; }
-
-	/** Compatibility accessor for existing Blueprints. Use GetCurrentInteractionTarget in new code. */
 	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
-	TScriptInterface<IWorldInteractable> GetCurrentSeatedMachine() const { return CurrentInteractionTarget; }
-
-	/** True while UI or a persistent game interaction should block normal character input. */
-	UFUNCTION(BlueprintPure, Category = "Input")
-	bool IsGameplayInputBlocked() const;
+	TScriptInterface<IWorldInteractable> GetCurrentSeatedMachine() const { return CurrentSeatedMachine; }
 
 	UFUNCTION(BlueprintPure, Category = "Interaction")
 	TScriptInterface<IWorldInteractable> GetLastInteractionTarget() const { return LastInteractionTarget; }
@@ -318,10 +305,6 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
 	void ServerLeaveThreeCardPokerTable(AThreeCardPokerTableActor* Table);
 
-	void SetCurrentInteractionTarget(TScriptInterface<IWorldInteractable> NewTarget);
-	void ClearCurrentInteractionTarget(IWorldInteractable* TargetToClear);
-
-	// Compatibility wrappers for existing C++ and Blueprint-facing behavior.
 	void SetCurrentSeatedMachine(TScriptInterface<IWorldInteractable> NewMachine);
 	void ClearCurrentSeatedMachine(IWorldInteractable* MachineToClear);
 
@@ -401,6 +384,9 @@ protected:
 
 	/** Called from Input Actions for movement input */
 	void MoveInput(const FInputActionValue& Value);
+
+	/** Returns true while a modal gameplay UI should suppress normal character actions. */
+	bool IsGameplayInputBlocked() const;
 
 	/** Called from Input Actions for looking input */
 	void LookInput(const FInputActionValue& Value);
