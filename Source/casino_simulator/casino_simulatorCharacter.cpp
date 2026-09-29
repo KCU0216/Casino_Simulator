@@ -166,6 +166,22 @@ void Acasino_simulatorCharacter::AddCurrency(float Amount)
 	
 }
 
+void Acasino_simulatorCharacter::ServerSendCurrency_Implementation(Acasino_simulatorCharacter* Target, float Amount)
+{
+	if (!Target || Target == this || Amount <= 0.0f)
+	{
+		return;
+	}
+
+	// Runs on the server, so TrySpendCurrency/AddCurrency pass their HasAuthority check.
+	if (!TrySpendCurrency(Amount))
+	{
+		return;
+	}
+
+	Target->AddCurrency(Amount);
+}
+
 float Acasino_simulatorCharacter::GetCurrency() const
 {
 	if (!AbilitySystemComponent)
@@ -201,17 +217,17 @@ void Acasino_simulatorCharacter::Interact(Acasino_simulatorCharacter* Interactin
 	// Always reached with authority already - casino_simulatorPlayerController::RequestWorldInteraction
 	// calls Interact() directly when it has authority, or routes through Server_RequestWorldInteraction
 	// otherwise (see IWorldInteractable's class comment).
-	// Intentionally a no-op - opening the trade widget is purely local/cosmetic and already handled by
+	// Intentionally a no-op - opening the trade widget is purely local/cosmetic and handled by
 	// OnLocalInteract_Implementation below; nothing server-authoritative needs to happen on E press itself.
-	InteractingCharacter->BP_OnLocalTradeInteract(this);
 }
 
 void Acasino_simulatorCharacter::OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	/*if (CanInteract(InteractingCharacter))
+	// Runs on the pressing player's own machine, so the widget owner is always a local controller.
+	if (InteractingCharacter && InteractingCharacter->IsLocallyControlled())
 	{
-		BP_OnLocalTradeInteract(InteractingCharacter);
-	}*/
+		InteractingCharacter->BP_OnLocalTradeInteract(this);
+	}
 }
 
 void Acasino_simulatorCharacter::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)

@@ -250,6 +250,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Economy|Currency")
 	void AddCurrency(float Amount);
 
+	/** Client-callable currency transfer: spends Amount from this character and grants it to Target, all on the server. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Economy|Currency")
+	void ServerSendCurrency(Acasino_simulatorCharacter* Target, float Amount);
+
 	UFUNCTION(BlueprintPure, Category = "Economy|Currency")
 	float GetCurrency() const;
 
