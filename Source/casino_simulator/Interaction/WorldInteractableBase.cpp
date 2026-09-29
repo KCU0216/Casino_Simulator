@@ -164,13 +164,17 @@ void AWorldInteractableBase::RequestReleaseMachine(Acasino_simulatorCharacter* R
 
 void AWorldInteractableBase::Server_ReleaseMachine_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
 {
-	HandleMachineReleaseMachine(RequestingCharacter);
+	if (!HandleMachineReleaseMachine(RequestingCharacter))
+	{
+		return;
+	}
 
 	Multicast_MachineReleased(RequestingCharacter);
 }
 
-void AWorldInteractableBase::HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
+bool AWorldInteractableBase::HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
 {
+	return IsValid(RequestingCharacter);
 }
 
 void AWorldInteractableBase::HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)

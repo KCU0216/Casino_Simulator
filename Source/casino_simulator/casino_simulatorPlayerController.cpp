@@ -391,7 +391,6 @@ bool Acasino_simulatorPlayerController::TryReleaseCarriedCart(Acasino_simulatorC
 
 void Acasino_simulatorPlayerController::ExitCurrentMachine()
 {
-	SetIsInteractionUIOpen(false);
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter)
 	{
@@ -415,8 +414,8 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 		PlayerCharacter
 	);*/
 
-	Machine->RequestReleaseMachine(PlayerCharacter);
-	OpenInteraction();
+	// Keep the UI intact until the server accepts the release.
+	CloseCurrentInteraction();
 }
 
 void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface<IWorldInteractable> Target)

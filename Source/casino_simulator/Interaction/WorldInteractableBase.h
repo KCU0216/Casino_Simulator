@@ -105,7 +105,7 @@ public:
 protected:
 	UFUNCTION(Server, Reliable)
 	void Server_ReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
-	virtual void HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
+	virtual bool HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 
 	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 	virtual void HandleMachineUseStarted(Acasino_simulatorCharacter* Character);

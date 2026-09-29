@@ -144,24 +144,23 @@ void ASeatedMachineBase::Server_SetCanExitMachine_Implementation(bool bCanExit)
 //	ExitMachineUseView(ReleasingCharacter);
 //}
 
-void ASeatedMachineBase::HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
+bool ASeatedMachineBase::HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
 {
-	Super::HandleMachineReleaseMachine(RequestingCharacter);
-	if (!RequestingCharacter || CurrentUser != RequestingCharacter)
+	if (!Super::HandleMachineReleaseMachine(RequestingCharacter) || CurrentUser != RequestingCharacter)
 	{
-		return;
+		return false;
 	}
 
 	if (!bCanExitMachine)
 	{
 		OnMachineExitRejected(RequestingCharacter);
-		return;
+		return false;
 	}
 
-	Acasino_simulatorCharacter* ReleasingCharacter = CurrentUser;
 	CurrentUser = nullptr;
 	bCanOperate = false;
 	bCanExitMachine = true;
+	return true;
 }
 
 void ASeatedMachineBase::HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)

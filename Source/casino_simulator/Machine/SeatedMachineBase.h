@@ -112,7 +112,7 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void Server_SetCanExitMachine(bool bCanExit);
 
-	virtual void HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
+	virtual bool HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
 
 	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
 

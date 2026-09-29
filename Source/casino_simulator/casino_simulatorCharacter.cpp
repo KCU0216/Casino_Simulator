@@ -701,7 +701,10 @@ void Acasino_simulatorCharacter::LookInput(const FInputActionValue& Value)
 
 void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 {
-	if (IsGameplayInputBlocked())
+	const Acasino_simulatorPlayerController* InputController =
+		Cast<Acasino_simulatorPlayerController>(GetController());
+	if (InputController && (InputController->IsPauseMenuOpen() ||
+		InputController->IsInventoryOpen() || InputController->IsDailyPaymentControlLocked()))
 	{
 		return;
 	}
@@ -713,7 +716,13 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 			Cast<ASeatedMachineBase>(CurrentMachine.GetObject()))
 		{
 			Machine->HandleMachinePrimaryInput(this);
+			return;
 		}
+	}
+
+	if (IsGameplayInputBlocked())
+	{
+		return;
 	}
 
 	if (Acasino_simulatorPlayerController* PC =
