@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "NPC/NPC_Game.h"
+#include "Interaction/CasinoDayParticipant.h"
 #include "NPC_Dice.generated.h"
 
 class UStaticMeshComponent;
@@ -13,11 +14,12 @@ class ADiceGame;
  * NPC variant hosting the dice minigame (shakes/holds the dice cup).
  */
 UCLASS()
-class CASINO_SIMULATOR_API ANPC_Dice : public ANPC_Game
+class CASINO_SIMULATOR_API ANPC_Dice : public ANPC_Game, public ICasinoDayParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual void EndCasinoDay_Implementation() override;
 	ANPC_Dice();
 
 	/** Returns the dice cup prop mesh component. */
@@ -82,6 +84,7 @@ protected:
 	TWeakObjectPtr<Acasino_simulatorCharacter> InteractingPlayer;
 
 private:
+	bool bBetPending = false;
 	/** Sets/clears InteractingPlayer and hands this NPC's ownership to Player (or back to DefaultOwner
 	 * when Player is null). Owning the NPC gives that specific client's connection ROLE_AutonomousProxy
 	 * for it, which is what lets a Server RPC declared directly on ANPC_Dice actually reach the server

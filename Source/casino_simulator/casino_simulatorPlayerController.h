@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -53,6 +53,9 @@ public:
     void ClientPrepareDailyPayment(FRotator Facing);
     UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")
     void OnPrepareDailyPayment();
+    // Called locally BEFORE payment UI is created. Keep the balance HUD; close transient game/shop UIs.
+    UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")
+    void OnCloseGameplayUIForPayment();
     UFUNCTION(Client, Reliable)
     void ClientPrepareCasinoDay(FRotator Facing);
     UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")

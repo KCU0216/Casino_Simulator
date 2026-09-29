@@ -9,6 +9,10 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/World.h"
+#include "Interaction/CasinoDayParticipant.h"
+#include "NPC/NPC_Base.h"
+#include "Machine/SeatedMachineBase.h"
+#include "Interaction/WorldInteractableBase.h"
 Acasino_simulatorGameMode::Acasino_simulatorGameMode()
 {
 	PlayerStateClass = Acasino_simulatorPlayerState::StaticClass();
@@ -129,6 +133,10 @@ void Acasino_simulatorGameMode::BeginCasinoDay(int32 Day)
     GetWorldTimerManager().SetTimer(DayLoopTimer, this,
         &Acasino_simulatorGameMode::BeginPaymentPhase, Duration, false);
     GS->SetLoopStatus(Status);
+    TArray<AActor*> Games;
+    UGameplayStatics::GetAllActorsWithInterface(this, UCasinoDayParticipant::StaticClass(), Games);
+    for (AActor* Game : Games)
+        if (IsValid(Game)) ICasinoDayParticipant::Execute_BeginCasinoDay(Game);
 }
 
 bool Acasino_simulatorGameMode::MovePlayersToCentralSpawns(bool bForPayment)
@@ -169,7 +177,24 @@ void Acasino_simulatorGameMode::BeginPaymentPhase()
     Status.DayEndServerTime = 0.0;
     GS->SetLoopStatus(Status);
     // This event must finish synchronously before teleporting players.
+    TArray<AActor*> Games;
+    UGameplayStatics::GetAllActorsWithInterface(this, UCasinoDayParticipant::StaticClass(), Games);
+    for (AActor* Game : Games)
+        if (IsValid(Game)) ICasinoDayParticipant::Execute_EndCasinoDay(Game);
     ForceEndCasinoGamesForDay();
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+        auto* User = Cast<Acasino_simulatorCharacter>(It->Get()->GetPawn());
+        if (!User) continue;
+        UObject* Target = User->GetCurrentSeatedMachine().GetObject();
+        if (auto* NPC = Cast<ANPC_Base>(Target)) NPC->ReleaseInteraction(User);
+        else if (auto* Machine = Cast<ASeatedMachineBase>(Target))
+        {
+            Machine->SetCanExitMachine(true);
+            Machine->RequestReleaseMachine(User);
+        }
+        else if (auto* Interactable = Cast<AWorldInteractableBase>(Target)) Interactable->RequestReleaseMachine(User);
+    }
     PaymentParticipants.Reset();
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
         if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))

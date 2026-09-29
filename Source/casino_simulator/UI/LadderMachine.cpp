@@ -1,4 +1,4 @@
-﻿// LadderMachine.cpp  (서버 권위 버전)
+// LadderMachine.cpp  (서버 권위 버전)
 
 #include "LadderMachine.h"
 #include "casino_simulatorCharacter.h"   // GetCurrency / TrySpendCurrency / AddCurrency
@@ -278,6 +278,7 @@ void ALadderMachine::Server_ResetRound_Implementation() { ResetRound(); }
 
 void ALadderMachine::ServerStartPlay(int32 StartRail)
 {
+	if (!IsCasinoGameplayAllowed(this)) return;
 	if (!HasAuthority()) return;
 	if (Rails < 2 || Rows < 2) return;
 	if (bIsPlaying) return;
@@ -308,6 +309,7 @@ void ALadderMachine::ServerStartPlay(int32 StartRail)
 
 void ALadderMachine::ServerReveal()
 {
+	if (!IsCasinoGameplayAllowed(this)) return;
 	if (!HasAuthority()) return;
 	if (!bIsPlaying) return;
 
@@ -410,4 +412,20 @@ void ALadderMachine::ClearBoard()
 	CurrentPlan = FLadderPlan();
 	bIsPlaying  = false;
 	Multicast_BoardCleared();   // 서버 + 전 클라 판 비움 + OnBoardCleared
+}
+
+void ALadderMachine::EndCasinoDay_Implementation()
+{
+    if (!HasAuthority()) return;
+    GetWorldTimerManager().ClearTimer(RevealTimerHandle);
+    PendingWinnings = 0;
+    StakedThisRound = 0;
+    bIsPlaying = false;
+    ResetRound();
+    if (auto* User = GetCurrentUser())
+    {
+        SetCanExitMachine(true);
+        RequestReleaseMachine(User);
+    }
+    ForceNetUpdate();
 }

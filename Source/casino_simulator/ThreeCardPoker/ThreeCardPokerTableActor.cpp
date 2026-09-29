@@ -125,6 +125,7 @@ void AThreeCardPokerTableActor::SetInteractingPlayer(Acasino_simulatorCharacter*
 
 void AThreeCardPokerTableActor::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 {
+	if (!IsCasinoGameplayAllowed(this)) return;
 	// RequestWorldInteraction/Server_RequestWorldInteraction (casino_simulatorPlayerController) only
 	// ever call Interact() with authority - either directly on a listen server/host, or via the
 	// Server RPC's Implementation - so no client-side forwarding branch is needed here.
@@ -183,6 +184,7 @@ bool AThreeCardPokerTableActor::PlacePlayGame(Acasino_simulatorCharacter* Player
 
 bool AThreeCardPokerTableActor::ExecutePlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount)
 {
+	if (!IsCasinoGameplayAllowed(this)) return false;
 	if (!Player || AnteAmount < MinAnteBet || AnteAmount + PairBetAmount > Player->GetCurrency())
 	{
 		return false;
@@ -633,6 +635,7 @@ void AThreeCardPokerTableActor::RevealDealerHandAndResolve()
 
 void AThreeCardPokerTableActor::Resolve()
 {
+	if (!IsCasinoGameplayAllowed(this)) return;
 	Acasino_simulatorCharacter* Player = InteractingPlayer.Get();
 	if (!Player || AnteBet <= 0 || PlayerCards.Num() != 3)
 	{
@@ -815,4 +818,15 @@ int32 AThreeCardPokerTableActor::GetAnteBonusMultiplier(EThreeCardPokerHandRank 
 	case EThreeCardPokerHandRank::StraightFlush: return AnteBonusPayouts.StraightFlushMultiplier;
 	default: return 0;
 	}
+}
+
+void AThreeCardPokerTableActor::EndCasinoDay_Implementation()
+{
+    if (!HasAuthority()) return;
+    ClearDealingTimer();
+    ClearDecisionWindowTimer();
+    // Do not Fold/Resolve: Pair Plus can pay even on a normal fold.
+    SetInteractingPlayer(nullptr);
+    ResetRound();
+    ForceNetUpdate();
 }

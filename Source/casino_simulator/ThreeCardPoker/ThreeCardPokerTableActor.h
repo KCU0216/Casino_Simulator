@@ -6,6 +6,7 @@
 #include "TimerManager.h"
 #include "Interaction/WorldInteractableBase.h"
 #include "ThreeCardPoker/ThreeCardPokerTypes.h"
+#include "Interaction/CasinoDayParticipant.h"
 #include "ThreeCardPokerTableActor.generated.h"
 
 class Acasino_simulatorCharacter;
@@ -31,11 +32,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FThreeCardPokerCardDealt, const FBla
  * etc.), which is what NPC_Dice::PlaceBet does too — see the comment there for why.
  */
 UCLASS()
-class CASINO_SIMULATOR_API AThreeCardPokerTableActor : public AWorldInteractableBase
+class CASINO_SIMULATOR_API AThreeCardPokerTableActor : public AWorldInteractableBase, public ICasinoDayParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual void EndCasinoDay_Implementation() override;
 	AThreeCardPokerTableActor();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

@@ -46,12 +46,16 @@ void ANPC_Dice::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
 
 void ANPC_Dice::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 {
+	if (!IsCasinoGameplayAllowed(this)) return;
 	SetInteractingPlayer(InteractingCharacter);
 	Super::Interact(InteractingCharacter);
 }
 
 void ANPC_Dice::EndInteraction()
 {
+	if (!HasAuthority()) return;
+	bBetPending = false;
+	BettingAmount = 0;
 	SetInteractingPlayer(nullptr);
 }
 
@@ -91,6 +95,7 @@ bool ANPC_Dice::PlaceBet(Acasino_simulatorCharacter* Player, int32 Select, int32
 
 bool ANPC_Dice::ExecutePlaceBet(Acasino_simulatorCharacter* Player, int32 Select, int32 Betting)
 {
+	if (!IsCasinoGameplayAllowed(this) || bBetPending) return false;
 	if (!HasAuthority() || !Player || Betting <= 0)
 	{
 		return false;
@@ -113,18 +118,22 @@ bool ANPC_Dice::ExecutePlaceBet(Acasino_simulatorCharacter* Player, int32 Select
 
 void ANPC_Dice::SetBetValue(int32 Select, int32 Betting)
 {
+	bBetPending = true;
 	SelectedValue = Select;
 	BettingAmount = Betting;
 }
 
 bool ANPC_Dice::ShowResult(int32 ResultValue)
 {
+	if (!HasAuthority() || !IsCasinoGameplayAllowed(this) || !bBetPending) return false;
+	const int32 Stake = BettingAmount;
+	bBetPending = false; // Consume once, but retain the amount for result UI.
 	bool bResult = ResultValue % 2 == SelectedValue;
 	if (bResult)
 	{
 		if (Acasino_simulatorCharacter* Player = InteractingPlayer.Get())
 		{
-			Player->AddCurrency(static_cast<float>(BettingAmount * 2));
+			Player->AddCurrency(static_cast<float>(Stake * 2));
 		}
 	}
 	else
@@ -132,4 +141,15 @@ bool ANPC_Dice::ShowResult(int32 ResultValue)
 
 	}
 	return bResult;
+}
+
+void ANPC_Dice::EndCasinoDay_Implementation()
+{
+    if (!HasAuthority()) return;
+    bBetPending = false;
+    BettingAmount = 0;
+    SelectedValue = 0;
+    if (DiceGameInstance) DiceGameInstance->SetDice(false, 0);
+    if (auto* User = InteractingPlayer.Get()) ReleaseInteraction(User);
+    EndInteraction();
 }

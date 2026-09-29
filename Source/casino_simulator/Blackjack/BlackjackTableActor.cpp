@@ -148,6 +148,7 @@ bool ABlackjackTableActor::TryClaimSeat(Acasino_simulatorCharacter* Player, int3
 
 EBlackjackSeatClaimResult ABlackjackTableActor::GetSeatClaimResult(Acasino_simulatorCharacter* Player, int32 SeatIndex) const
 {
+	if (!IsCasinoGameplayAllowed(this)) return EBlackjackSeatClaimResult::RequestFailed;
 	if (!Player)
 	{
 		return EBlackjackSeatClaimResult::InvalidPlayer;
@@ -415,6 +416,7 @@ bool ABlackjackTableActor::CanSitOut(Acasino_simulatorCharacter* Player) const
 
 bool ABlackjackTableActor::PlaceBet(Acasino_simulatorCharacter* Player, int32 Amount)
 {
+	if (!IsCasinoGameplayAllowed(this)) return false;
 	if (!HasAuthority() || !Player || Amount <= 0)
 	{
 		return false;
@@ -458,6 +460,7 @@ bool ABlackjackTableActor::PlaceBet(Acasino_simulatorCharacter* Player, int32 Am
 
 bool ABlackjackTableActor::StartRound()
 {
+	if (!IsCasinoGameplayAllowed(this)) return false;
 	if (!HasAuthority() || !HasAnyBettingPlayer()
 		|| (RoundState != EBlackjackRoundState::WaitingForPlayers && RoundState != EBlackjackRoundState::Betting))
 	{
@@ -732,6 +735,7 @@ bool ABlackjackTableActor::SkipInsurance(Acasino_simulatorCharacter* Player)
 
 void ABlackjackTableActor::ResetRound()
 {
+	if (!IsCasinoGameplayAllowed(this)) return;
 	if (!HasAuthority())
 	{
 		return;
@@ -765,6 +769,7 @@ void ABlackjackTableActor::ResetRound()
 
 bool ABlackjackTableActor::StartBettingWindow(float DurationSeconds)
 {
+	if (!IsCasinoGameplayAllowed(this)) return false;
 	if (!HasAuthority() || (RoundState != EBlackjackRoundState::WaitingForPlayers && RoundState != EBlackjackRoundState::Betting))
 	{
 		return false;
@@ -964,6 +969,7 @@ bool ABlackjackTableActor::CanOfferInsurance() const
 
 bool ABlackjackTableActor::IsPlayerTurn(Acasino_simulatorCharacter* Player) const
 {
+	if (!IsCasinoGameplayAllowed(this)) return false;
 	return RoundState == EBlackjackRoundState::PlayerTurns && GetSeatIndexForPlayer(Player) == ActiveSeatIndex;
 }
 
@@ -1271,6 +1277,7 @@ void ABlackjackTableActor::ScheduleBettingWindowTimer()
 
 void ABlackjackTableActor::RunDealerAndResolve()
 {
+	if (!IsCasinoGameplayAllowed(this)) return;
 	RoundState = EBlackjackRoundState::DealerTurn;
 	ActiveSeatIndex = INDEX_NONE;
 
@@ -1307,6 +1314,7 @@ void ABlackjackTableActor::RunDealerAndResolve()
 
 void ABlackjackTableActor::ResolveSeats()
 {
+	if (!IsCasinoGameplayAllowed(this)) return;
 	RoundState = EBlackjackRoundState::Resolving;
 	const int32 DealerValue = GetHandBestValue(ServerDealerHand);
 	const bool bDealerBust = IsHandBust(ServerDealerHand);
@@ -1525,4 +1533,41 @@ bool ABlackjackTableActor::IsSoft17(const FBlackjackHand& Hand) const
 	}
 
 	return Total == 17 && AceCount > 0;
+}
+
+void ABlackjackTableActor::EndCasinoDay_Implementation()
+{
+    if (!HasAuthority()) return;
+    ClearBettingWindowTimer();
+    bBettingWindowOpen = false;
+    BettingWindowEndsAtServerTime = 0.0f;
+    BettingWindowMaxEndsAtServerTime = 0.0f;
+    TArray<Acasino_simulatorCharacter*> Users;
+    for (FBlackjackSeatState& Seat : Seats)
+    {
+        if (auto* User = Cast<Acasino_simulatorCharacter>(Seat.Occupant))
+        {
+            Users.AddUnique(User);
+            User->OnDestroyed.RemoveDynamic(this, &ABlackjackTableActor::HandleOccupantDestroyed);
+        }
+        // Stakes were already charged. Discard unsettled hands without awarding or charging again.
+        const int32 Index = Seat.SeatIndex;
+        Seat = FBlackjackSeatState();
+        Seat.SeatIndex = Index;
+    }
+    ServerDealerHand = FBlackjackHand();
+    DealerHand = FBlackjackHand();
+    ActiveSeatIndex = INDEX_NONE;
+    RoundState = EBlackjackRoundState::WaitingForPlayers;
+    for (auto* User : Users)
+        if (auto* Component = User->GetBlackjackPlayerComponent())
+            if (Component->CurrentBlackjackTable == this) Component->ClearBlackjackSeatMode();
+    for (const auto& Seat : Seats) BroadcastSeat(Seat.SeatIndex);
+    OnTableChanged.Broadcast();
+    ForceNetUpdate();
+}
+
+void ABlackjackTableActor::BeginCasinoDay_Implementation()
+{
+    if (HasAuthority()) StartBettingWindow();
 }

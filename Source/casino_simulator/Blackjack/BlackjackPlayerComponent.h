@@ -178,6 +178,7 @@ protected:
 	void OnRep_BlackjackSeatMode();
 
 private:
+	friend class ABlackjackTableActor;
 	UPROPERTY()
 	TObjectPtr<ABlackjackTableActor> CurrentBlackjackTable;
 

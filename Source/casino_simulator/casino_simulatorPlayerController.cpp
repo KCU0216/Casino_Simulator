@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 
 #include "casino_simulatorPlayerController.h"
@@ -980,6 +980,9 @@ void Acasino_simulatorPlayerController::ClientDailyPaymentResult_Implementation(
 void Acasino_simulatorPlayerController::ClientPrepareDailyPayment_Implementation(FRotator Facing)
 {
     bDailyPaymentControlLocked = true;
+    OnCloseGameplayUIForPayment();
+    bInteractionUIOpen = false;
+    bWorldInteractionTargetFocused = false;
     ResetIgnoreLookInput();
     ResetIgnoreMoveInput();
     SetIgnoreLookInput(true);
