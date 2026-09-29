@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 
 #include "casino_simulatorPlayerController.h"
@@ -318,37 +318,71 @@ void Acasino_simulatorPlayerController::OnCurrencyChanged(const FOnAttributeChan
 
 void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 {
+	UE_LOG(Logcasino_simulator, Warning,
+		TEXT("[InteractDebug] InteractWithCurrentTarget Controller=%s InteractionUI=%d WorldTargetFocused=%d PromptSuppressed=%d Pawn=%s"),
+		*GetNameSafe(this),
+		bInteractionUIOpen,
+		bWorldInteractionTargetFocused,
+		bInteractionPromptSuppressed,
+		*GetNameSafe(GetPawn()));
+
 	if (bInteractionUIOpen)
 	{
+		UE_LOG(Logcasino_simulator, Warning,
+			TEXT("[InteractDebug] PlayerController blocked interaction because InteractionUI is open"));
 		return;
 	}
 
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter)
 	{
+		UE_LOG(Logcasino_simulator, Warning,
+			TEXT("[InteractDebug] PlayerController has no casino character pawn"));
 		return;
 	}
 
 	if (TryDropCarriedOre(PlayerCharacter))
 	{
+		UE_LOG(Logcasino_simulator, Warning,
+			TEXT("[InteractDebug] E consumed by carried ore drop"));
 		return;
 	}
 
 	if (TryReleaseCarriedCart(PlayerCharacter))
 	{
+		UE_LOG(Logcasino_simulator, Warning,
+			TEXT("[InteractDebug] E consumed by carried cart release"));
 		return;
 	}
 
 	if (UWorldInteractionDetectorComponent* Detector = PlayerCharacter->GetWorldInteractionDetector())
 	{
 		TScriptInterface<IWorldInteractable> FocusedTarget = Detector->GetFocusedTarget();
-		if (!FocusedTarget.GetObject() || !FocusedTarget->CanInteract(PlayerCharacter))
+		UObject* FocusedObject = FocusedTarget.GetObject();
+		const bool bCanInteract = FocusedObject && FocusedTarget->CanInteract(PlayerCharacter);
+		UE_LOG(Logcasino_simulator, Warning,
+			TEXT("[InteractDebug] Detector=%s FocusedTarget=%s CanInteract=%d"),
+			*GetNameSafe(Detector),
+			*GetNameSafe(FocusedObject),
+			bCanInteract);
+
+		if (!FocusedObject || !bCanInteract)
 		{
+			UE_LOG(Logcasino_simulator, Warning,
+				TEXT("[InteractDebug] Interaction stopped because there is no valid interactable focused target"));
 			return;
 		}
 
+		UE_LOG(Logcasino_simulator, Warning,
+			TEXT("[InteractDebug] Dispatching world interaction to %s Authority=%d"),
+			*GetNameSafe(FocusedObject),
+			HasAuthority());
 		RequestWorldInteraction(FocusedTarget);
+		return;
 	}
+
+	UE_LOG(Logcasino_simulator, Warning,
+		TEXT("[InteractDebug] Character has no WorldInteractionDetector component"));
 }
 
 bool Acasino_simulatorPlayerController::TryDropCarriedOre(Acasino_simulatorCharacter* PlayerCharacter)
@@ -434,9 +468,8 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface
 	// comment. CanInteract/Interact are plain virtual, so they're called directly below.
 	IWorldInteractable::Execute_OnLocalInteract(TargetObject, PlayerCharacter);
 	CloseInteraction();
-
-	if (AWorldInteractableBase* WorldTarget = Cast<AWorldInteractableBase>(TargetObject);
-		WorldTarget && WorldTarget->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
+	AWorldInteractableBase* WorldTarget = Cast<AWorldInteractableBase>(TargetObject);
+	if (WorldTarget && WorldTarget->GetInteractionExecutionType() == EWorldInteractionExecutionType::LocalPredicted)
 	{
 		WorldTarget->BeginLocalInteraction(PlayerCharacter);
 		return;

@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -52,7 +52,7 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="0.1"))
     float ResultDurationSeconds = 5.0f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop")
-    bool bAutoStartDayLoop = false;
+    bool bAutoStartDayLoop = true;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop")
     TArray<int32> DailyPayments = {100, 200, 350, 500, 750};
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="1"))
