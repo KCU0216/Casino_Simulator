@@ -1058,3 +1058,41 @@ void Acasino_simulatorPlayerController::ClientPrepareDayIntro_Implementation(FRo
     SetControlRotation(Facing);
     if (GetPawn()) SetViewTargetWithBlend(GetPawn(), 0.0f);
 }
+
+
+
+
+
+void Acasino_simulatorPlayerController::BeginPoliceArrival()
+{
+	if (!HasAuthority() || bPoliceCinematicActive)
+	{
+		return;
+	}
+
+	bPoliceCinematicActive = true;
+	ClientBeginPoliceArrival();
+}
+
+void Acasino_simulatorPlayerController::EndPoliceCinematic()
+{
+	if (!HasAuthority() || !bPoliceCinematicActive)
+	{
+		return;
+	}
+
+	bPoliceCinematicActive = false;
+	ClientEndPoliceCinematic();
+}
+
+void Acasino_simulatorPlayerController::ClientBeginPoliceArrival_Implementation()
+{
+	bPoliceCinematicActive = true;
+	OnPoliceArrivalRequested();
+}
+
+void Acasino_simulatorPlayerController::ClientEndPoliceCinematic_Implementation()
+{
+	bPoliceCinematicActive = false;
+	OnPoliceCinematicStopped();
+}

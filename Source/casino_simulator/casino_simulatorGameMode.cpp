@@ -1,6 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 #include "casino_simulatorGameMode.h"
-
+#include "Police/PoliceEncounterComponent.h"
 #include "Enemy/ThiefCharacter.h"
 #include "casino_simulatorPlayerState.h"
 #include "GameFramework/Pawn.h"
@@ -19,6 +19,8 @@ Acasino_simulatorGameMode::Acasino_simulatorGameMode()
 	PlayerStateClass = Acasino_simulatorPlayerState::StaticClass();
     GameStateClass = ACasinoLoopGameState::StaticClass();
     bUseSeamlessTravel = true;
+
+    PoliceEncounter = CreateDefaultSubobject<UPoliceEncounterComponent>(TEXT("PoliceEncounter"));
 }
 
 void Acasino_simulatorGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
@@ -167,6 +169,12 @@ void Acasino_simulatorGameMode::ActivateCasinoDay()
     UGameplayStatics::GetAllActorsWithInterface(this, UCasinoDayParticipant::StaticClass(), Games);
     for (AActor* Game : Games)
         if (IsValid(Game)) ICasinoDayParticipant::Execute_BeginCasinoDay(Game);
+
+
+    if (IsValid(PoliceEncounter.Get()))
+    {
+        PoliceEncounter->BeginPoliceDay(GS->GetRemainingDaySeconds());
+    }
 }
 
 bool Acasino_simulatorGameMode::MovePlayersToCentralSpawns(bool bForPayment)
@@ -209,6 +217,14 @@ void Acasino_simulatorGameMode::BeginPaymentPhase()
     Status.Phase = ECasinoLoopPhase::Settling;
     Status.DayEndServerTime = 0.0;
     GS->SetLoopStatus(Status);
+
+
+    if (IsValid(PoliceEncounter.Get()))
+    {
+        PoliceEncounter->EndPoliceDay();
+    }
+
+
     // This event must finish synchronously before teleporting players.
     TArray<AActor*> Games;
     UGameplayStatics::GetAllActorsWithInterface(this, UCasinoDayParticipant::StaticClass(), Games);
@@ -419,3 +435,4 @@ bool Acasino_simulatorGameMode::RestartCasinoRun(APlayerController* Requester)
     bRestartTravelPending = GetWorld()->ServerTravel(URL, true);
     return bRestartTravelPending;
 }
+

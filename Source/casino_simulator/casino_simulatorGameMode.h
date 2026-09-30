@@ -12,8 +12,7 @@
 
 class APawn;
 class Acasino_simulatorCharacter;
-
-
+class UPoliceEncounterComponent;
 /**
  *  Simple GameMode for a first person game
  */
@@ -78,6 +77,9 @@ public:
     UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")
     void ForceEndCasinoGamesForDay();
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Casino | Police")
+    TObjectPtr<UPoliceEncounterComponent> PoliceEncounter;
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type Reason) override;
@@ -102,7 +104,6 @@ private:
     void FinishPaymentPhase();
     void AdvanceCasinoDay();
     bool MovePlayersToCentralSpawns(bool bForPayment);
-
 };
 
 

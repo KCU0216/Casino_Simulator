@@ -14,6 +14,12 @@ class CASINO_SIMULATOR_API APoliceCharacter : public AEnemyBaseCharacter
 
 public:
 	APoliceCharacter();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Presentation")
+	void OnPoliceArrivalStarted();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Presentation")
+	void OnPoliceEncounterStopped();
 };
 
 

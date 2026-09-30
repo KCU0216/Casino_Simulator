@@ -65,6 +65,22 @@ public:
     void ServerRestartCasinoRun();
     virtual void PlayerTick(float DeltaTime) override;
     virtual void PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel) override;
+
+
+	void BeginPoliceArrival();
+	void EndPoliceCinematic();
+
+	UFUNCTION(BlueprintPure, Category = "Police|Cinematic")
+	bool IsPoliceCinematicActive() const
+	{
+		return bPoliceCinematicActive;
+	}
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Cinematic")
+	void OnPoliceArrivalRequested();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Cinematic")
+	void OnPoliceCinematicStopped();
 private:
     UPROPERTY() TArray<TObjectPtr<UUserWidget>> ManagedInteractions;
     UPROPERTY() TObjectPtr<ACasinoLoopGameState> UIObservedGameState;
@@ -78,6 +94,14 @@ private:
     TWeakObjectPtr<UWorld> UIObservedWorld;
     TWeakObjectPtr<UWorld> UITravelOrigin;
     bool bUITravelPending = false;
+
+	bool bPoliceCinematicActive = false;
+
+	UFUNCTION(Client, Reliable)
+	void ClientBeginPoliceArrival();
+
+	UFUNCTION(Client, Reliable)
+	void ClientEndPoliceCinematic();
 public:
 
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Shop")
