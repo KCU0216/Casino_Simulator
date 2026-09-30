@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "NPC_Base.h"
 #include "Components/SphereComponent.h"
@@ -10,7 +10,8 @@
 #include "casino_simulatorAttributeSet.h"
 #include "casino_simulator.h"
 #include "Interaction/WorldInteractionCandidateComponent.h"
-#include "Interaction/MachineInteractionComponent.h"
+#include "Interaction/InteractionSessionComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 ANPC_Base::ANPC_Base()
 {
@@ -21,10 +22,7 @@ ANPC_Base::ANPC_Base()
 	InteractionSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 
 	InteractionCandidateComponent = CreateDefaultSubobject<UWorldInteractionCandidateComponent>(TEXT("InteractionCandidateComponent"));
-
-	MachineInteractionComponent = CreateDefaultSubobject<UMachineInteractionComponent>(TEXT("MachineInteractionComponent"));
-	MachineInteractionComponent->OnRequestUseMachine.BindUObject(this, &ANPC_Base::HandleMachineRequestUseMachine);
-	MachineInteractionComponent->OnUseStarted.BindUObject(this, &ANPC_Base::HandleMachineUseStartedMulticast);
+	InteractionSessionComponent = CreateDefaultSubobject<UInteractionSessionComponent>(TEXT("InteractionSessionComponent"));
 
 	// Create the ability system component. Attributes/abilities/effects are replicated
 	// via the ASC itself, so the actor doesn't need to replicate it separately.
@@ -66,6 +64,18 @@ void ANPC_Base::BeginPlay()
 			GrantStartupAbilities();
 		}
 	}
+
+	if (InteractionSessionComponent)
+	{
+		InteractionSessionComponent->OnUserJoined.AddUObject(
+			this,
+			&ANPC_Base::HandleSessionUserJoined);
+
+		InteractionSessionComponent->OnUserLeft.AddUObject(
+			this,
+			&ANPC_Base::HandleSessionUserLeft);
+	}
+
 }
 
 void ANPC_Base::GrantStartupAbilities()
@@ -76,43 +86,22 @@ void ANPC_Base::GrantStartupAbilities()
 	}
 }
 
-void ANPC_Base::HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)
-{
-}
-
-void ANPC_Base::HandleMachineUseStartedMulticast(Acasino_simulatorCharacter* RequestingCharacter)
-{
-	OverlappingPlayer = RequestingCharacter;
-	if (RequestingCharacter)
-	{
-		RequestingCharacter->SetCurrentSeatedMachine(this);
-	}
-
-	if (OverlappingPlayer && OverlappingPlayer->IsLocallyControlled())
-	{
-		BP_OnInteract(OverlappingPlayer);
-	}
-
-	HandleMachineUseStarted(RequestingCharacter);
-}
-
 void ANPC_Base::HandleMachineUseStarted(Acasino_simulatorCharacter* Character)
 {
 }
 
-void ANPC_Base::ReleaseInteraction(Acasino_simulatorCharacter* Character)
+void ANPC_Base::ReleaseInteraction(
+	Acasino_simulatorCharacter* Character)
 {
- if (HasAuthority() && IsValid(Character) && Character->GetCurrentSeatedMachine().GetObject() == this)
-  Multicast_MachineReleased(Character);
-}
+	if (!HasAuthority() ||
+		!IsValid(Character) ||
+		!IsValid(InteractionSessionComponent) ||
+		!InteractionSessionComponent->ContainsUser(Character))
+	{
+		return;
+	}
 
-void ANPC_Base::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
-{
- if (!IsValid(ReleasingCharacter) || ReleasingCharacter->GetCurrentSeatedMachine().GetObject() != this) return;
- if (OverlappingPlayer == ReleasingCharacter) OverlappingPlayer = nullptr;
- ReleasingCharacter->ClearCurrentSeatedMachine(this);
- HandleMachineUseReleased(ReleasingCharacter);
- UMachineInteractionComponent::RestoreMovementAfterUse(ReleasingCharacter);
+	InteractionSessionComponent->TryLeave(Character);
 }
 
 void ANPC_Base::HandleMachineUseReleased(Acasino_simulatorCharacter* Character)
@@ -148,29 +137,41 @@ void ANPC_Base::SetIsAnimPlay(bool Value)
 
 bool ANPC_Base::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
 {
-	if (GetNPCType() == ENPCType::Shop)
+
+	USphereComponent* Sphere = GetInteractionSphere();
+
+	if (!IsValid(InteractingCharacter) ||
+		!IsValid(Sphere) ||
+		!IsValid(InteractionSessionComponent))
 	{
-		return true;
+		return false;
 	}
-	else
-	{
-		return OverlappingPlayer == nullptr && IsAnimPlay == false;
-	}
+
+	const float MaxDistance =
+		Sphere->GetScaledSphereRadius() + 150.0f;
+
+	const float DistanceSquared = FVector::DistSquared(
+		InteractingCharacter->GetActorLocation(),
+		GetActorLocation());
+	const bool bInteractionStateAllowed =
+		GetNPCType() == ENPCType::Shop || !IsAnimPlay;
+
+	return DistanceSquared <= FMath::Square(MaxDistance) &&
+		bInteractionStateAllowed &&
+		InteractionSessionComponent->HasCapacity();
 }
 
-void ANPC_Base::Interact(Acasino_simulatorCharacter* InteractingCharacter)
+void ANPC_Base::Interact(
+	Acasino_simulatorCharacter* InteractingCharacter)
 {
-	// Interact() is now called both locally (by whichever machine the interacting player is on, for
-	// immediate UI/cosmetic feedback) and on the server via RPC (to update authoritative NPC state,
-	// e.g. NPC_Dice's InteractingPlayer). BP_OnInteract is the cosmetic half, so it should only ever
-	// actually fire on the one machine where InteractingCharacter is locally controlled - otherwise a
-	// listen server would also run it for the host when a remote client is the one who interacted.
-	if (!InteractingCharacter)
+	if (!HasAuthority() ||
+		!IsValid(InteractingCharacter) ||
+		!IsValid(InteractionSessionComponent))
 	{
 		return;
 	}
 
-	MachineInteractionComponent->RequestUseMachine(InteractingCharacter);
+	InteractionSessionComponent->TryJoin(InteractingCharacter);
 }
 
 void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
@@ -225,10 +226,7 @@ void ANPC_Base::OnInteractionSphereBeginOverlap(UPrimitiveComponent* OverlappedC
 		Players.Add(PlayerCharacter);
 	}
 
-	if (NPCType == ENPCType::Shop || OverlappingPlayer == nullptr)
-	{
-		InteractionCandidateComponent->RegisterOwnerAsCandidate(PlayerCharacter);
-	}
+	InteractionCandidateComponent->RegisterOwnerAsCandidate(PlayerCharacter);
 }
 
 void ANPC_Base::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
@@ -245,8 +243,55 @@ void ANPC_Base::OnInteractionSphereEndOverlap(UPrimitiveComponent* OverlappedCom
 		Players.Remove(PlayerCharacter);
 	}
 
-	if (OverlappingPlayer != nullptr && OverlappingPlayer == PlayerCharacter)
+	InteractionCandidateComponent->UnregisterOwnerAsCandidate(PlayerCharacter);
+}
+
+void ANPC_Base::HandleSessionUserJoined(
+	Acasino_simulatorCharacter* JoinedUser)
+{
+	if (!IsValid(JoinedUser))
 	{
-		InteractionCandidateComponent->UnregisterOwnerAsCandidate(PlayerCharacter);
+		return;
 	}
+
+	// 기존 코드 호환용 상태
+	OverlappingPlayer = JoinedUser;
+	JoinedUser->SetCurrentSeatedMachine(this);
+
+	if (JoinedUser->IsLocallyControlled())
+	{
+		BP_OnInteract(JoinedUser);
+	}
+
+	HandleMachineUseStarted(JoinedUser);
+
+	if (JoinedUser->HasAuthority())
+	{
+		if (UCharacterMovementComponent* Movement =
+			JoinedUser->GetCharacterMovement())
+		{
+			Movement->DisableMovement();
+		}
+	}
+}
+
+void ANPC_Base::HandleSessionUserLeft(
+	Acasino_simulatorCharacter* LeftUser)
+{
+	if (!IsValid(LeftUser) ||
+		LeftUser->GetCurrentSeatedMachine().GetObject() != this)
+	{
+		return;
+	}
+
+	if (OverlappingPlayer == LeftUser)
+	{
+		const TArray<TObjectPtr<Acasino_simulatorCharacter>>& Users =
+			InteractionSessionComponent->GetUsers();
+		OverlappingPlayer = Users.IsEmpty() ? nullptr : Users[0].Get();
+	}
+
+	LeftUser->ClearCurrentSeatedMachine(this);
+	HandleMachineUseReleased(LeftUser);
+	UInteractionSessionComponent::RestoreMovementAfterUse(LeftUser);
 }

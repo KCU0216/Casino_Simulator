@@ -6,7 +6,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Interaction/MachineInteractionComponent.h"
+#include "Interaction/InteractionSessionComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
 
@@ -545,7 +545,7 @@ void UBlackjackPlayerComponent::ClearMovementLock()
 			Character, FGameplayTag::RequestGameplayTag(FName("State.Walk")), EventData);
 	}
 
-	UMachineInteractionComponent::RestoreMovementAfterUse(Character);
+	UInteractionSessionComponent::RestoreMovementAfterUse(Character);
 
 	if (AController* Controller = Character->GetController())
 	{

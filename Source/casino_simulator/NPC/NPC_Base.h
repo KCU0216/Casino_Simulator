@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -17,7 +17,7 @@ class UAbilitySystemComponent;
 class Ucasino_simulatorAttributeSet;
 class UGameplayAbility;
 class UWorldInteractionCandidateComponent;
-class UMachineInteractionComponent;
+class UInteractionSessionComponent;
 
 /** Identifies what kind of NPC this is (e.g. which minigame/interaction it hosts). */
 UENUM(BlueprintType)
@@ -69,7 +69,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category="Abilities", meta = (AllowPrivateAccess = "true"))
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 
-	/** Player character currently overlapping the interaction sphere (null when none is). Set/cleared in OnInteractionSphereBeginOverlap/EndOverlap. */
+	/** Legacy mirror of one active interaction user. Session membership is authoritative. */
 	UPROPERTY(BlueprintReadOnly, Category="Interaction", meta = (AllowPrivateAccess = "true"))
 	Acasino_simulatorCharacter* OverlappingPlayer = nullptr;
 
@@ -83,7 +83,7 @@ protected:
 	TObjectPtr<UWorldInteractionCandidateComponent> InteractionCandidateComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UMachineInteractionComponent> MachineInteractionComponent;
+	TObjectPtr<UInteractionSessionComponent> InteractionSessionComponent;
 
 public:
 
@@ -123,7 +123,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Abilities")
 	FGameplayAbilitySpecHandle GrantAbility(TSubclassOf<UGameplayAbility> AbilityClass, int32 Level = 1);
 
-	/** Returns the player character currently overlapping the interaction sphere, or null if none is. */
+	/** Returns one active interaction user for legacy callers, or null if the session is empty. */
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	Acasino_simulatorCharacter* GetOverlappingPlayer() const { return OverlappingPlayer; }
 
@@ -148,17 +148,10 @@ protected:
 	void GrantStartupAbilities();
 
 protected:
-	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter);
 	virtual void HandleMachineUseStarted(Acasino_simulatorCharacter* Character);
-
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_MachineReleased(Acasino_simulatorCharacter* ReleasingCharacter);
 	virtual void HandleMachineUseReleased(Acasino_simulatorCharacter* Character);
 
 private:
-	/** Bound to MachineInteractionComponent's OnUseStarted - mirrors the old
-	 * Multicast_MachineUseStarted_Implementation body (sets OverlappingPlayer, hands this NPC to
-	 * RequestingCharacter, fires BP_OnInteract for the locally controlled interactor, then calls the
-	 * Handle hook). */
-	void HandleMachineUseStartedMulticast(Acasino_simulatorCharacter* RequestingCharacter);
+	void HandleSessionUserJoined(Acasino_simulatorCharacter* JoinedUser);
+	void HandleSessionUserLeft(Acasino_simulatorCharacter* LeftUser);
 };

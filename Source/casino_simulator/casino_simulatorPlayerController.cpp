@@ -2,9 +2,9 @@
 
 
 #include "casino_simulatorPlayerController.h"
-#include "UI/CasinoUIManagerComponent.h"
-#include "Interaction/MachineInteractionComponent.h"
+#include "Interaction/InteractionSessionComponent.h"
 #include "Interaction/CasinoDayParticipant.h"
+#include "UI/CasinoUIManagerComponent.h"
 #include "Economy/CasinoShopComponent.h"
 #include "Online/CasinoLobbyGameMode.h"
 #include "Online/CasinoOnlineSubsystem.h"
@@ -543,7 +543,7 @@ void Acasino_simulatorPlayerController::EnterInteractionUIMode(AActor* CameraTar
 void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 {
     if (auto* InteractionCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
-        InteractionCharacter && !UMachineInteractionComponent::CanRestoreMovement(InteractionCharacter))
+        InteractionCharacter && !UInteractionSessionComponent::CanRestoreMovement(InteractionCharacter))
     {
         SetIsInteractionUIOpen(false);
         SetLocalPawnMeshesHiddenForInteraction(false);
@@ -956,7 +956,7 @@ void Acasino_simulatorPlayerController::Client_CompleteInteractionClose_Implemen
     UObject* Current = InteractionCharacter->GetCurrentSeatedMachine().GetObject();
     if (Current && Current != ExpectedTarget) return;
     if (Current) InteractionCharacter->ClearCurrentSeatedMachine(Cast<IWorldInteractable>(ExpectedTarget));
-    UMachineInteractionComponent::RestoreMovementAfterUse(InteractionCharacter);
+    UInteractionSessionComponent::RestoreMovementAfterUse(InteractionCharacter);
     ExitInteractionUIMode();
 }
 

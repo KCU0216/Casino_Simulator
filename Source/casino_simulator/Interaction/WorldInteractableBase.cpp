@@ -2,8 +2,8 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
+#include "Interaction/InteractionSessionComponent.h"
 #include "Interaction/WorldInteractionCandidateComponent.h"
-#include "Interaction/MachineInteractionComponent.h"
 #include "casino_simulatorCharacter.h"
 #include "casino_simulatorPlayerController.h"
 
@@ -22,10 +22,6 @@ AWorldInteractableBase::AWorldInteractableBase()
 	InteractionPromptText = FText::FromString(TEXT("E Use"));
 
 	InteractionCandidateComponent = CreateDefaultSubobject<UWorldInteractionCandidateComponent>(TEXT("InteractionCandidateComponent"));
-
-	MachineInteractionComponent = CreateDefaultSubobject<UMachineInteractionComponent>(TEXT("MachineInteractionComponent"));
-	MachineInteractionComponent->OnRequestUseMachine.BindUObject(this, &AWorldInteractableBase::HandleMachineRequestUseMachine);
-	MachineInteractionComponent->OnUseStarted.BindUObject(this, &AWorldInteractableBase::HandleMachineUseStartedMulticast);
 }
 
 void AWorldInteractableBase::BeginPlay()
@@ -41,7 +37,6 @@ void AWorldInteractableBase::BeginPlay()
 
 void AWorldInteractableBase::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	MachineInteractionComponent->RequestUseMachine(InteractingCharacter);
 }
 
 void AWorldInteractableBase::BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter)
@@ -178,10 +173,6 @@ bool AWorldInteractableBase::HandleMachineReleaseMachine(Acasino_simulatorCharac
         RequestingCharacter->GetCurrentSeatedMachine().GetObject() == this;
 }
 
-void AWorldInteractableBase::HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)
-{
-}
-
 void AWorldInteractableBase::HandleMachineUseStarted(Acasino_simulatorCharacter* Character)
 {
 }
@@ -190,7 +181,7 @@ void AWorldInteractableBase::HandleMachineUseReleased(Acasino_simulatorCharacter
 {
     // All world interactions restore movement; seated subclasses add their camera/animation cleanup.
     // The shared helper keeps day-intro/payment/result movement locked.
-    UMachineInteractionComponent::RestoreMovementAfterUse(Character);
+    UInteractionSessionComponent::RestoreMovementAfterUse(Character);
 }
 
 void AWorldInteractableBase::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
@@ -204,13 +195,3 @@ void AWorldInteractableBase::Multicast_MachineReleased_Implementation(Acasino_si
     HandleMachineUseReleased(ReleasingCharacter);
 }
 
-void AWorldInteractableBase::HandleMachineUseStartedMulticast(Acasino_simulatorCharacter* RequestingCharacter)
-{
-	InteractingPlayer = RequestingCharacter;
-	if (RequestingCharacter)
-	{
-		RequestingCharacter->SetCurrentSeatedMachine(this);
-	}
-
-	HandleMachineUseStarted(RequestingCharacter);
-}

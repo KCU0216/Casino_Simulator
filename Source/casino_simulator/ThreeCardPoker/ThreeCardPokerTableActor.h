@@ -10,6 +10,7 @@
 #include "ThreeCardPokerTableActor.generated.h"
 
 class Acasino_simulatorCharacter;
+class UInteractionSessionComponent;
 class USceneComponent;
 class UStaticMeshComponent;
 class UTextRenderComponent;
@@ -46,6 +47,7 @@ public:
 	/** Server-only entry point (RequestWorldInteraction/Server_RequestWorldInteraction already
 	 * guarantee that). Assigns InteractingCharacter as this table's player via SetInteractingPlayer. */
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
+	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
 
 	/** Runs on the interacting player's own machine before the server call lands (see
 	 * IWorldInteractable::OnLocalInteract). Just forwards to BP_OnLocalThreeCardPokerInteract so
@@ -136,6 +138,9 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="ThreeCardPoker|Interaction")
+	TObjectPtr<UInteractionSessionComponent> InteractionSessionComponent;
 
 	/** Kept as a plain child of the inherited SceneRoot (AWorldInteractableBase) purely so it still
 	 * exists by name: BP_ThreeCardPokerTable has BP-added card visual components (PlayerCard0-2,
@@ -238,6 +243,9 @@ protected:
     virtual bool HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
 
 private:
+	void HandleSessionUserJoined(Acasino_simulatorCharacter* JoinedUser);
+	void HandleSessionUserLeft(Acasino_simulatorCharacter* LeftUser);
+
 	void BuildAndShuffleDeck();
 	FBlackjackCard DrawCard();
 	void DealCardToPlayer();

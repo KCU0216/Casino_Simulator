@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "ThreeCardPoker/ThreeCardPokerTableActor.h"
 
@@ -7,6 +7,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "GameFramework/GameStateBase.h"
+#include "Interaction/InteractionSessionComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
 #include "casino_simulatorPlayerController.h"
@@ -18,6 +19,7 @@ AThreeCardPokerTableActor::AThreeCardPokerTableActor()
 	SetReplicateMovement(false);
 
 	InteractionPromptText = FText::FromString(TEXT("E Play"));
+	InteractionSessionComponent = CreateDefaultSubobject<UInteractionSessionComponent>(TEXT("InteractionSessionComponent"));
 
 	// Tighter than AWorldInteractableBase's 500cm default (sized for a big machine) - closer to the
 	// old dealer NPC's 150cm InteractionSphere (ANPC_Base), since a player should be standing at the
@@ -60,6 +62,16 @@ void AThreeCardPokerTableActor::BeginPlay()
 	// Captured before any interaction can retarget Owner, so SetInteractingPlayer(nullptr) has
 	// something to restore (same as ANPC_Dice::DefaultOwner).
 	DefaultOwner = GetOwner();
+
+	if (InteractionSessionComponent)
+	{
+		InteractionSessionComponent->OnUserJoined.AddUObject(
+			this,
+			&AThreeCardPokerTableActor::HandleSessionUserJoined);
+		InteractionSessionComponent->OnUserLeft.AddUObject(
+			this,
+			&AThreeCardPokerTableActor::HandleSessionUserLeft);
+	}
 
 	if (HasAuthority() && Deck.IsEmpty())
 	{
@@ -125,17 +137,41 @@ void AThreeCardPokerTableActor::SetInteractingPlayer(Acasino_simulatorCharacter*
 
 void AThreeCardPokerTableActor::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 {
-	if (!IsCasinoGameplayAllowed(this)) return;
-	// RequestWorldInteraction/Server_RequestWorldInteraction (casino_simulatorPlayerController) only
-	// ever call Interact() with authority - either directly on a listen server/host, or via the
-	// Server RPC's Implementation - so no client-side forwarding branch is needed here.
-	Super::Interact(InteractingCharacter);
-	if (!HasAuthority() || !InteractingCharacter)
+	if (!IsCasinoGameplayAllowed(this) ||
+		!HasAuthority() ||
+		!IsValid(InteractingCharacter) ||
+		!IsValid(InteractionSessionComponent))
 	{
 		return;
 	}
-	//InteractingCharacter->GetMovementComponent()
-	SetInteractingPlayer(InteractingCharacter);
+
+	// RequestWorldInteraction/Server_RequestWorldInteraction (casino_simulatorPlayerController) only
+	// ever call Interact() with authority - either directly on a listen server/host, or via the
+	// Server RPC's Implementation - so no client-side forwarding branch is needed here.
+	InteractionSessionComponent->TryJoin(InteractingCharacter);
+}
+
+bool AThreeCardPokerTableActor::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
+{
+	return Super::CanInteract(InteractingCharacter) &&
+		IsValid(InteractionSessionComponent) &&
+		InteractionSessionComponent->HasCapacity();
+}
+
+void AThreeCardPokerTableActor::HandleSessionUserJoined(Acasino_simulatorCharacter* JoinedUser)
+{
+	if (HasAuthority() && IsValid(JoinedUser))
+	{
+		SetInteractingPlayer(JoinedUser);
+	}
+}
+
+void AThreeCardPokerTableActor::HandleSessionUserLeft(Acasino_simulatorCharacter* LeftUser)
+{
+	if (HasAuthority() && InteractingPlayer.Get() == LeftUser)
+	{
+		SetInteractingPlayer(nullptr);
+	}
 }
 
 void AThreeCardPokerTableActor::OnLocalInteract_Implementation(Acasino_simulatorCharacter* InteractingCharacter)
@@ -317,13 +353,15 @@ bool AThreeCardPokerTableActor::LeaveTable(Acasino_simulatorCharacter* Player)
 
 bool AThreeCardPokerTableActor::ExecuteLeaveTable(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || !Player || InteractingPlayer.Get() != Player)
+	if (!HasAuthority() ||
+		!IsValid(Player) ||
+		!IsValid(InteractionSessionComponent) ||
+		!InteractionSessionComponent->ContainsUser(Player))
 	{
 		return false;
 	}
 
-	SetInteractingPlayer(nullptr);
-	return true;
+	return InteractionSessionComponent->TryLeave(Player);
 }
 
 void AThreeCardPokerTableActor::ResetRound()
@@ -822,13 +860,19 @@ int32 AThreeCardPokerTableActor::GetAnteBonusMultiplier(EThreeCardPokerHandRank 
 
 void AThreeCardPokerTableActor::EndCasinoDay_Implementation()
 {
-    if (!HasAuthority()) return;
-    ClearDealingTimer();
-    ClearDecisionWindowTimer();
-    // Do not Fold/Resolve: Pair Plus can pay even on a normal fold.
-    SetInteractingPlayer(nullptr);
-    ResetRound();
-    ForceNetUpdate();
+	if (!HasAuthority()) return;
+	ClearDealingTimer();
+	ClearDecisionWindowTimer();
+	// Do not Fold/Resolve: Pair Plus can pay even on a normal fold.
+	Acasino_simulatorCharacter* CurrentPlayer = InteractingPlayer.Get();
+	if (!InteractionSessionComponent ||
+		!CurrentPlayer ||
+		!InteractionSessionComponent->TryLeave(CurrentPlayer))
+	{
+		SetInteractingPlayer(nullptr);
+	}
+	ResetRound();
+	ForceNetUpdate();
 }
 
 bool AThreeCardPokerTableActor::HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)

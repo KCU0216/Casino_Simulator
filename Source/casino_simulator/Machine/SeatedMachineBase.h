@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Interaction/WorldInteractableBase.h"
@@ -6,6 +6,7 @@
 
 class Acasino_simulatorCharacter;
 class UCameraComponent;
+class UInteractionSessionComponent;
 class UStaticMeshComponent;
 
 UENUM(BlueprintType)
@@ -30,13 +31,11 @@ public:
 	ASeatedMachineBase();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
-
 	virtual void Interact(Acasino_simulatorCharacter* RequestingCharacter) override;
+	virtual bool CanInteract(Acasino_simulatorCharacter* RequestingCharacter) const override;
 
-	
-	/*UFUNCTION(BlueprintCallable, Category = "Machine|Interaction")
-	void RequestReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter);*/
+	virtual void RequestReleaseMachine(
+		Acasino_simulatorCharacter* RequestingCharacter) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Machine|Interaction")
 	void HandleMachinePrimaryInput(Acasino_simulatorCharacter* RequestingCharacter);
@@ -47,14 +46,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
 	bool CanExitMachine() const { return bCanExitMachine; }
 
-	
 	UFUNCTION(BlueprintPure, Category = "Machine|State")
-	bool IsOccupied() const { return InteractingPlayer != nullptr; }
-
-	virtual bool CanInteract(Acasino_simulatorCharacter* RequestingCharacter) const override;
+	bool IsOccupied() const;
 
 	UFUNCTION(BlueprintPure, Category = "Machine|State")
-	Acasino_simulatorCharacter* GetCurrentUser() const { return InteractingPlayer; }
+	Acasino_simulatorCharacter* GetCurrentUser() const;
+
+	UFUNCTION(BlueprintPure, Category = "Machine|State")
+	UInteractionSessionComponent* GetInteractionSessionComponent() const { return InteractionSessionComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Machine|Seat")
 	USceneComponent* GetSeatPoint() const { return SeatPoint; }
@@ -63,18 +62,19 @@ public:
 	USceneComponent* GetCameraPoint() const { return CameraPoint; }
 
 protected:
-	
+	virtual void BeginPlay() override;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine|Components")
+	TObjectPtr<UInteractionSessionComponent> InteractionSessionComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine|Components")
 	TObjectPtr<UStaticMeshComponent> ChairMesh;
-
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine|Components")
 	TObjectPtr<USceneComponent> SeatPoint;
 
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine|Components")
 	TObjectPtr<USceneComponent> CameraPoint;
-
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Machine|Components")
 	TObjectPtr<UCameraComponent> MachineCamera;
@@ -95,10 +95,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Machine|Seat", meta = (ClampMin = "0.0"))
 	float ReleaseCameraBlendTime = 0.25f;
 
-	
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentUser, BlueprintReadOnly, Category = "Machine|State")
 	TObjectPtr<Acasino_simulatorCharacter> CurrentUser;
-
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Machine|State")
 	bool bCanOperate = false;
@@ -112,14 +110,11 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void Server_SetCanExitMachine(bool bCanExit);
 
-	virtual bool HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
-
-	virtual void HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
-
 	virtual void HandleMachineUseStarted(Acasino_simulatorCharacter* RequestingCharacter) override;
-	
 	virtual void HandleMachineUseReleased(Acasino_simulatorCharacter* ReleasingCharacter) override;
-	
+
+	void HandleSessionUserJoined(Acasino_simulatorCharacter* JoinedUser);
+	void HandleSessionUserLeft(Acasino_simulatorCharacter* LeftUser);
 
 	UFUNCTION()
 	void OnRep_CurrentUser();
@@ -128,13 +123,10 @@ protected:
 	void OnMachineReady(Acasino_simulatorCharacter* RequestingCharacter);
 	virtual void OnMachineReady_Implementation(Acasino_simulatorCharacter* RequestingCharacter);
 
-
-	
 	UFUNCTION(BlueprintNativeEvent, Category = "Machine|State")
 	void OnMachineReleased(Acasino_simulatorCharacter* ReleasingCharacter);
 	virtual void OnMachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter);
 
-	
 	UFUNCTION(BlueprintNativeEvent, Category = "Machine|State")
 	void OnMachineUseRejected(Acasino_simulatorCharacter* RequestingCharacter, ESeatedMachineUseResult Result);
 	virtual void OnMachineUseRejected_Implementation(Acasino_simulatorCharacter* RequestingCharacter, ESeatedMachineUseResult Result);
@@ -148,9 +140,6 @@ protected:
 	virtual void OnMachineExitRejected_Implementation(Acasino_simulatorCharacter* RequestingCharacter);
 
 private:
-
-	ESeatedMachineUseResult CanAcceptUser(Acasino_simulatorCharacter* RequestingCharacter) const;
-
 	void EnterMachineUseView(Acasino_simulatorCharacter* RequestingCharacter);
 	void ExitMachineUseView(Acasino_simulatorCharacter* ReleasingCharacter);
 };

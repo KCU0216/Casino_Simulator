@@ -1,5 +1,5 @@
-#if WITH_DEV_AUTOMATION_TESTS
-#include "Interaction/MachineInteractionComponent.h"
+﻿#if WITH_DEV_AUTOMATION_TESTS
+#include "Interaction/InteractionSessionComponent.h"
 #include "casino_simulatorCharacter.h"
 #include "casino_simulatorPlayerController.h"
 #include "ThreeCardPoker/ThreeCardPokerTableActor.h"
@@ -30,7 +30,7 @@ bool FInteractionReleaseMovementTest::RunTest(const FString& Parameters)
     {
         State->LoopStatus.Phase = Phase;
         Movement->DisableMovement();
-        UMachineInteractionComponent::RestoreMovementAfterUse(Player);
+        UInteractionSessionComponent::RestoreMovementAfterUse(Player);
         TestTrue(TEXT("Ordinary release restores walking"), Movement->MovementMode == MOVE_Walking);
     }
     for (ECasinoLoopPhase Phase : {ECasinoLoopPhase::Settling, ECasinoLoopPhase::DayPassed,
@@ -38,11 +38,11 @@ bool FInteractionReleaseMovementTest::RunTest(const FString& Parameters)
     {
         State->LoopStatus.Phase = Phase;
         Movement->DisableMovement();
-        UMachineInteractionComponent::RestoreMovementAfterUse(Player);
+        UInteractionSessionComponent::RestoreMovementAfterUse(Player);
         TestTrue(TEXT("Late release preserves payment/result lock"), Movement->MovementMode == MOVE_None);
     }
     State->LoopStatus.Phase = ECasinoLoopPhase::Playing;
-    UMachineInteractionComponent::RestoreMovementAfterUse(Player);
+    UInteractionSessionComponent::RestoreMovementAfterUse(Player);
     TestTrue(TEXT("Next day permits movement again"), Movement->MovementMode == MOVE_Walking);
     return true;
 }
