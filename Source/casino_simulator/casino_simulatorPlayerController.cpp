@@ -2,6 +2,7 @@
 
 
 #include "casino_simulatorPlayerController.h"
+#include "UI/CasinoUIManagerComponent.h"
 #include "Interaction/MachineInteractionComponent.h"
 #include "Interaction/CasinoDayParticipant.h"
 #include "Economy/CasinoShopComponent.h"
@@ -46,6 +47,7 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_ReleaseCart, "Input.ReleaseCart");
 
 Acasino_simulatorPlayerController::Acasino_simulatorPlayerController()
 {
+	UIManager = CreateDefaultSubobject<UCasinoUIManagerComponent>(TEXT("UIManager"));
 	// set the player camera manager class
 	PlayerCameraManagerClass = Acasino_simulatorCameraManager::StaticClass();
 }
@@ -117,11 +119,7 @@ void Acasino_simulatorPlayerController::BeginPlay()
 
 void Acasino_simulatorPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (UIObservedGameState) UIObservedGameState->OnLoopChanged.RemoveDynamic(this, &ThisClass::RefreshCasinoUIScreen);
-	ClearInteractionWidgets();
-	CloseManagedWidget(ActiveScreenWidget);
-	ActiveScreenWidget = nullptr;
-	if (UIRoot) UIRoot->RemoveFromParent();
+	UIManager->ShutdownUI();
 	UnbindFromAbilitySystem();
 	BindToPlayerState(nullptr);
 
@@ -145,7 +143,7 @@ void Acasino_simulatorPlayerController::OnRep_PlayerState()
 
 void Acasino_simulatorPlayerController::TryInitializePlayerHUD()
 {
-	if (!IsLocalController() || bUITravelPending || PlayerHUDWidget || !PlayerHUDWidgetClass)
+	if (!IsLocalController() || UIManager->IsTravelPending() || PlayerHUDWidget || !PlayerHUDWidgetClass)
 	{
 		return;
 	}
@@ -830,103 +828,16 @@ void Acasino_simulatorPlayerController::TogglePauseMenuInput()
 
 void Acasino_simulatorPlayerController::ToggleInventory()
 {
-	if (UIScreen != ECasinoUIScreen::Playing) return;
-	if (!InventoryWidgetClass)
-	{
-		UE_LOG(Logcasino_simulator, Warning, TEXT("'%s' has no InventoryWidgetClass set - cannot toggle inventory."), *GetNameSafe(this));
-		return;
-	}
-
-	if (!InventoryWidget)
-	{
-		InventoryWidget = CreateWidget<UInventoryWidget>(this, InventoryWidgetClass);
-		if (InventoryWidget)
-		{
-			ShowInteractionUI(InventoryWidget);
-			InventoryWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-			SetIgnoreMoveInput(true);
-			SetIgnoreLookInput(true);
-			SetShowMouseCursor(true);
-			return;
-		}
-	}
-
-	if (!InventoryWidget)
-	{
-		return;
-	}
-
-	if (InventoryWidget->GetVisibility() == ESlateVisibility::Collapsed)
-	{
-		InventoryWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-		SetIgnoreMoveInput(true);
-		SetIgnoreLookInput(true);
-	}
-	else
-	{
-		InventoryWidget->SetVisibility(ESlateVisibility::Collapsed);
-		SetIgnoreMoveInput(false);
-		SetIgnoreLookInput(false);
-	}
-	SetShowMouseCursor(IsInventoryOpen());
+    if (UIScreen != ECasinoUIScreen::Playing || !InventoryWidgetClass) return;
+    if (IsInventoryOpen()) { CloseInteractionUI(InventoryWidget); return; }
+    InventoryWidget = Cast<UInventoryWidget>(UIManager->OpenInteractionUI(InventoryWidgetClass));
+    if (InventoryWidget) InventoryWidget->BP_AllRefresh();
 }
 void Acasino_simulatorPlayerController::TogglePauseMenu()
 {
-	if (UIScreen != ECasinoUIScreen::Playing) return;
-	//위젯클래스 없으면 종료
-	if (!PauseMenuWidgetClass)
-	{
-		UE_LOG(Logcasino_simulator, Warning, TEXT("'%s' has no InventoryWidgetClass set - cannot toggle inventory."), *GetNameSafe(this));
-		return;
-	}
-
-	//PuaseMenu가 없으면 생성 후 열기
-	if (!PauseMenuWidget)
-	{
-		PauseMenuWidget = CreateWidget<UPauseMenuWidget>(this, PauseMenuWidgetClass);
-		if (PauseMenuWidget)
-		{
-			ShowInteractionUI(PauseMenuWidget);
-			PauseMenuWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-			SetShowMouseCursor(true);
-			FInputModeGameAndUI InputMode;
-			InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
-			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-			InputMode.SetHideCursorDuringCapture(false);
-			SetInputMode(InputMode);
-			SetIgnoreMoveInput(true);
-			SetIgnoreLookInput(true);
-			return;
-		}
-	}
-
-	if (!PauseMenuWidget)
-	{
-		return;
-	}
-
-	if (PauseMenuWidget->GetVisibility() == ESlateVisibility::Collapsed)
-	{
-		PauseMenuWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-
-		FInputModeGameAndUI InputMode;
-		InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
-		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		InputMode.SetHideCursorDuringCapture(false);
-		SetInputMode(InputMode);
-		SetIgnoreMoveInput(true);
-		SetIgnoreLookInput(true);
-	}
-	else
-	{
-		PauseMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
-		FInputModeGameOnly InputMode;
-		InputMode.SetConsumeCaptureMouseDown(false);
-		SetInputMode(InputMode);
-		SetIgnoreMoveInput(false);
-		SetIgnoreLookInput(false);
-	}
-	SetShowMouseCursor(IsPauseMenuOpen());
+    if (UIScreen != ECasinoUIScreen::Playing || !PauseMenuWidgetClass) return;
+    if (IsPauseMenuOpen()) { CloseInteractionUI(PauseMenuWidget); return; }
+    PauseMenuWidget = Cast<UPauseMenuWidget>(UIManager->OpenInteractionUI(PauseMenuWidgetClass));
 }
 
 bool Acasino_simulatorPlayerController::IsInventoryOpen() const
@@ -1033,7 +944,7 @@ void Acasino_simulatorPlayerController::Server_CloseCurrentInteraction_Implement
     auto* InteractionCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
     if (!InteractionCharacter || !IsValid(ExpectedTarget) || InteractionCharacter->GetCurrentSeatedMachine().GetObject() != ExpectedTarget) return;
     if (auto* NPC = Cast<ANPC_Base>(ExpectedTarget)) NPC->ReleaseInteraction(InteractionCharacter);
-    else if (auto* Machine = Cast<ASeatedMachineBase>(ExpectedTarget)) Machine->RequestReleaseMachine(InteractionCharacter);
+    else if (auto* WorldTarget = Cast<AWorldInteractableBase>(ExpectedTarget)) WorldTarget->RequestReleaseMachine(InteractionCharacter);
     else return;
     if (!InteractionCharacter->GetCurrentSeatedMachine()) Client_CompleteInteractionClose(ExpectedTarget);
 }

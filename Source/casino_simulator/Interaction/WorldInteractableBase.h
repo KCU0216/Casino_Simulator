@@ -115,6 +115,9 @@ protected:
 	virtual void HandleMachineUseReleased(Acasino_simulatorCharacter* Character);
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FWorldInteractionReleaseTest;
+#endif
 	/** Bound to MachineInteractionComponent's OnUseStarted - mirrors the old
 	 * Multicast_MachineUseStarted_Implementation body (sets InteractingPlayer, hands this machine to
 	 * InteractingCharacter, then calls the Handle hook). */

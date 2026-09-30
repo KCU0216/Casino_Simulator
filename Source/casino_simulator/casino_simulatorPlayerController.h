@@ -9,6 +9,7 @@
 #include "UI/CasinoUIRoot.h"
 #include "casino_simulatorPlayerController.generated.h"
 
+class UCasinoUIManagerComponent;
 class UInputMappingContext;
 class UInputAction;
 class UUserWidget;
@@ -32,6 +33,12 @@ class CASINO_SIMULATOR_API Acasino_simulatorPlayerController : public APlayerCon
 	GENERATED_BODY()
 	
 public:
+
+	friend class UCasinoUIManagerComponent;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Casino|UI")
+    TObjectPtr<UCasinoUIManagerComponent> UIManager;
+    UFUNCTION(BlueprintPure, Category="Casino|UI")
+    UCasinoUIManagerComponent* GetUIManager() const { return UIManager; }
 
 	/** Constructor */
 	Acasino_simulatorPlayerController();
@@ -82,19 +89,12 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Cinematic")
 	void OnPoliceCinematicStopped();
 private:
-    UPROPERTY() TArray<TObjectPtr<UUserWidget>> ManagedInteractions;
-    UPROPERTY() TObjectPtr<ACasinoLoopGameState> UIObservedGameState;
-    UFUNCTION() void RefreshCasinoUIScreen();
+    void RefreshCasinoUIScreen();
     void EnsureUIRoot();
     void SetCasinoUIScreen(ECasinoUIScreen Screen);
     void CloseManagedWidget(UUserWidget* Widget);
     void ClearInteractionWidgets();
     void ApplyUIScreenInput();
-    bool bUIScreenInitialized = false;
-    TWeakObjectPtr<UWorld> UIObservedWorld;
-    TWeakObjectPtr<UWorld> UITravelOrigin;
-    bool bUITravelPending = false;
-
 	bool bPoliceCinematicActive = false;
 
 	UFUNCTION(Client, Reliable)

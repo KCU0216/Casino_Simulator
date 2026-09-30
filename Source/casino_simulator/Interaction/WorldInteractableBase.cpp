@@ -174,7 +174,8 @@ void AWorldInteractableBase::Server_ReleaseMachine_Implementation(Acasino_simula
 
 bool AWorldInteractableBase::HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
 {
-	return IsValid(RequestingCharacter);
+	return IsValid(RequestingCharacter) &&
+        RequestingCharacter->GetCurrentSeatedMachine().GetObject() == this;
 }
 
 void AWorldInteractableBase::HandleMachineRequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)
@@ -187,14 +188,20 @@ void AWorldInteractableBase::HandleMachineUseStarted(Acasino_simulatorCharacter*
 
 void AWorldInteractableBase::HandleMachineUseReleased(Acasino_simulatorCharacter* Character)
 {
+    // All world interactions restore movement; seated subclasses add their camera/animation cleanup.
+    // The shared helper keeps day-intro/payment/result movement locked.
+    UMachineInteractionComponent::RestoreMovementAfterUse(Character);
 }
 
 void AWorldInteractableBase::Multicast_MachineReleased_Implementation(Acasino_simulatorCharacter* ReleasingCharacter)
 {
-	InteractingPlayer = nullptr;
-	ReleasingCharacter->SetCurrentSeatedMachine(nullptr);
-
-	HandleMachineUseReleased(ReleasingCharacter);
+    if (!IsValid(ReleasingCharacter)) return;
+    InteractingPlayer = nullptr;
+    // A late release must not clear a newer interaction on this client.
+    UObject* Current = ReleasingCharacter->GetCurrentSeatedMachine().GetObject();
+    if (Current && Current != this) return;
+    ReleasingCharacter->ClearCurrentSeatedMachine(this);
+    HandleMachineUseReleased(ReleasingCharacter);
 }
 
 void AWorldInteractableBase::HandleMachineUseStartedMulticast(Acasino_simulatorCharacter* RequestingCharacter)

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/CasinoManagedWidget.h"
 #include "InventoryWidget.generated.h"
 
 /**
@@ -11,7 +11,7 @@
  *  Blueprint to this class and add C++ functionality here as it's needed.
  */
 UCLASS(abstract)
-class CASINO_SIMULATOR_API UInventoryWidget : public UUserWidget
+class CASINO_SIMULATOR_API UInventoryWidget : public UCasinoManagedWidget
 {
 	GENERATED_BODY()
 

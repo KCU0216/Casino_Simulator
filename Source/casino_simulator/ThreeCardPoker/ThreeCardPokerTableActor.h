@@ -234,6 +234,9 @@ protected:
 	UFUNCTION()
 	void UpdateResultText();
 
+protected:
+    virtual bool HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
+
 private:
 	void BuildAndShuffleDeck();
 	FBlackjackCard DrawCard();

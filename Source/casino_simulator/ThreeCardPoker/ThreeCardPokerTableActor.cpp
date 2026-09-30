@@ -830,3 +830,13 @@ void AThreeCardPokerTableActor::EndCasinoDay_Implementation()
     ResetRound();
     ForceNetUpdate();
 }
+
+bool AThreeCardPokerTableActor::HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
+{
+    if (!Super::HandleMachineReleaseMachine(RequestingCharacter) ||
+        InteractingPlayer.Get() != RequestingCharacter) return false;
+    // Leaving cancels this player's pending round/timers without triggering another payout.
+    SetInteractingPlayer(nullptr);
+    ForceNetUpdate();
+    return true;
+}
