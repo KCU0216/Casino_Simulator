@@ -50,3 +50,9 @@ void ACasinoLoopGameState::GetLifetimeReplicatedProps(
 
     DOREPLIFETIME(ACasinoLoopGameState, LoopStatus);
 }
+
+float ACasinoLoopGameState::GetRemainingIntroSeconds() const
+{
+    return LoopStatus.Phase == ECasinoLoopPhase::DayIntro
+        ? static_cast<float>(FMath::Max(0.0, LoopStatus.IntroEndServerTime - GetServerWorldTimeSeconds())) : 0.0f;
+}

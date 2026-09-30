@@ -12,7 +12,8 @@ enum class ECasinoLoopPhase : uint8
     Settling    UMETA(DisplayName = "납부 처리 중"),
     DayPassed   UMETA(DisplayName = "오늘 납부 성공"),
     GameOver    UMETA(DisplayName = "납부 실패"),
-    Cleared     UMETA(DisplayName = "게임 클리어")
+    Cleared     UMETA(DisplayName = "게임 클리어"),
+    DayIntro    UMETA(DisplayName = "날짜 안내")
 };
 
 USTRUCT(BlueprintType)
@@ -34,6 +35,9 @@ struct FCasinoLoopStatus
 
     UPROPERTY(BlueprintReadOnly)
     double DayEndServerTime = 0.0;
+
+    UPROPERTY(BlueprintReadOnly)
+    double IntroEndServerTime = 0.0;
 
     UPROPERTY(BlueprintReadOnly)
     int32 CollectedPayment = 0;
@@ -66,6 +70,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Casino|Loop")
     float GetRemainingDaySeconds() const;
+
+    UFUNCTION(BlueprintPure, Category="Casino|Loop")
+    float GetRemainingIntroSeconds() const;
 
     UFUNCTION(BlueprintPure, Category = "Casino|Loop")
     float GetRemainingPaymentSeconds() const;

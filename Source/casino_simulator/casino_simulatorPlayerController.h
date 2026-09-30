@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Interaction/WorldInteractable.h"
 #include "casino_loop_gamestate.h"
+#include "UI/CasinoUIRoot.h"
 #include "casino_simulatorPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -35,6 +36,50 @@ public:
 	/** Constructor */
 	Acasino_simulatorPlayerController();
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|UI")
+    TMap<ECasinoUIScreen, TSubclassOf<UUserWidget>> ScreenWidgetClasses;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|UI")
+    TObjectPtr<UCasinoUIRoot> UIRoot;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|UI")
+    TObjectPtr<UUserWidget> ActiveScreenWidget;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|UI")
+    ECasinoUIScreen UIScreen = ECasinoUIScreen::Loading;
+    UFUNCTION(BlueprintCallable, Category="Casino|UI")
+    bool ShowInteractionUI(UUserWidget* Widget);
+    UFUNCTION(BlueprintCallable, Category="Casino|UI")
+    void CloseInteractionUI(UUserWidget* Widget);
+    UFUNCTION(BlueprintCallable, Category="Casino|UI")
+    bool ShowScreenUI(UUserWidget* Widget, ECasinoUIScreen ExpectedScreen);
+    UFUNCTION(BlueprintImplementableEvent, Category="Casino|UI")
+    void OnUIScreenChanged(ECasinoUIScreen Screen, const FCasinoLoopStatus& Status);
+    UFUNCTION(BlueprintImplementableEvent, Category="Casino|UI")
+    void OnUILoopStatusUpdated(const FCasinoLoopStatus& Status);
+    // Unbind external delegates and clear BP references here. Widget-owned timers and latent actions are cancelled natively.
+    UFUNCTION(BlueprintImplementableEvent, Category="Casino|UI")
+    void OnManagedWidgetClosed(UUserWidget* Widget);
+    UFUNCTION(BlueprintCallable, Category="Casino|UI")
+    void ReturnToMainMenu();
+    UFUNCTION(BlueprintPure, Category="Casino|UI")
+    bool CanRestartCasinoRun() const;
+    UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|UI")
+    void ServerRestartCasinoRun();
+    virtual void PlayerTick(float DeltaTime) override;
+    virtual void PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel) override;
+private:
+    UPROPERTY() TArray<TObjectPtr<UUserWidget>> ManagedInteractions;
+    UPROPERTY() TObjectPtr<ACasinoLoopGameState> UIObservedGameState;
+    UFUNCTION() void RefreshCasinoUIScreen();
+    void EnsureUIRoot();
+    void SetCasinoUIScreen(ECasinoUIScreen Screen);
+    void CloseManagedWidget(UUserWidget* Widget);
+    void ClearInteractionWidgets();
+    void ApplyUIScreenInput();
+    bool bUIScreenInitialized = false;
+    TWeakObjectPtr<UWorld> UIObservedWorld;
+    TWeakObjectPtr<UWorld> UITravelOrigin;
+    bool bUITravelPending = false;
+public:
+
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Shop")
     void ServerBuyShopItem(UCasinoShopComponent* Shop, FName ItemId, int32 Quantity);
     UFUNCTION(Client, Reliable)
@@ -58,6 +103,8 @@ public:
     void OnCloseGameplayUIForPayment();
     UFUNCTION(Client, Reliable)
     void ClientPrepareCasinoDay(FRotator Facing);
+    UFUNCTION(Client, Reliable)
+    void ClientPrepareDayIntro(FRotator Facing);
     UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")
     void OnPrepareCasinoDay();
     UFUNCTION(Client, Reliable)

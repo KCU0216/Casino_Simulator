@@ -169,3 +169,20 @@ void Acasino_simulatorPlayerState::OnRep_Inventory()
 {
 	OnInventoryChanged.Broadcast();
 }
+
+void Acasino_simulatorPlayerState::ResetForNewCasinoRun()
+{
+    if (!HasAuthority()) return;
+    const auto* Defaults = GetClass()->GetDefaultObject<Acasino_simulatorPlayerState>();
+    Inventory = Defaults->Inventory;
+    NumberSlots = Defaults->NumberSlots;
+    MiningPowerUpgradeLevel = Defaults->MiningPowerUpgradeLevel;
+    MiningSpeedUpgradeLevel = Defaults->MiningSpeedUpgradeLevel;
+    bLobbyReady = false;
+    bDailyPaymentSubmitted = false;
+    DailyPaymentAmount = 0;
+    SetScore(0.f);
+    OnRep_Inventory();
+    OnRep_MiningUpgradeLevels();
+    ForceNetUpdate();
+}

@@ -47,6 +47,8 @@ public:
     int32 DaysToPlay = 5;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="1.0"))
     float DayDurationSeconds = 600.0f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="0.1"))
+    float DayIntroDurationSeconds = 3.0f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="1.0"))
     float PaymentDurationSeconds = 30.0f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="0.1"))
@@ -67,6 +69,7 @@ public:
     void StartDayLoop();
     UFUNCTION(BlueprintPure, Category="Casino|Loop")
     bool CanPlayCasino() const;
+    bool RestartCasinoRun(APlayerController* Requester);
     // Server only; client UI calls the PlayerController RPC instead.
     bool SubmitDailyPayment(Acasino_simulatorCharacter* Player, int32 Amount);
 
@@ -85,6 +88,8 @@ private:
     double OnlineArrivalDeadline = 0.0;
     int32 OnlineExpectedPlayers = 0;
     void WaitForOnlinePlayers();
+    FTimerHandle IntroTimer;
+    bool bRestartTravelPending = false;
     FTimerHandle DayLoopTimer;
     FTimerHandle PaymentTimer;
     FTimerHandle NextDayTimer;
@@ -92,6 +97,7 @@ private:
     TArray<TWeakObjectPtr<class Acasino_simulatorPlayerState>> PaymentParticipants;
     bool bCollectingPayment = false;
     void BeginCasinoDay(int32 Day);
+    void ActivateCasinoDay();
     void BeginPaymentPhase();
     void FinishPaymentPhase();
     void AdvanceCasinoDay();

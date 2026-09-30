@@ -3,6 +3,7 @@
 
 #include "casino_simulatorPlayerController.h"
 #include "Interaction/MachineInteractionComponent.h"
+#include "Interaction/CasinoDayParticipant.h"
 #include "Economy/CasinoShopComponent.h"
 #include "Online/CasinoLobbyGameMode.h"
 #include "Online/CasinoOnlineSubsystem.h"
@@ -94,26 +95,8 @@ void Acasino_simulatorPlayerController::ClientShopPurchaseResult_Implementation(
 void Acasino_simulatorPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	if (IsLocalController()) RefreshCasinoUIScreen();
 
-
-	// only spawn touch controls on local player controllers
-	if (ShouldUseTouchControls() && IsLocalPlayerController())
-	{
-		// spawn the mobile controls widget
-		MobileControlsWidget = CreateWidget<UUserWidget>(this, MobileControlsWidgetClass);
-
-		if (MobileControlsWidget)
-		{
-			// add the controls to the player screen
-			MobileControlsWidget->AddToPlayerScreen(0);
-
-		} else {
-
-			UE_LOG(Logcasino_simulator, Error, TEXT("Could not spawn mobile controls widget."));
-
-		}
-
-	}
 
 	// only spawn the player HUD on local player controllers
 	if (IsLocalPlayerController() && PlayerHUDWidgetClass)
@@ -134,6 +117,11 @@ void Acasino_simulatorPlayerController::BeginPlay()
 
 void Acasino_simulatorPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UIObservedGameState) UIObservedGameState->OnLoopChanged.RemoveDynamic(this, &ThisClass::RefreshCasinoUIScreen);
+	ClearInteractionWidgets();
+	CloseManagedWidget(ActiveScreenWidget);
+	ActiveScreenWidget = nullptr;
+	if (UIRoot) UIRoot->RemoveFromParent();
 	UnbindFromAbilitySystem();
 	BindToPlayerState(nullptr);
 
@@ -157,7 +145,7 @@ void Acasino_simulatorPlayerController::OnRep_PlayerState()
 
 void Acasino_simulatorPlayerController::TryInitializePlayerHUD()
 {
-	if (PlayerHUDWidget || !PlayerHUDWidgetClass)
+	if (!IsLocalController() || bUITravelPending || PlayerHUDWidget || !PlayerHUDWidgetClass)
 	{
 		return;
 	}
@@ -172,9 +160,12 @@ void Acasino_simulatorPlayerController::TryInitializePlayerHUD()
 
 	if (PlayerHUDWidget)
 	{
-		PlayerHUDWidget->AddToPlayerScreen(100);
+		EnsureUIRoot();
+		UIRoot->AddHUD(PlayerHUDWidget);
+		RefreshCasinoUIScreen();
 
 		BindToPlayerState(CurrentPlayerState);
+		if (!BoundAbilitySystemComponent) HandlePossessedPawnChanged(nullptr, GetPawn());
 
 		// The pawn/ability system may already have been bound (e.g. from BeginPlay) before the HUD
 		// existed to receive them; push current values now instead of waiting for the next change.
@@ -318,6 +309,7 @@ void Acasino_simulatorPlayerController::OnCurrencyChanged(const FOnAttributeChan
 
 void Acasino_simulatorPlayerController::InteractWithCurrentTarget()
 {
+    if (!IsCasinoGameplayAllowed(this)) return;
 	if (bInteractionUIOpen)
 	{
 		return;
@@ -420,6 +412,7 @@ void Acasino_simulatorPlayerController::ExitCurrentMachine()
 
 void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface<IWorldInteractable> Target)
 {
+    if (!IsCasinoGameplayAllowed(this)) return;
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	UObject* TargetObject = Target.GetObject();
 	if (!PlayerCharacter || !TargetObject)
@@ -453,6 +446,7 @@ void Acasino_simulatorPlayerController::RequestWorldInteraction(TScriptInterface
 
 void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implementation(const TScriptInterface<IWorldInteractable>& Target)
 {
+    if (!IsCasinoGameplayAllowed(this)) return;
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter || !Target || !Target->CanInteract(PlayerCharacter))
 	{
@@ -465,6 +459,7 @@ void Acasino_simulatorPlayerController::Server_RequestWorldInteraction_Implement
 
 void Acasino_simulatorPlayerController::Server_HandleMachinePrimaryInput_Implementation(ASeatedMachineBase* Machine)
 {
+    if (!IsCasinoGameplayAllowed(this)) return;
 	Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
 	if (!PlayerCharacter || !Machine || PlayerCharacter->GetCurrentSeatedMachine() != Machine)
 	{
@@ -521,6 +516,7 @@ void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSup
 
 void Acasino_simulatorPlayerController::EnterInteractionUIMode(AActor* CameraTarget, float BlendTime)
 {
+    if (!IsCasinoGameplayAllowed(this)) return;
 	if (bInteractionUIOpen)
 	{
 		return;
@@ -834,6 +830,7 @@ void Acasino_simulatorPlayerController::TogglePauseMenuInput()
 
 void Acasino_simulatorPlayerController::ToggleInventory()
 {
+	if (UIScreen != ECasinoUIScreen::Playing) return;
 	if (!InventoryWidgetClass)
 	{
 		UE_LOG(Logcasino_simulator, Warning, TEXT("'%s' has no InventoryWidgetClass set - cannot toggle inventory."), *GetNameSafe(this));
@@ -845,7 +842,7 @@ void Acasino_simulatorPlayerController::ToggleInventory()
 		InventoryWidget = CreateWidget<UInventoryWidget>(this, InventoryWidgetClass);
 		if (InventoryWidget)
 		{
-			InventoryWidget->AddToViewport();
+			ShowInteractionUI(InventoryWidget);
 			InventoryWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			SetIgnoreMoveInput(true);
 			SetIgnoreLookInput(true);
@@ -875,6 +872,7 @@ void Acasino_simulatorPlayerController::ToggleInventory()
 }
 void Acasino_simulatorPlayerController::TogglePauseMenu()
 {
+	if (UIScreen != ECasinoUIScreen::Playing) return;
 	//위젯클래스 없으면 종료
 	if (!PauseMenuWidgetClass)
 	{
@@ -888,7 +886,7 @@ void Acasino_simulatorPlayerController::TogglePauseMenu()
 		PauseMenuWidget = CreateWidget<UPauseMenuWidget>(this, PauseMenuWidgetClass);
 		if (PauseMenuWidget)
 		{
-			PauseMenuWidget->AddToViewport();
+			ShowInteractionUI(PauseMenuWidget);
 			PauseMenuWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			SetShowMouseCursor(true);
 			FInputModeGameAndUI InputMode;
@@ -979,6 +977,8 @@ void Acasino_simulatorPlayerController::ClientDailyPaymentResult_Implementation(
 void Acasino_simulatorPlayerController::ClientPrepareDailyPayment_Implementation(FRotator Facing)
 {
     bDailyPaymentControlLocked = true;
+    ClearInteractionWidgets();
+    SetCasinoUIScreen(ECasinoUIScreen::Payment);
     OnCloseGameplayUIForPayment();
     bInteractionUIOpen = false;
     bWorldInteractionTargetFocused = false;
@@ -993,11 +993,13 @@ void Acasino_simulatorPlayerController::ClientPrepareDailyPayment_Implementation
     SetControlRotation(Facing);
     if (GetPawn()) SetViewTargetWithBlend(GetPawn(), 0.0f);
     OnPrepareDailyPayment();
+    ApplyUIScreenInput();
 }
 
 void Acasino_simulatorPlayerController::ClientFinishDailyPayment_Implementation(ECasinoLoopPhase Phase)
 {
     OnFinishDailyPayment(Phase);
+    SetCasinoUIScreen(Phase == ECasinoLoopPhase::DayPassed ? ECasinoUIScreen::DayPassed : ECasinoUIScreen::Result);
 }
 
 void Acasino_simulatorPlayerController::ClientPrepareCasinoDay_Implementation(FRotator Facing)
@@ -1012,6 +1014,8 @@ void Acasino_simulatorPlayerController::ClientPrepareCasinoDay_Implementation(FR
     SetControlRotation(Facing);
     if (GetPawn()) SetViewTargetWithBlend(GetPawn(), 0.0f);
     OnPrepareCasinoDay();
+    SetCasinoUIScreen(ECasinoUIScreen::Playing);
+    ApplyUIScreenInput();
 }
 
 
@@ -1043,4 +1047,14 @@ void Acasino_simulatorPlayerController::Client_CompleteInteractionClose_Implemen
     if (Current) InteractionCharacter->ClearCurrentSeatedMachine(Cast<IWorldInteractable>(ExpectedTarget));
     UMachineInteractionComponent::RestoreMovementAfterUse(InteractionCharacter);
     ExitInteractionUIMode();
+}
+
+void Acasino_simulatorPlayerController::ClientPrepareDayIntro_Implementation(FRotator Facing)
+{
+    OnPrepareCasinoDay(); // Legacy BP closes the previous payment widget and resets HUD appearance.
+    SetCasinoUIScreen(ECasinoUIScreen::DayIntro);
+    ApplyUIScreenInput();
+    if (auto* ControlledPawn = Cast<ACharacter>(GetPawn())) ControlledPawn->GetCharacterMovement()->DisableMovement();
+    SetControlRotation(Facing);
+    if (GetPawn()) SetViewTargetWithBlend(GetPawn(), 0.0f);
 }

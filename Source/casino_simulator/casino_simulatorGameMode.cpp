@@ -9,6 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
 #include "Interaction/CasinoDayParticipant.h"
 #include "NPC/NPC_Base.h"
 #include "Machine/SeatedMachineBase.h"
@@ -22,6 +23,8 @@ Acasino_simulatorGameMode::Acasino_simulatorGameMode()
 
 void Acasino_simulatorGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
+    if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoRestart")))
+        if (auto* PS = NewPlayer->GetPlayerState<Acasino_simulatorPlayerState>()) PS->ResetForNewCasinoRun();
     Super::HandleStartingNewPlayer_Implementation(NewPlayer);
     // Called for both new players and players retained through seamless travel.
     if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoOnlineMatch")))
@@ -36,6 +39,7 @@ void Acasino_simulatorGameMode::HandleStartingNewPlayer_Implementation(APlayerCo
 void Acasino_simulatorGameMode::BeginPlay()
 {
     Super::BeginPlay();
+    if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoRestart"))) StartDay = 1;
     if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoOnlineMatch")))
     {
         OnlineExpectedPlayers = FMath::Clamp(UGameplayStatics::GetIntOption(OptionsString, TEXT("ExpectedPlayers"), 1), 1, 16);
@@ -80,6 +84,7 @@ void Acasino_simulatorGameMode::WaitForOnlinePlayers()
 
 void Acasino_simulatorGameMode::EndPlay(const EEndPlayReason::Type Reason)
 {
+    GetWorldTimerManager().ClearTimer(IntroTimer);
     GetWorldTimerManager().ClearTimer(DayLoopTimer);
     GetWorldTimerManager().ClearTimer(PaymentTimer);
     GetWorldTimerManager().ClearTimer(NextDayTimer);
@@ -123,16 +128,41 @@ void Acasino_simulatorGameMode::BeginCasinoDay(int32 Day)
             PS->DailyPaymentAmount = 0;
             PS->ForceNetUpdate();
         }
-    Status.Phase = ECasinoLoopPhase::Playing;
+    Status.Phase = ECasinoLoopPhase::DayIntro;
     Status.CurrentDay = Day;
     Status.FinalDay = FMath::Max(1, StartDay) + FMath::Max(1, DaysToPlay) - 1;
     Status.RequiredPayment = FMath::Max(1, DailyPayments.IsValidIndex(Day - 1)
         ? DailyPayments[Day - 1] : DefaultDailyPayment);
+    Status.IntroEndServerTime = GS->GetServerWorldTimeSeconds() + FMath::Max(0.1f, DayIntroDurationSeconds);
+    GS->SetLoopStatus(Status);
+    if (!MovePlayersToCentralSpawns(false))
+    {
+        Status.Phase = ECasinoLoopPhase::GameOver;
+        GS->SetLoopStatus(Status);
+        return;
+    }
+    GetWorldTimerManager().SetTimer(IntroTimer, this,
+        &Acasino_simulatorGameMode::ActivateCasinoDay, FMath::Max(0.1f, DayIntroDurationSeconds), false);
+}
+
+void Acasino_simulatorGameMode::ActivateCasinoDay()
+{
+    auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!GS || GS->LoopStatus.Phase != ECasinoLoopPhase::DayIntro) return;
+    FCasinoLoopStatus Status = GS->LoopStatus;
+    Status.Phase = ECasinoLoopPhase::Playing;
+    Status.IntroEndServerTime = 0.0;
     const float Duration = FMath::Max(1.0f, DayDurationSeconds);
     Status.DayEndServerTime = GS->GetServerWorldTimeSeconds() + Duration;
+    GS->SetLoopStatus(Status);
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+        if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
+        {
+            if (auto* Player = Cast<ACharacter>(PC->GetPawn())) Player->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+            PC->ClientPrepareCasinoDay(PC->GetControlRotation());
+        }
     GetWorldTimerManager().SetTimer(DayLoopTimer, this,
         &Acasino_simulatorGameMode::BeginPaymentPhase, Duration, false);
-    GS->SetLoopStatus(Status);
     TArray<AActor*> Games;
     UGameplayStatics::GetAllActorsWithInterface(this, UCasinoDayParticipant::StaticClass(), Games);
     for (AActor* Game : Games)
@@ -156,12 +186,15 @@ bool Acasino_simulatorGameMode::MovePlayersToCentralSpawns(bool bForPayment)
         Player->GetCharacterMovement()->StopMovementImmediately();
         Player->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
         const bool bMoved = Player->TeleportTo(Point->GetActorLocation(), Point->GetActorRotation());
-        if (bForPayment) Player->GetCharacterMovement()->DisableMovement();
+        if (bForPayment || (GetGameState<ACasinoLoopGameState>() && GetGameState<ACasinoLoopGameState>()->LoopStatus.Phase == ECasinoLoopPhase::DayIntro))
+            Player->GetCharacterMovement()->DisableMovement();
         bAllMoved &= bMoved;
         PC->SetControlRotation(Point->GetActorRotation());
         if (auto* CasinoPC = Cast<Acasino_simulatorPlayerController>(PC))
         {
             if (bForPayment) CasinoPC->ClientPrepareDailyPayment(Point->GetActorRotation());
+            else if (GetGameState<ACasinoLoopGameState>()->LoopStatus.Phase == ECasinoLoopPhase::DayIntro)
+                CasinoPC->ClientPrepareDayIntro(Point->GetActorRotation());
             else CasinoPC->ClientPrepareCasinoDay(Point->GetActorRotation());
         }
     }
@@ -285,14 +318,6 @@ void Acasino_simulatorGameMode::AdvanceCasinoDay()
 {
     auto* GS = GetGameState<ACasinoLoopGameState>();
     if (!HasAuthority() || !GS || GS->LoopStatus.Phase != ECasinoLoopPhase::DayPassed) return;
-    if (!MovePlayersToCentralSpawns(false))
-    {
-        UE_LOG(LogTemp, Error, TEXT("Day loop: next-day teleport failed. Check central spawn points."));
-        FCasinoLoopStatus Status = GS->LoopStatus;
-        Status.Phase = ECasinoLoopPhase::GameOver;
-        GS->SetLoopStatus(Status);
-        return;
-    }
     BeginCasinoDay(GS->LoopStatus.CurrentDay + 1);
 }
 
@@ -373,4 +398,24 @@ bool Acasino_simulatorGameMode::StealMoney(
 
     return Thief->TryStealFrom(
         Player, static_cast<float>(StealAmount));
+}
+bool Acasino_simulatorGameMode::RestartCasinoRun(APlayerController* Requester)
+{
+    const auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!HasAuthority() || bRestartTravelPending || !Requester || !Requester->IsLocalController() ||
+        Requester->GetWorld() != GetWorld() || !GS ||
+        (GS->LoopStatus.Phase != ECasinoLoopPhase::GameOver && GS->LoopStatus.Phase != ECasinoLoopPhase::Cleared)) return false;
+    // Keep the EOS session and connected controllers. The map (including pawns/ASCs/games) is recreated.
+    // PlayerStates survive seamless travel and are reset in HandleStartingNewPlayer on the destination.
+    const FString Map = UWorld::RemovePIEPrefix(GetWorld()->GetOutermost()->GetName());
+    const FString URL = Map + TEXT("?game=") + GetClass()->GetPathName()
+        + FString::Printf(TEXT("?SeamlessTravel?CasinoOnlineMatch=1?CasinoRestart=1?ExpectedPlayers=%d"), GetNumPlayers());
+#if WITH_EDITOR
+    if (GetWorld()->WorldType == EWorldType::PIE)
+        if (IConsoleVariable* AllowTravel = IConsoleManager::Get().FindConsoleVariable(TEXT("net.AllowPIESeamlessTravel")))
+            AllowTravel->Set(1, ECVF_SetByCode);
+#endif
+    bUseSeamlessTravel = true;
+    bRestartTravelPending = GetWorld()->ServerTravel(URL, true);
+    return bRestartTravelPending;
 }
