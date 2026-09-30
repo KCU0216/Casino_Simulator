@@ -210,6 +210,7 @@ void ASeatedMachineBase::HandleSessionUserJoined(Acasino_simulatorCharacter* Joi
 	CurrentUser = JoinedUser;
 	bCanOperate = true;
 	bCanExitMachine = true;
+	JoinedUser->SetCurrentSeatedMachine(this);
 
 	HandleMachineUseStarted(JoinedUser);
 }
@@ -239,7 +240,7 @@ void ASeatedMachineBase::HandleSessionUserLeft(Acasino_simulatorCharacter* LeftU
 		bCanExitMachine = true;
 	}
 
-	LeftUser->SetCurrentSeatedMachine(nullptr);
+	LeftUser->ClearCurrentSeatedMachine(this);
 	HandleMachineUseReleased(LeftUser);
 }
 
@@ -325,7 +326,6 @@ void ASeatedMachineBase::EnterMachineUseView(Acasino_simulatorCharacter* Request
 		PlayerController->SetViewTargetWithBlend(this, MachineCameraBlendTime);
 	}
 
-	RequestingCharacter->SetCurrentSeatedMachine(this);
 }
 
 void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* ReleasingCharacter)
@@ -342,11 +342,10 @@ void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* Releasin
    FGameplayTag::RequestGameplayTag(FName("State.Walk")), EndSitEvent);
  }
  // Day-end payment/result flow owns the camera and movement after forced relocation.
- if (!UInteractionSessionComponent::CanRestoreMovement(ReleasingCharacter))
- {
-  if (MachineCamera) MachineCamera->SetActive(false);
-  ReleasingCharacter->ClearCurrentSeatedMachine(this);
-  return;
+	if (!UInteractionSessionComponent::CanRestoreMovement(ReleasingCharacter))
+	{
+		if (MachineCamera) MachineCamera->SetActive(false);
+		return;
  }
 
 	APlayerController* PlayerController = Cast<APlayerController>(ReleasingCharacter->GetController());
@@ -368,5 +367,4 @@ void ASeatedMachineBase::ExitMachineUseView(Acasino_simulatorCharacter* Releasin
 		MachineCamera->SetActive(false);
 	}
 
-	ReleasingCharacter->ClearCurrentSeatedMachine(this);
 }

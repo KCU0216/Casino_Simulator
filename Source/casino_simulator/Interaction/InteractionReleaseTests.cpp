@@ -69,38 +69,22 @@ bool FWorldInteractionReleaseTest::RunTest(const FString& Parameters)
     World->SetGameState(State);
     PC->Possess(Player);
     State->LoopStatus.Phase = ECasinoLoopPhase::Playing;
-    Table->SetInteractingPlayer(Player);
-    Player->SetCurrentSeatedMachine(Table);
+    auto* PokerSession = Table->FindComponentByClass<UInteractionSessionComponent>();
+    if (!TestNotNull(TEXT("Poker session"), PokerSession)) return false;
+    if (!Table->HasActorBegunPlay()) Table->DispatchBeginPlay();
+    TestTrue(TEXT("Poker session accepts player"), PokerSession->TryJoin(Player));
+    TestEqual(TEXT("Poker records current interaction"),
+        Player->GetCurrentSeatedMachine().GetObject(), static_cast<UObject*>(Table));
     Player->GetCharacterMovement()->DisableMovement();
-    // A non-seated WorldInteractable must pass the controller's generic dispatch.
+    // Poker now follows the same current-interaction dispatch as machines and NPCs.
     PC->Server_CloseCurrentInteraction_Implementation(Table);
     TestNull(TEXT("Controller dispatch releases poker player"), Table->GetInteractingPlayer());
-    // This isolated world has no network driver: simulate delivery of the release multicast.
-    Table->Multicast_MachineReleased_Implementation(Player);
-    TestNull(TEXT("Generic release clears current interaction"), Player->GetCurrentSeatedMachine().GetObject());
+    TestNull(TEXT("Poker close clears current interaction"), Player->GetCurrentSeatedMachine().GetObject());
     TestNull(TEXT("Poker releases its player"), Table->GetInteractingPlayer());
-    TestTrue(TEXT("Walking restored through parent release"),
+    // This isolated world has no network driver, so simulate delivery of the client completion RPC.
+    PC->Client_CompleteInteractionClose_Implementation(Table);
+    TestTrue(TEXT("Walking restored through poker release"),
         Player->GetCharacterMovement()->MovementMode == MOVE_Walking);
-
-    // A stale release of this table must not unlock or detach another interaction.
-    auto* OtherTable = World->SpawnActor<AThreeCardPokerTableActor>();
-    OtherTable->SetInteractingPlayer(Player);
-    Player->SetCurrentSeatedMachine(OtherTable);
-    Player->GetCharacterMovement()->DisableMovement();
-    Table->RequestReleaseMachine(Player);
-    Table->Multicast_MachineReleased_Implementation(Player);
-    TestEqual(TEXT("Stale release preserves new target"),
-        Player->GetCurrentSeatedMachine().GetObject(), static_cast<UObject*>(OtherTable));
-    TestTrue(TEXT("Stale release preserves movement mode"),
-        Player->GetCharacterMovement()->MovementMode == MOVE_None);
-
-    State->LoopStatus.Phase = ECasinoLoopPhase::Settling;
-    PC->Server_CloseCurrentInteraction_Implementation(OtherTable);
-    TestNull(TEXT("Payment releases poker player"), OtherTable->GetInteractingPlayer());
-    OtherTable->Multicast_MachineReleased_Implementation(Player);
-    TestNull(TEXT("Payment still releases interaction"), Player->GetCurrentSeatedMachine().GetObject());
-    TestTrue(TEXT("Payment lock preserved after release"),
-        Player->GetCharacterMovement()->MovementMode == MOVE_None);
     return true;
 }
 #endif

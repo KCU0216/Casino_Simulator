@@ -151,6 +151,22 @@ void AThreeCardPokerTableActor::Interact(Acasino_simulatorCharacter* Interacting
 	InteractionSessionComponent->TryJoin(InteractingCharacter);
 }
 
+void AThreeCardPokerTableActor::RequestReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
+{
+	if (!IsValid(RequestingCharacter))
+	{
+		return;
+	}
+
+	if (HasAuthority())
+	{
+		ExecuteLeaveTable(RequestingCharacter);
+		return;
+	}
+
+	RequestingCharacter->ServerLeaveThreeCardPokerTable(this);
+}
+
 bool AThreeCardPokerTableActor::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const
 {
 	return Super::CanInteract(InteractingCharacter) &&
@@ -162,6 +178,7 @@ void AThreeCardPokerTableActor::HandleSessionUserJoined(Acasino_simulatorCharact
 {
 	if (HasAuthority() && IsValid(JoinedUser))
 	{
+		JoinedUser->SetCurrentSeatedMachine(this);
 		SetInteractingPlayer(JoinedUser);
 	}
 }
@@ -170,6 +187,7 @@ void AThreeCardPokerTableActor::HandleSessionUserLeft(Acasino_simulatorCharacter
 {
 	if (HasAuthority() && InteractingPlayer.Get() == LeftUser)
 	{
+		LeftUser->ClearCurrentSeatedMachine(this);
 		SetInteractingPlayer(nullptr);
 	}
 }

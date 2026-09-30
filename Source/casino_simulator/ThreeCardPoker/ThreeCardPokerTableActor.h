@@ -48,6 +48,7 @@ public:
 	 * guarantee that). Assigns InteractingCharacter as this table's player via SetInteractingPlayer. */
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
 	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
+	virtual void RequestReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter) override;
 
 	/** Runs on the interacting player's own machine before the server call lands (see
 	 * IWorldInteractable::OnLocalInteract). Just forwards to BP_OnLocalThreeCardPokerInteract so
