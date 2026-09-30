@@ -676,11 +676,18 @@ void Acasino_simulatorCharacter::SetMousePoint(bool value)
 	}
 }
 
+//블랙잭 앉아 있거나 현재 앉아있거나 ui 열려있으면 막는 가드
 bool Acasino_simulatorCharacter::IsGameplayInputBlocked() const
 {
+	
 	const Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(GetController());
-	return PC && PC->IsAnyGameplayUIOpen();
+
+	const bool bIsInBlackJackSeat = BlackjackPlayerComponent && BlackjackPlayerComponent->IsInBlackjackSeat();
+
+	return bIsInBlackJackSeat || GetCurrentSeatedMachine() || PC && PC->IsAnyGameplayUIOpen();
+	
 }
+
 
 
 void Acasino_simulatorCharacter::MoveInput(const FInputActionValue& Value)
@@ -719,29 +726,9 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 {
 	const Acasino_simulatorPlayerController* InputController =
 		Cast<Acasino_simulatorPlayerController>(GetController());
-	const bool bPauseMenuOpen = InputController && InputController->IsPauseMenuOpen();
-	const bool bInventoryOpen = InputController && InputController->IsInventoryOpen();
-	const bool bDailyPaymentLocked = InputController && InputController->IsDailyPaymentControlLocked();
-	const bool bInteractionUIOpen = InputController && InputController->IsInteractionUIOpen();
-	UObject* CurrentSeatedObject = GetCurrentSeatedMachine().GetObject();
-
-	UE_LOG(Logcasino_simulator, Warning,
-		TEXT("[InteractDebug] E pressed Character=%s Controller=%s Pause=%d Inventory=%d DailyPaymentLocked=%d InteractionUI=%d CurrentSeated=%s"),
-		*GetNameSafe(this),
-		*GetNameSafe(InputController),
-		bPauseMenuOpen,
-		bInventoryOpen,
-		bDailyPaymentLocked,
-		bInteractionUIOpen,
-		*GetNameSafe(CurrentSeatedObject));
-
-	if (bPauseMenuOpen || bInventoryOpen || bDailyPaymentLocked)
+	if (InputController && (InputController->IsPauseMenuOpen() ||
+		InputController->IsInventoryOpen() || InputController->IsDailyPaymentControlLocked()))
 	{
-		UE_LOG(Logcasino_simulator, Warning,
-			TEXT("[InteractDebug] Blocked before target lookup: Pause=%d Inventory=%d DailyPaymentLocked=%d"),
-			bPauseMenuOpen,
-			bInventoryOpen,
-			bDailyPaymentLocked);
 		return;
 	}
 
@@ -751,39 +738,20 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 		if (ASeatedMachineBase* Machine =
 			Cast<ASeatedMachineBase>(CurrentMachine.GetObject()))
 		{
-			UE_LOG(Logcasino_simulator, Warning,
-				TEXT("[InteractDebug] Routing E to active machine primary input: %s"),
-				*GetNameSafe(Machine));
 			Machine->HandleMachinePrimaryInput(this);
 			return;
 		}
-
-		UE_LOG(Logcasino_simulator, Warning,
-			TEXT("[InteractDebug] CurrentSeated exists but is not ASeatedMachineBase: %s"),
-			*GetNameSafe(CurrentMachine.GetObject()));
 	}
 
 	if (IsGameplayInputBlocked())
 	{
-		UE_LOG(Logcasino_simulator, Warning,
-			TEXT("[InteractDebug] Blocked by IsGameplayInputBlocked. InteractionUI=%d Pause=%d Inventory=%d"),
-			bInteractionUIOpen,
-			bPauseMenuOpen,
-			bInventoryOpen);
 		return;
 	}
 
 	if (Acasino_simulatorPlayerController* PC =
 		Cast<Acasino_simulatorPlayerController>(GetController()))
 	{
-		UE_LOG(Logcasino_simulator, Warning,
-			TEXT("[InteractDebug] Forwarding E to PlayerController::InteractWithCurrentTarget"));
 		PC->InteractWithCurrentTarget();
-	}
-	else
-	{
-		UE_LOG(Logcasino_simulator, Warning,
-			TEXT("[InteractDebug] No Acasino_simulatorPlayerController; interaction cannot continue"));
 	}
 }
 

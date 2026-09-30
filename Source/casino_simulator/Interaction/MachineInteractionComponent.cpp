@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Interaction/MachineInteractionComponent.h"
 #include "Interaction/CasinoDayParticipant.h"
@@ -17,13 +17,6 @@ UMachineInteractionComponent::UMachineInteractionComponent()
 
 void UMachineInteractionComponent::RequestUseMachine(Acasino_simulatorCharacter* RequestingCharacter)
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[InteractDebug] RequestUseMachine Component=%s Owner=%s OwnerAuthority=%d Character=%s"),
-		*GetNameSafe(this),
-		*GetNameSafe(GetOwner()),
-		GetOwner() && GetOwner()->HasAuthority(),
-		*GetNameSafe(RequestingCharacter));
-
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
 		Server_RequestUseMachine_Implementation(RequestingCharacter);
@@ -35,37 +28,9 @@ void UMachineInteractionComponent::RequestUseMachine(Acasino_simulatorCharacter*
 
 void UMachineInteractionComponent::Server_RequestUseMachine_Implementation(Acasino_simulatorCharacter* RequestingCharacter)
 {
-	const ACasinoLoopGameState* CasinoGameState = GetWorld()
-		? GetWorld()->GetGameState<ACasinoLoopGameState>()
-		: nullptr;
-	const int32 CasinoPhase = CasinoGameState
-		? static_cast<int32>(CasinoGameState->LoopStatus.Phase)
-		: INDEX_NONE;
-	const bool bGameplayAllowed = IsCasinoGameplayAllowed(this);
-
-	UE_LOG(LogTemp, Warning,
-		TEXT("[InteractDebug] Server_RequestUseMachine Owner=%s Phase=%d GameplayAllowed=%d RequestDelegateBound=%d UseStartedDelegateBound=%d"),
-		*GetNameSafe(GetOwner()),
-		CasinoPhase,
-		bGameplayAllowed,
-		OnRequestUseMachine.IsBound(),
-		OnUseStarted.IsBound());
-
-	if (!bGameplayAllowed)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[InteractDebug] Machine interaction blocked by casino phase. Expected Playing=%d, Actual=%d"),
-			static_cast<int32>(ECasinoLoopPhase::Playing),
-			CasinoPhase);
-		return;
-	}
-
+	if (!IsCasinoGameplayAllowed(this)) return;
 	OnRequestUseMachine.ExecuteIfBound(RequestingCharacter);
 	Multicast_MachineUseStarted(RequestingCharacter);
-	UE_LOG(LogTemp, Warning,
-		TEXT("[InteractDebug] Machine use request completed for Owner=%s Character=%s"),
-		*GetNameSafe(GetOwner()),
-		*GetNameSafe(RequestingCharacter));
 
 	if (RequestingCharacter)
 	{
