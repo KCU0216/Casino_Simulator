@@ -236,6 +236,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
 	int32 GetPickaxeMiningPower() const;
 
+
+	UFUNCTION(BlueprintPure, Category = "Input")
+	bool IsGameplayInputBlocked() const;
+
 	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
 	float GetPickaxeMiningSpeed() const;
 
@@ -244,6 +248,8 @@ public:
 
 // Currency
 public:
+
+
 	UFUNCTION(BlueprintCallable, Category = "Economy|Currency")
 	bool TrySpendCurrency(float Amount);
 
@@ -384,9 +390,6 @@ protected:
 
 	/** Called from Input Actions for movement input */
 	void MoveInput(const FInputActionValue& Value);
-
-	/** Returns true while a modal gameplay UI should suppress normal character actions. */
-	bool IsGameplayInputBlocked() const;
 
 	/** Called from Input Actions for looking input */
 	void LookInput(const FInputActionValue& Value);

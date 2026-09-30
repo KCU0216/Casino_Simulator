@@ -2,21 +2,40 @@
 #include "Online/CasinoOnlineSubsystem.h"
 #include "Online/CasinoOnlineSettings.h"
 #include "casino_simulatorPlayerState.h"
+#include "casino_simulatorPlayerController.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpectatorPawn.h"
-#include "UObject/ConstructorHelpers.h"
 
 ACasinoLobbyGameMode::ACasinoLobbyGameMode()
 {
     bUseSeamlessTravel = true;
     PlayerStateClass = Acasino_simulatorPlayerState::StaticClass();
     DefaultPawnClass = ASpectatorPawn::StaticClass();
-    static ConstructorHelpers::FClassFinder<APlayerController> PC(
-        TEXT("/Game/FirstPerson/Blueprints/BP_FirstPersonPlayerController"));
-    if (PC.Succeeded()) PlayerControllerClass = PC.Class;
+    PlayerControllerClass = Acasino_simulatorPlayerController::StaticClass();
+    LobbyPlayerControllerClass = TSoftClassPtr<APlayerController>(FSoftObjectPath(
+        TEXT("/Game/FirstPerson/Blueprints/BP_FirstPersonPlayerController.BP_FirstPersonPlayerController_C")));
+}
+
+void ACasinoLobbyGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+    // InitGame runs after engine initialization and before player controllers are spawned.
+    // Preserve a custom controller explicitly assigned by a derived GameMode BP.
+    if (PlayerControllerClass == Acasino_simulatorPlayerController::StaticClass())
+    {
+        if (UClass* ControllerClass = LobbyPlayerControllerClass.LoadSynchronous())
+        {
+            PlayerControllerClass = ControllerClass;
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("Lobby: could not load PlayerController %s; using native fallback."),
+                *LobbyPlayerControllerClass.ToSoftObjectPath().ToString());
+        }
+    }
+    Super::InitGame(MapName, Options, ErrorMessage);
 }
 
 bool ACasinoLobbyGameMode::AreAllPlayersReady() const
