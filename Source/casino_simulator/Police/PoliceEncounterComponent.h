@@ -7,6 +7,7 @@
 
 class APoliceCharacter;
 class Acasino_simulatorCharacter;
+class APawn;
 
 // 경찰 이벤트의 진행 상태
 UENUM()
@@ -61,9 +62,20 @@ private:
         meta = (ClampMin = "0.1", Units = "s"))
     float PoliceIntroDurationSeconds = 4.0f;
 
+    // 체포 후 감옥으로 이동하기 전 연출 시간
+    UPROPERTY(EditDefaultsOnly, Category = "Casino | Police",
+        meta = (ClampMin = "0.1", Units = "s"))
+    float PoliceArrestDurationSeconds = 1.0f;
+
     UPROPERTY(VisibleInstanceOnly, Category = "Casino|Police")
     EPoliceEncounterState EncounterState =
         EPoliceEncounterState::Inactive;
+
+
+    UFUNCTION()
+    void HandlePoliceChaseReachedTarget(APawn* Target);
+
+    void FinishPoliceArrest();
 
     // 맵에 배치된 경찰
     UPROPERTY(Transient)

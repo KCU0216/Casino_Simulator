@@ -276,6 +276,10 @@ void UPoliceEncounterComponent::FinishPoliceIntro()
     Police->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
     Police->SetActorEnableCollision(true);
 
+    PoliceAI->OnChaseReachedTarget.AddUniqueDynamic(
+        this,
+        &UPoliceEncounterComponent::HandlePoliceChaseReachedTarget);
+
     EncounterState = EPoliceEncounterState::Chasing;
     PoliceAI->StartChase(Target);
 }
@@ -358,4 +362,45 @@ void UPoliceEncounterComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
     CurrentJailedPlayer.Reset();
 
     Super::EndPlay(EndPlayReason);
+}
+
+void UPoliceEncounterComponent::HandlePoliceChaseReachedTarget(APawn* Target)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || EncounterState != EPoliceEncounterState::Chasing)
+    {
+        return;
+    }
+
+    const ACasinoLoopGameState* GS = GetWorld()->GetGameState<ACasinoLoopGameState>();
+
+    APoliceCharacter* Police = EncounterPoliceActor.Get();
+
+    if (!GS || GS->LoopStatus.Phase != ECasinoLoopPhase::Playing
+        || !IsValid(Police)
+        || !IsValid(Target)
+        || Target != PoliceChaseTarget.Get()
+        || !Target->IsPlayerControlled())
+    {
+        return;
+    }
+
+    EncounterState = EPoliceEncounterState::Arresting;
+
+    APoliceAIController* PoliceAI =
+        Cast<APoliceAIController>(Police->GetController());
+
+    if (IsValid(PoliceAI))
+    {
+        PoliceAI->StopChase();
+    }
+
+    Police->GetCharacterMovement()->StopMovementImmediately();
+    Police->GetCharacterMovement()->DisableMovement();
+    Police->SetActorEnableCollision(false);
+
+    UE_LOG(
+        LogTemp,
+        Log,
+        TEXT("Police arrest started. Target: %s"),
+        *GetNameSafe(Target));
 }

@@ -20,6 +20,9 @@ public:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Presentation")
 	void OnPoliceEncounterStopped();
+
+	UFUNCTION(BlueprintImplementableEvent, BlueprintPure, Category = "Police|Jail")
+	AActor* GetPoliceJailDestination() const;
 };
 
 
