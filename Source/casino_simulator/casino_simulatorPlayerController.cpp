@@ -12,6 +12,7 @@
 #include "casino_simulatorCharacter.h"
 #include "Engine/World.h"
 
+#include "Police/PoliceCharacter.h"
 #include "Camera/CameraComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
@@ -1006,4 +1007,36 @@ void Acasino_simulatorPlayerController::ClientEndPoliceCinematic_Implementation(
 {
 	bPoliceCinematicActive = false;
 	OnPoliceCinematicStopped();
+}
+
+void Acasino_simulatorPlayerController::BeginPoliceArrest(APoliceCharacter* Police)
+{
+	if (!HasAuthority() || bPoliceCinematicActive || !IsValid(Police))
+	{
+		return;
+	}
+
+	bPoliceCinematicActive = true;
+	ClientBeginPoliceArrest(Police);
+}
+
+void Acasino_simulatorPlayerController::ClientBeginPoliceArrest_Implementation(
+	APoliceCharacter* Police)
+{
+	if (!IsValid(Police))
+	{
+		return;
+	}
+
+	if (IsValid(UIManager))
+	{
+		// 체포로 종료되는 게임의 UI와 위젯 타이머를 정리합니다.
+		UIManager->ClearInteractionWidgets();
+
+		// UI에 남아 있던 입력 차단을 현재 게임 단계에 맞게 정리합니다.
+		UIManager->ApplyUIScreenInput();
+	}
+
+	bPoliceCinematicActive = true;
+	OnPoliceArrestRequested(Police);
 }

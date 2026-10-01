@@ -1,4 +1,7 @@
 #include "PoliceEncounterComponent.h"
+#include "NPC/NPC_Base.h"
+#include "Machine/SeatedMachineBase.h"
+#include "Interaction/WorldInteractableBase.h"
 #include "casino_loop_gamestate.h"
 #include "Police/PoliceAiController.h"
 #include "casino_simulatorCharacter.h"
@@ -299,6 +302,17 @@ void UPoliceEncounterComponent::EndPoliceDay()
     Timer.ClearTimer(PoliceIntroTimerHandle);
     Timer.ClearTimer(PoliceArrestTimerHandle);
 
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+        Acasino_simulatorPlayerController* PC =
+            Cast<Acasino_simulatorPlayerController>(It->Get());
+
+        if (IsValid(PC))
+        {
+            PC->EndPoliceCinematic();
+        }
+    }
+
     APoliceCharacter* Police = EncounterPoliceActor.Get();
 
     if (IsValid(Police))
@@ -398,9 +412,109 @@ void UPoliceEncounterComponent::HandlePoliceChaseReachedTarget(APawn* Target)
     Police->GetCharacterMovement()->DisableMovement();
     Police->SetActorEnableCollision(false);
 
+    Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(Target->GetController());
+
+    if (IsValid(PC))
+    {
+        PC->BeginPoliceArrest(Police);
+    }
+
     UE_LOG(
         LogTemp,
         Log,
         TEXT("Police arrest started. Target: %s"),
         *GetNameSafe(Target));
+
+    GetWorld()->GetTimerManager().SetTimer(
+        PoliceArrestTimerHandle,
+        this,
+        &UPoliceEncounterComponent::FinishPoliceArrest,
+        FMath::Max(0.1f, PoliceArrestDurationSeconds),
+        false);
+}
+
+void UPoliceEncounterComponent::FinishPoliceArrest()
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || EncounterState != EPoliceEncounterState::Arresting)
+    {
+        return;
+    }
+
+    const ACasinoLoopGameState* GS = GetWorld()->GetGameState<ACasinoLoopGameState>();
+
+    if (!GS || GS->LoopStatus.Phase != ECasinoLoopPhase::Playing)
+    {
+        return;
+    }
+
+    APoliceCharacter* Police = EncounterPoliceActor.Get();
+    Acasino_simulatorCharacter* Player = PoliceChaseTarget.Get();
+
+    if (IsValid(Player))
+    {
+        Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(Player->GetController());
+
+        if (IsValid(PC))
+        {
+            PC->EndPoliceCinematic();
+        }
+    }
+
+    AActor* JailPoint = IsValid(Police)
+        ? Police->GetPoliceJailDestination()
+        : nullptr;
+
+    EncounterState = EPoliceEncounterState::Finished;
+    PoliceChaseTarget.Reset();
+
+    if (IsValid(Police))
+    {
+        Police->OnPoliceEncounterStopped();
+        Police->SetActorEnableCollision(false);
+        Police->SetActorHiddenInGame(true);
+        Police->ForceNetUpdate();
+    }
+
+    if (!IsValid(Player) || !Player->IsPlayerControlled() || !IsValid(JailPoint))
+    {
+        UE_LOG(LogTemp, Error, TEXT("Police Arrest Failed: invalid player or jail destinaion"));
+        return;
+    }
+
+    UObject* InteractionTarget = Player->GetCurrentSeatedMachine().GetObject();
+
+    if (ANPC_Base* NPC = Cast<ANPC_Base>(InteractionTarget))
+    {
+        NPC->ReleaseInteraction(Player);
+    }
+    else if(ASeatedMachineBase* Machine = Cast<ASeatedMachineBase>(InteractionTarget))
+    {
+        //  // 게임 진행 중의 퇴장 제한을 체포 시에는 해제
+        Machine->SetCanExitMachine(true);
+        Machine->RequestReleaseMachine(Player);
+    }
+    else if (AWorldInteractableBase* Interactable = Cast<AWorldInteractableBase>(InteractionTarget))
+    {
+        Interactable->RequestReleaseMachine(Player);
+
+    }
+
+
+    Player->GetCharacterMovement()->StopMovementImmediately();
+
+    const bool bMoved = Player->SetActorLocation(JailPoint->GetActorLocation(), false, nullptr, ETeleportType::TeleportPhysics);
+
+    if (!bMoved)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Police Arrest Failed: jail teleport failed."));
+        return;
+    }
+
+    CurrentJailedPlayer = Player;
+
+    UE_LOG(
+        LogTemp,
+        Log,
+        TEXT("Police arrest completed. Jailed player: %s"),
+        *GetNameSafe(Player));
 }

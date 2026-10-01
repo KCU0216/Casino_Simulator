@@ -20,6 +20,7 @@ class ASeatedMachineBase;
 class UInventoryWidget;
 class UPauseMenuWidget;
 class UCasinoShopComponent;
+class APoliceCharacter;
 struct FOnAttributeChangeData;
 
 /**
@@ -73,10 +74,6 @@ public:
     virtual void PlayerTick(float DeltaTime) override;
     virtual void PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel) override;
 
-
-	void BeginPoliceArrival();
-	void EndPoliceCinematic();
-
 	UFUNCTION(BlueprintPure, Category = "Police|Cinematic")
 	bool IsPoliceCinematicActive() const
 	{
@@ -85,9 +82,16 @@ public:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Cinematic")
 	void OnPoliceArrivalRequested();
+	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Cinematic")
+	void OnPoliceArrestRequested(APoliceCharacter* Police);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Cinematic")
 	void OnPoliceCinematicStopped();
+
+	void BeginPoliceArrival();
+	void BeginPoliceArrest(APoliceCharacter* Police);
+	void EndPoliceCinematic();
+
 private:
     void RefreshCasinoUIScreen();
     void EnsureUIRoot();
@@ -99,6 +103,9 @@ private:
 
 	UFUNCTION(Client, Reliable)
 	void ClientBeginPoliceArrival();
+
+	UFUNCTION(Client, Reliable)
+	void ClientBeginPoliceArrest(APoliceCharacter* Police);
 
 	UFUNCTION(Client, Reliable)
 	void ClientEndPoliceCinematic();
