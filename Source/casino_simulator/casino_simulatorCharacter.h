@@ -162,7 +162,7 @@ protected:
 	TObjectPtr<UBlackjackPlayerComponent> BlackjackPlayerComponent;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Machine|Interaction", meta = (AllowPrivateAccess = "true"))
-	TScriptInterface<IWorldInteractable> CurrentSeatedMachine;
+	TScriptInterface<IWorldInteractable> CurrentInteractionTarget;
 
 	/** Most recent IWorldInteractable this character actually interacted with (E-pressed and passed
 	 * CanInteract), regardless of type - set from Acasino_simulatorPlayerController::RequestWorldInteraction
@@ -219,7 +219,7 @@ public:
 	UBlackjackPlayerComponent* GetBlackjackPlayerComponent() const { return BlackjackPlayerComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Machine|Interaction")
-	TScriptInterface<IWorldInteractable> GetCurrentSeatedMachine() const { return CurrentSeatedMachine; }
+	TScriptInterface<IWorldInteractable> GetCurrentInteractionTarget() const { return CurrentInteractionTarget; }
 
 	UFUNCTION(BlueprintPure, Category = "Interaction")
 	TScriptInterface<IWorldInteractable> GetLastInteractionTarget() const { return LastInteractionTarget; }
@@ -311,8 +311,8 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Three Card Poker")
 	void ServerLeaveThreeCardPokerTable(AThreeCardPokerTableActor* Table);
 
-	void SetCurrentSeatedMachine(TScriptInterface<IWorldInteractable> NewMachine);
-	void ClearCurrentSeatedMachine(IWorldInteractable* MachineToClear);
+	void SetCurrentInteractionTarget(TScriptInterface<IWorldInteractable> NewMachine);
+	void ClearCurrentInteractionTarget(IWorldInteractable* MachineToClear);
 
 	void SetLastInteractionTarget(TScriptInterface<IWorldInteractable> NewTarget) { LastInteractionTarget = NewTarget; }
 

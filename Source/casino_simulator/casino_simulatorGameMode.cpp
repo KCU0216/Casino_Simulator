@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 #include "casino_simulatorGameMode.h"
 #include "Police/PoliceEncounterComponent.h"
 #include "Enemy/ThiefCharacter.h"
@@ -235,7 +235,7 @@ void Acasino_simulatorGameMode::BeginPaymentPhase()
     {
         auto* User = Cast<Acasino_simulatorCharacter>(It->Get()->GetPawn());
         if (!User) continue;
-        UObject* Target = User->GetCurrentSeatedMachine().GetObject();
+        UObject* Target = User->GetCurrentInteractionTarget().GetObject();
         if (auto* NPC = Cast<ANPC_Base>(Target)) NPC->ReleaseInteraction(User);
         else if (auto* Machine = Cast<ASeatedMachineBase>(Target))
         {
