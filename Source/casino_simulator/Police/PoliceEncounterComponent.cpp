@@ -481,7 +481,7 @@ void UPoliceEncounterComponent::FinishPoliceArrest()
         return;
     }
 
-    UObject* InteractionTarget = Player->GetCurrentSeatedMachine().GetObject();
+    UObject* InteractionTarget = Player->GetCurrentInteractionTarget().GetObject();
 
     if (ANPC_Base* NPC = Cast<ANPC_Base>(InteractionTarget))
     {
