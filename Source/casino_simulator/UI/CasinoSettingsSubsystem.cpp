@@ -1,6 +1,8 @@
 ﻿#include "UI/CasinoSettingsSubsystem.h"
 
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
+#include "Sound/CasinoSoundSubsystem.h"
 #include "GameFramework/GameUserSettings.h"
 #include "GenericPlatform/GenericApplication.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -222,5 +224,12 @@ void UCasinoSettingsSubsystem::ResetPlayerSettings()
 
 void UCasinoSettingsSubsystem::ApplyAudioSettings() const
 {
-	FApp::SetVolumeMultiplier(MasterVolume);
+	// FApp::SetVolumeMultiplier is reset by the engine on window focus / PIE start, so the volume goes through a SoundMix.
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UCasinoSoundSubsystem* Sound = GameInstance->GetSubsystem<UCasinoSoundSubsystem>())
+		{
+			Sound->ApplyMasterVolume();
+		}
+	}
 }
