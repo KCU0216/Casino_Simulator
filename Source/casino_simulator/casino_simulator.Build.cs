@@ -23,6 +23,7 @@ public class casino_simulator : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
+			"Niagara",
             "OnlineSubsystem", "OnlineSubsystemUtils", "OnlineSubsystemEOS",
             "OnlineBase", "VoiceChat", "DeveloperSettings"
 		});

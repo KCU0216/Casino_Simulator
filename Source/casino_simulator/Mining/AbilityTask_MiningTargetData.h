@@ -5,7 +5,7 @@
 #include "Abilities/Tasks/AbilityTask.h"
 #include "AbilityTask_MiningTargetData.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMiningTargetDataReceived, AActor*, HitActor);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FMiningTargetDataReceived, AActor*, HitActor, const FHitResult&, HitResult);
 
 /** Waits on the server for a mining target-data packet sent by the owning client. */
 UCLASS()

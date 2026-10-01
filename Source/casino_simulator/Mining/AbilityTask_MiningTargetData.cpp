@@ -44,6 +44,7 @@ void UAbilityTask_WaitMiningTargetData::OnTargetDataReceived(const FGameplayAbil
 
 	// 클라이언트가 보낸 Hit Result에서 광석과 최대 거리를 검증한다.
 	AActor* HitActor = nullptr;
+	FHitResult ValidatedHit;
 	if (Data.Num() > 0 && Data.Get(0) != nullptr)
 	{
 		if (const FHitResult* Hit = Data.Get(0)->GetHitResult())
@@ -52,6 +53,7 @@ void UAbilityTask_WaitMiningTargetData::OnTargetDataReceived(const FGameplayAbil
 			if (Avatar && Hit->GetActor() && FVector::DistSquared(Avatar->GetActorLocation(), Hit->ImpactPoint) <= FMath::Square(MaximumRange))
 			{
 				HitActor = Cast<AOreBase>(Hit->GetActor());
+				ValidatedHit = *Hit;
 			}
 		}
 	}
@@ -59,7 +61,7 @@ void UAbilityTask_WaitMiningTargetData::OnTargetDataReceived(const FGameplayAbil
 	// 검증된 광석만 블루프린트의 On Valid Hit으로 전달한다.
 	if (HitActor && ShouldBroadcastAbilityTaskDelegates())
 	{
-		OnValidHit.Broadcast(HitActor);
+		OnValidHit.Broadcast(HitActor, ValidatedHit);
 	}
 
 	// Keep listening until the ability ends: a looping mining montage can send multiple hit frames.

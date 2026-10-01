@@ -32,12 +32,13 @@ void AOreSpawner::Tick(float DeltaTime)
 
 void AOreSpawner::SpawnOre()
 {
-	if (!HasAuthority() || !OreClass)
+	if (!HasAuthority())
 	{
 		return;
 	}
 
-	if (!OreClass)
+	const int32 OreIndex = GetRandomOreIndex();
+	if (!OreClasses.IsValidIndex(OreIndex) || !OreClasses[OreIndex])
 	{
 		return;
 	}
@@ -47,13 +48,33 @@ void AOreSpawner::SpawnOre()
 	SpawnParameter.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
 
-	SpawnedOre = GetWorld()->SpawnActor<AOreBase>(OreClass, GetActorTransform(), SpawnParameter);
+	SpawnedOre = GetWorld()->SpawnActor<AOreBase>(
+		OreClasses[OreIndex],
+		GetActorTransform(),
+		SpawnParameter);
 
 	if (SpawnedOre)
 	{
 		SpawnedOre->OnOreDepleted.AddDynamic(this, &AOreSpawner::OnOreDepleted);
 	}
 	
+}
+
+int32 AOreSpawner::GetRandomOreIndex() const
+{
+	const int32 Roll = FMath::RandRange(1, 100);
+
+	if (Roll <= 70)
+	{
+		return 0;
+	}
+
+	if (Roll <= 90)
+	{
+		return 1;
+	}
+
+	return 2;
 }
 
 void AOreSpawner::OnOreDepleted()

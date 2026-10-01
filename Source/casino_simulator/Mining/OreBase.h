@@ -7,6 +7,8 @@
 #include "OreBase.generated.h"
 
 class UStaticMeshComponent;
+class UNiagaraSystem;
+class USoundBase;
 class AOrePickupBase;
 class Acasino_simulatorCharacter;
 
@@ -37,6 +39,12 @@ public:
 	/** Applies a mining hit using the interacting character's current pickaxe power. Must be called on the server. */
 	UFUNCTION(BlueprintCallable, Category="Ore|Mining")
 	bool ApplyMiningHitFromCharacter(Acasino_simulatorCharacter* MiningCharacter);
+
+	/** Applies a validated mining hit and multicasts its impact before this ore can be destroyed. */
+	UFUNCTION(BlueprintCallable, Category="Ore|Mining")
+	bool ApplyMiningHitFromCharacterAtHit(
+		Acasino_simulatorCharacter* MiningCharacter,
+		const FHitResult& HitResult);
 
 	UFUNCTION(BlueprintPure, Category="Ore|Mining")
 	bool IsDepleted() const { return CurrentDurability <= 0; }
@@ -84,8 +92,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "OrePickup")
 	TSubclassOf<AOrePickupBase> OrePickupClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Ore|Effects")
+	TObjectPtr<UNiagaraSystem> MiningHitEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Ore|Effects")
+	TObjectPtr<USoundBase> MiningHitSound;
+
 	UFUNCTION()
 	void OnRep_CurrentDurability(int32 PreviousDurability);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_PlayMiningHitEffect(
+		FVector_NetQuantize ImpactPoint,
+		FVector_NetQuantizeNormal ImpactNormal);
 
 	/** Blueprint hook for hit VFX, cracks, sound, and rewards. Runs on the server. */
 	UFUNCTION(BlueprintImplementableEvent, Category="Ore|Events")
@@ -94,4 +113,7 @@ protected:
 	/** Blueprint hook before this ore actor is destroyed. Runs on the server. */
 	UFUNCTION(BlueprintImplementableEvent, Category="Ore|Events")
 	void ReceiveOreDepleted();
+
+private:
+	bool ApplyMiningHitInternal(int32 Damage, const FHitResult* HitResult);
 };

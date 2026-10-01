@@ -24,8 +24,10 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	void SpawnOre();
-	UPROPERTY(EditAnywhere, Category = "OreClass")
-	TSubclassOf<AOreBase> OreClass;
+
+	/** 0: Iron, 1: Gold, 2: Diamond. Set once on the spawner Blueprint defaults. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "OreClass")
+	TArray<TSubclassOf<AOreBase>> OreClasses;
 
 	UPROPERTY(VisibleAnywhere)
 	AOreBase* SpawnedOre;
@@ -37,5 +39,8 @@ public:
 
 	UFUNCTION()
 	void OnOreDepleted();
+
+private:
+	int32 GetRandomOreIndex() const;
 
 };
