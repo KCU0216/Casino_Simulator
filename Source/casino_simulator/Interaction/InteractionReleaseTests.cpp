@@ -74,12 +74,12 @@ bool FWorldInteractionReleaseTest::RunTest(const FString& Parameters)
     if (!Table->HasActorBegunPlay()) Table->DispatchBeginPlay();
     TestTrue(TEXT("Poker session accepts player"), PokerSession->TryJoin(Player));
     TestEqual(TEXT("Poker records current interaction"),
-        Player->GetCurrentSeatedMachine().GetObject(), static_cast<UObject*>(Table));
+        Player->GetCurrentInteractionTarget().GetObject(), static_cast<UObject*>(Table));
     Player->GetCharacterMovement()->DisableMovement();
     // Poker now follows the same current-interaction dispatch as machines and NPCs.
     PC->Server_CloseCurrentInteraction_Implementation(Table);
     TestNull(TEXT("Controller dispatch releases poker player"), Table->GetInteractingPlayer());
-    TestNull(TEXT("Poker close clears current interaction"), Player->GetCurrentSeatedMachine().GetObject());
+    TestNull(TEXT("Poker close clears current interaction"), Player->GetCurrentInteractionTarget().GetObject());
     TestNull(TEXT("Poker releases its player"), Table->GetInteractingPlayer());
     // This isolated world has no network driver, so simulate delivery of the client completion RPC.
     PC->Client_CompleteInteractionClose_Implementation(Table);

@@ -194,16 +194,16 @@ float Acasino_simulatorCharacter::GetCurrency() const
 	);
 }
 
-void Acasino_simulatorCharacter::SetCurrentSeatedMachine(TScriptInterface<IWorldInteractable> NewMachine)
+void Acasino_simulatorCharacter::SetCurrentInteractionTarget(TScriptInterface<IWorldInteractable> NewMachine)
 {
-	CurrentSeatedMachine = NewMachine;
+	CurrentInteractionTarget = NewMachine;
 }
 
-void Acasino_simulatorCharacter::ClearCurrentSeatedMachine(IWorldInteractable* MachineToClear)
+void Acasino_simulatorCharacter::ClearCurrentInteractionTarget(IWorldInteractable* MachineToClear)
 {
-	if (!MachineToClear || CurrentSeatedMachine == MachineToClear)
+	if (!MachineToClear || CurrentInteractionTarget == MachineToClear)
 	{
-		CurrentSeatedMachine = nullptr;
+		CurrentInteractionTarget = nullptr;
 	}
 }
 
@@ -684,7 +684,7 @@ bool Acasino_simulatorCharacter::IsGameplayInputBlocked() const
 
 	const bool bIsInBlackJackSeat = BlackjackPlayerComponent && BlackjackPlayerComponent->IsInBlackjackSeat();
 
-	return bIsInBlackJackSeat || GetCurrentSeatedMachine() || PC && PC->IsAnyGameplayUIOpen();
+	return bIsInBlackJackSeat || GetCurrentInteractionTarget() || PC && PC->IsAnyGameplayUIOpen();
 	
 }
 
@@ -733,7 +733,7 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 	}
 
 	if (TScriptInterface<IWorldInteractable> CurrentMachine =
-		GetCurrentSeatedMachine())
+		GetCurrentInteractionTarget())
 	{
 		if (ASeatedMachineBase* Machine =
 			Cast<ASeatedMachineBase>(CurrentMachine.GetObject()))

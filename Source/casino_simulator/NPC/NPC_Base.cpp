@@ -189,7 +189,7 @@ void ANPC_Base::OnInteractionFocusStarted_Implementation(Acasino_simulatorCharac
 	if (PC != nullptr && CanInteract(InteractingCharacter))
 	{
 		PC->SetWorldInteractionTargetFocused(true);
-		//InteractingCharacter->SetCurrentSeatedMachine(this);
+		//InteractingCharacter->SetCurrentInteractionTarget(this);
 	}
 }
 
@@ -204,7 +204,7 @@ void ANPC_Base::OnInteractionFocusEnded_Implementation(Acasino_simulatorCharacte
 	if (PlayerController != nullptr)
 	{
 		PlayerController->SetWorldInteractionTargetFocused(false);
-		//InteractingCharacter->SetCurrentSeatedMachine(nullptr);
+		//InteractingCharacter->SetCurrentInteractionTarget(nullptr);
 	}
 }
 
@@ -256,7 +256,7 @@ void ANPC_Base::HandleSessionUserJoined(
 
 	// 기존 코드 호환용 상태
 	OverlappingPlayer = JoinedUser;
-	JoinedUser->SetCurrentSeatedMachine(this);
+	JoinedUser->SetCurrentInteractionTarget(this);
 
 	if (JoinedUser->IsLocallyControlled())
 	{
@@ -279,7 +279,7 @@ void ANPC_Base::HandleSessionUserLeft(
 	Acasino_simulatorCharacter* LeftUser)
 {
 	if (!IsValid(LeftUser) ||
-		LeftUser->GetCurrentSeatedMachine().GetObject() != this)
+		LeftUser->GetCurrentInteractionTarget().GetObject() != this)
 	{
 		return;
 	}
@@ -291,7 +291,7 @@ void ANPC_Base::HandleSessionUserLeft(
 		OverlappingPlayer = Users.IsEmpty() ? nullptr : Users[0].Get();
 	}
 
-	LeftUser->ClearCurrentSeatedMachine(this);
+	LeftUser->ClearCurrentInteractionTarget(this);
 	HandleMachineUseReleased(LeftUser);
 	UInteractionSessionComponent::RestoreMovementAfterUse(LeftUser);
 }

@@ -178,7 +178,7 @@ void AThreeCardPokerTableActor::HandleSessionUserJoined(Acasino_simulatorCharact
 {
 	if (HasAuthority() && IsValid(JoinedUser))
 	{
-		JoinedUser->SetCurrentSeatedMachine(this);
+		JoinedUser->SetCurrentInteractionTarget(this);
 		SetInteractingPlayer(JoinedUser);
 	}
 }
@@ -187,7 +187,7 @@ void AThreeCardPokerTableActor::HandleSessionUserLeft(Acasino_simulatorCharacter
 {
 	if (HasAuthority() && InteractingPlayer.Get() == LeftUser)
 	{
-		LeftUser->ClearCurrentSeatedMachine(this);
+		LeftUser->ClearCurrentInteractionTarget(this);
 		SetInteractingPlayer(nullptr);
 	}
 }
@@ -202,7 +202,7 @@ void AThreeCardPokerTableActor::OnLocalInteract_Implementation(Acasino_simulator
 	{
 		if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(InteractingCharacter->GetController()))
 		{
-			if (InteractingCharacter->GetCurrentSeatedMachine())
+			if (InteractingCharacter->GetCurrentInteractionTarget())
 			{
 				PC->CloseInteraction();
 			}

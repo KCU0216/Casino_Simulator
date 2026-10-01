@@ -210,7 +210,7 @@ void ASeatedMachineBase::HandleSessionUserJoined(Acasino_simulatorCharacter* Joi
 	CurrentUser = JoinedUser;
 	bCanOperate = true;
 	bCanExitMachine = true;
-	JoinedUser->SetCurrentSeatedMachine(this);
+	JoinedUser->SetCurrentInteractionTarget(this);
 
 	HandleMachineUseStarted(JoinedUser);
 }
@@ -240,7 +240,7 @@ void ASeatedMachineBase::HandleSessionUserLeft(Acasino_simulatorCharacter* LeftU
 		bCanExitMachine = true;
 	}
 
-	LeftUser->ClearCurrentSeatedMachine(this);
+	LeftUser->ClearCurrentInteractionTarget(this);
 	HandleMachineUseReleased(LeftUser);
 }
 

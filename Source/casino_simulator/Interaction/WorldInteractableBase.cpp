@@ -1,4 +1,4 @@
-#include "Interaction/WorldInteractableBase.h"
+﻿#include "Interaction/WorldInteractableBase.h"
 
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
@@ -170,7 +170,7 @@ void AWorldInteractableBase::Server_ReleaseMachine_Implementation(Acasino_simula
 bool AWorldInteractableBase::HandleMachineReleaseMachine(Acasino_simulatorCharacter* RequestingCharacter)
 {
 	return IsValid(RequestingCharacter) &&
-        RequestingCharacter->GetCurrentSeatedMachine().GetObject() == this;
+        RequestingCharacter->GetCurrentInteractionTarget().GetObject() == this;
 }
 
 void AWorldInteractableBase::HandleMachineUseStarted(Acasino_simulatorCharacter* Character)
@@ -189,9 +189,9 @@ void AWorldInteractableBase::Multicast_MachineReleased_Implementation(Acasino_si
     if (!IsValid(ReleasingCharacter)) return;
     InteractingPlayer = nullptr;
     // A late release must not clear a newer interaction on this client.
-    UObject* Current = ReleasingCharacter->GetCurrentSeatedMachine().GetObject();
+    UObject* Current = ReleasingCharacter->GetCurrentInteractionTarget().GetObject();
     if (Current && Current != this) return;
-    ReleasingCharacter->ClearCurrentSeatedMachine(this);
+    ReleasingCharacter->ClearCurrentInteractionTarget(this);
     HandleMachineUseReleased(ReleasingCharacter);
 }
 
