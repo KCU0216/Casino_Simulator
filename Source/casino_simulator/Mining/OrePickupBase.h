@@ -78,10 +78,12 @@ public:
 		int32 InMaxCarryCount
 	);
 
-	const TArray<TObjectPtr<Acasino_simulatorCharacter>>& GetSaleParticipants() const
+	Acasino_simulatorCharacter* GetLastCarrier() const
 	{
-		return LastCarriers;
+		return LastCarrier.Get();
 	}
+
+	void SetLastCarrier(Acasino_simulatorCharacter* Character);
 
 protected:
 
@@ -124,7 +126,7 @@ protected:
 	TArray<TObjectPtr<Acasino_simulatorCharacter>> Carriers = {};
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "OrePickup")
-	TArray<TObjectPtr<Acasino_simulatorCharacter>> LastCarriers = {};
+	TObjectPtr<Acasino_simulatorCharacter> LastCarrier = nullptr;
 
 	TMap<TWeakObjectPtr<Acasino_simulatorCharacter>, FVector> CarrierTargetLocations;
 

@@ -6,6 +6,7 @@
 #include "CartBase.generated.h"
 
 class UStaticMeshComponent;
+class UBoxComponent;
 class USceneComponent;
 class UPrimitiveComponent;
 class Acasino_simulatorCharacter;
@@ -29,6 +30,12 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	UFUNCTION(BlueprintPure, Category = "Mining|Cart")
+	Acasino_simulatorCharacter* GetCarrier() const { return Carrier.Get(); }
+
+	UFUNCTION(BlueprintPure, Category = "Mining|Cart")
+	UBoxComponent* GetCargoVolume() const { return CargoVolume.Get(); }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
@@ -36,6 +43,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mining|Cart|Components")
 	TObjectPtr<UStaticMeshComponent> CartMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mining|Cart|Components")
+	TObjectPtr<UBoxComponent> CargoVolume;
 
 	UPROPERTY(ReplicatedUsing = OnRep_Carrier, VisibleInstanceOnly, BlueprintReadOnly, Category = "Mining|Cart")
 	TObjectPtr<Acasino_simulatorCharacter> Carrier = nullptr;
@@ -81,5 +91,8 @@ public:
 
 	UFUNCTION()
 	void OnRep_Carrier();
+
+private:
+	void UpdateCargoLastCarrier();
 
 };

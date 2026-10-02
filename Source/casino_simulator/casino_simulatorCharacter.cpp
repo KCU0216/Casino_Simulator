@@ -24,6 +24,7 @@
 #include "Mining/MiningShopComponent.h"
 #include "Mining/OrePickupBase.h"
 #include "Mining/CartBase.h"
+#include "Mining/MiningGameplayTags.h"
 #include "casino_simulatorPlayerState.h"
 #include "casino_simulatorAttributeSet.h"
 #include "Item/ItemData.h"
@@ -37,7 +38,6 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Drop, "Ability.Ore.Drop");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Carry, "Ability.Cart.Carry");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Release, "Ability.Cart.Release");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_EquipPickaxe, "Input.EquipPickaxe");
-UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Equipment_Pickaxe_Equipped, "State.Equipment.Pickaxe.Equipped");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Carrying_Ore, "State.Carrying.Ore");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Carrying_Cart, "State.Carrying.Cart");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_Mining, "Input.Mining");
@@ -866,7 +866,7 @@ void Acasino_simulatorCharacter::EquipPickaxeInputStarted()
 	}
 
 	const bool bPickaxeEquipped = AbilitySystemComponent
-		&& AbilitySystemComponent->HasMatchingGameplayTag(TAG_State_Equipment_Pickaxe_Equipped);
+		&& AbilitySystemComponent->HasMatchingGameplayTag(MiningGameplayTags::PickaxeEquipped);
 	const bool bCarrying = AbilitySystemComponent
 		&& (AbilitySystemComponent->HasMatchingGameplayTag(TAG_State_Carrying_Ore)
 			|| AbilitySystemComponent->HasMatchingGameplayTag(TAG_State_Carrying_Cart));

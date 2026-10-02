@@ -42,7 +42,7 @@ int32 AMiningSellZone::GetSalePrice(const EOreType OreType) const
 
 bool AMiningSellZone::TrySellOre(AOrePickupBase* OrePickup)
 {
-	if (!HasAuthority() || !OrePickup)
+	if (!HasAuthority() || !IsValid(OrePickup))
 	{
 		return false;
 	}
@@ -52,10 +52,8 @@ bool AMiningSellZone::TrySellOre(AOrePickupBase* OrePickup)
 		return false;
 	}
 
-	const TArray<TObjectPtr<Acasino_simulatorCharacter>>& Participants =
-		OrePickup->GetSaleParticipants();
-
-	if (Participants.Num() <= 0)
+	Acasino_simulatorCharacter* Seller = OrePickup->GetLastCarrier();
+	if (!IsValid(Seller))
 	{
 		return false;
 	}
@@ -66,20 +64,7 @@ bool AMiningSellZone::TrySellOre(AOrePickupBase* OrePickup)
 		return false;
 	}
 
-	const int32 Share = SalePrice / Participants.Num();
-	const int32 Remainder = SalePrice % Participants.Num();
-
-	for (int32 Index = 0; Index < Participants.Num(); ++Index)
-	{
-		Acasino_simulatorCharacter* Participant = Participants[Index];
-		if (!IsValid(Participant))
-		{
-			continue;
-		}
-
-		const int32 Payout = Share + (Index < Remainder ? 1 : 0);
-		Participant->AddCurrency(static_cast<float>(Payout));
-	}
+	Seller->AddCurrency(static_cast<float>(SalePrice));
 
 	//ReceiveOreSold(OrePickup, nullptr, SalePrice);
 	OrePickup->Destroy();

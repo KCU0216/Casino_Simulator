@@ -1,6 +1,7 @@
 ﻿#include "Mining/CartBase.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Mining/MiningGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
@@ -12,7 +13,6 @@
 #include "casino_simulatorCharacter.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Event_Cart_Pickup, "Event.Cart.Pickup");
-UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Equipment_Pickaxe_Equipped, "State.Equipment.Pickaxe.Equipped");
 
 ACartBase::ACartBase()
 {
@@ -28,6 +28,16 @@ ACartBase::ACartBase()
 	CartMesh->SetGenerateOverlapEvents(true);
 	CartMesh->SetSimulatePhysics(true);
 	CartMesh->SetEnableGravity(true);
+
+	CargoVolume = CreateDefaultSubobject<UBoxComponent>(TEXT("CargoVolume"));
+	CargoVolume->SetupAttachment(CartMesh);
+	CargoVolume->SetRelativeLocation(FVector(0.0f, 0.0f, 60.0f));
+	CargoVolume->SetBoxExtent(FVector(100.0f, 60.0f, 60.0f));
+	CargoVolume->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	CargoVolume->SetCollisionObjectType(ECC_WorldDynamic);
+	CargoVolume->SetCollisionResponseToAllChannels(ECR_Ignore);
+	CargoVolume->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Overlap);
+	CargoVolume->SetGenerateOverlapEvents(true);
 }
 
 void ACartBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -55,6 +65,8 @@ void ACartBase::Tick(float DeltaTime)
 	{
 		return;
 	}
+
+	UpdateCargoLastCarrier();
 
 	const FVector* TargetLocation = &CarrierTargetLocation;
 	if (!TargetLocation || TargetLocation->ContainsNaN())
@@ -117,7 +129,7 @@ void ACartBase::BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCha
 	}
 
 	if (const UAbilitySystemComponent* AbilitySystem = InteractingCharacter->GetAbilitySystemComponent();
-		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(TAG_State_Equipment_Pickaxe_Equipped))
+		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(MiningGameplayTags::PickaxeEquipped))
 	{
 		ReceivePickupBlocked(InteractingCharacter);
 		return;
@@ -178,7 +190,7 @@ bool ACartBase::TryCarry(Acasino_simulatorCharacter* Character)
 	}
 
 	if (const UAbilitySystemComponent* AbilitySystem = Character->GetAbilitySystemComponent();
-		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(TAG_State_Equipment_Pickaxe_Equipped))
+		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(MiningGameplayTags::PickaxeEquipped))
 	{
 		return false;
 	}
@@ -189,6 +201,7 @@ bool ACartBase::TryCarry(Acasino_simulatorCharacter* Character)
 	}
 
 	Carrier = Character;
+	UpdateCargoLastCarrier();
 	CarrierTargetLocation = GetActorLocation();
 	Character->SetCarriedCart(this);
 	ForceNetUpdate();
@@ -204,6 +217,7 @@ bool ACartBase::TryRelease(Acasino_simulatorCharacter* Character)
 	{
 		return false;
 	}
+	UpdateCargoLastCarrier();
 	Carrier = nullptr;
 	Character->SetCarriedCart(nullptr);
 	return true;
@@ -212,4 +226,23 @@ bool ACartBase::TryRelease(Acasino_simulatorCharacter* Character)
 void ACartBase::OnRep_Carrier()
 {
 
+}
+
+void ACartBase::UpdateCargoLastCarrier()
+{
+	if (!HasAuthority() || !IsValid(Carrier) || !CargoVolume)
+	{
+		return;
+	}
+
+	TArray<UPrimitiveComponent*> OverlappingComponents;
+	CargoVolume->GetOverlappingComponents(OverlappingComponents);
+	for (UPrimitiveComponent* Component : OverlappingComponents)
+	{
+		AOrePickupBase* Ore = IsValid(Component) ? Cast<AOrePickupBase>(Component->GetOwner()) : nullptr;
+		if (IsValid(Ore) && Component == Ore->GetOrePickupMesh() && !Ore->IsBeingCarried())
+		{
+			Ore->SetLastCarrier(Carrier);
+		}
+	}
 }

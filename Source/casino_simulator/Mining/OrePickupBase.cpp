@@ -4,6 +4,7 @@
 #include "Mining/OrePickupBase.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Mining/MiningGameplayTags.h"
 #include "AbilitySystemComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -12,7 +13,6 @@
 #include "casino_simulatorCharacter.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Event_Ore_Pickup, "Event.Ore.Pickup");
-UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Equipment_Pickaxe_Equipped, "State.Equipment.Pickaxe.Equipped");
 
 namespace
 {
@@ -59,7 +59,7 @@ void AOrePickupBase::BeginLocalInteraction(Acasino_simulatorCharacter* Interacti
 	}
 
 	if (const UAbilitySystemComponent* AbilitySystem = InteractingCharacter->GetAbilitySystemComponent();
-		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(TAG_State_Equipment_Pickaxe_Equipped))
+		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(MiningGameplayTags::PickaxeEquipped))
 	{
 		ReceivePickupBlocked(InteractingCharacter);
 		return;
@@ -86,7 +86,7 @@ bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 	}
 
 	if (const UAbilitySystemComponent* AbilitySystem = Character->GetAbilitySystemComponent();
-		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(TAG_State_Equipment_Pickaxe_Equipped))
+		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(MiningGameplayTags::PickaxeEquipped))
 	{
 		return false;
 	}
@@ -103,12 +103,20 @@ bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 	
 
 	Carriers.AddUnique(Character);
-	LastCarriers.AddUnique(Character);
+	SetLastCarrier(Character);
 	CarrierTargetLocations.FindOrAdd(Character) = GetActorLocation();
 	Character->SetCarriedOre(this);
 	ForceNetUpdate();
 	return true;
 }
+void AOrePickupBase::SetLastCarrier(Acasino_simulatorCharacter* Character)
+{
+	if (HasAuthority() && IsValid(Character))
+	{
+		LastCarrier = Character;
+	}
+}
+
 //놓아보기
 bool AOrePickupBase::TryDrop(Acasino_simulatorCharacter* Character)
 {
