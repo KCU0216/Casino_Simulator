@@ -79,7 +79,14 @@ void AOrePickupBase::BeginLocalInteraction(Acasino_simulatorCharacter* Interacti
 //주워보기
 bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 {
-	if (!HasAuthority() || !CanInteract(Character) || Character->GetCarriedOre())
+	if (!HasAuthority() || !IsValid(Character) || !CanInteract(Character)
+		|| Character->GetCarriedOre())
+	{
+		return false;
+	}
+
+	if (const UAbilitySystemComponent* AbilitySystem = Character->GetAbilitySystemComponent();
+		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(TAG_State_Equipment_Pickaxe_Equipped))
 	{
 		return false;
 	}

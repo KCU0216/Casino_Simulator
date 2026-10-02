@@ -199,6 +199,9 @@ protected:
 public:
 	Acasino_simulatorCharacter();
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Equipment|Pickaxe|Presentation")
+	void ReceiveEquipPickaxeBlocked();
+
 	/** Grants an ability to this character's ASC. Authority-only; granted specs replicate to the owning client. */
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	FGameplayAbilitySpecHandle GrantAbility(TSubclassOf<UGameplayAbility> AbilityClass, int32 Level = 1, FGameplayTag InputTag = FGameplayTag());

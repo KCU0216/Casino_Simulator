@@ -1,6 +1,7 @@
 ﻿#include "Mining/CartBase.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
@@ -11,6 +12,7 @@
 #include "casino_simulatorCharacter.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Event_Cart_Pickup, "Event.Cart.Pickup");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Equipment_Pickaxe_Equipped, "State.Equipment.Pickaxe.Equipped");
 
 ACartBase::ACartBase()
 {
@@ -114,6 +116,13 @@ void ACartBase::BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCha
 		return;
 	}
 
+	if (const UAbilitySystemComponent* AbilitySystem = InteractingCharacter->GetAbilitySystemComponent();
+		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(TAG_State_Equipment_Pickaxe_Equipped))
+	{
+		ReceivePickupBlocked(InteractingCharacter);
+		return;
+	}
+
 	FGameplayEventData Payload;
 	Payload.EventTag = TAG_Event_Cart_Pickup;
 	Payload.Instigator = InteractingCharacter;
@@ -162,7 +171,14 @@ bool ACartBase::CanInteract(Acasino_simulatorCharacter* InteractingCharacter) co
 
 bool ACartBase::TryCarry(Acasino_simulatorCharacter* Character)
 {
-	if (!HasAuthority() || !CanInteract(Character) || Character->GetCarriedCart())
+	if (!HasAuthority() || !IsValid(Character) || !CanInteract(Character)
+		|| Character->GetCarriedCart())
+	{
+		return false;
+	}
+
+	if (const UAbilitySystemComponent* AbilitySystem = Character->GetAbilitySystemComponent();
+		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(TAG_State_Equipment_Pickaxe_Equipped))
 	{
 		return false;
 	}

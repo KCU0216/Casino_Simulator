@@ -23,6 +23,10 @@ public:
 		return EWorldInteractionExecutionType::LocalPredicted;
 	}
 	virtual void BeginLocalInteraction(Acasino_simulatorCharacter* InteractingCharacter) override;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Mining|Cart|Presentation")
+	void ReceivePickupBlocked(Acasino_simulatorCharacter* InteractingCharacter);
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:

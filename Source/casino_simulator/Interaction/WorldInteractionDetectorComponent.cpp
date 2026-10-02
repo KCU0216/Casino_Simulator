@@ -1,4 +1,4 @@
-#include "Interaction/WorldInteractionDetectorComponent.h"
+﻿#include "Interaction/WorldInteractionDetectorComponent.h"
 
 #include "casino_simulatorCharacter.h"
 #include "casino_simulatorPlayerController.h"

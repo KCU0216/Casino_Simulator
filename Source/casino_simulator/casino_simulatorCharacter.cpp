@@ -37,6 +37,9 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Ore_Drop, "Ability.Ore.Drop");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Carry, "Ability.Cart.Carry");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Ability_Cart_Release, "Ability.Cart.Release");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_EquipPickaxe, "Input.EquipPickaxe");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Equipment_Pickaxe_Equipped, "State.Equipment.Pickaxe.Equipped");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Carrying_Ore, "State.Carrying.Ore");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_State_Carrying_Cart, "State.Carrying.Cart");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Input_Mining, "Input.Mining");
 
 Acasino_simulatorCharacter::Acasino_simulatorCharacter()
@@ -859,6 +862,17 @@ void Acasino_simulatorCharacter::EquipPickaxeInputStarted()
 {
 	if (IsGameplayInputBlocked())
 	{
+		return;
+	}
+
+	const bool bPickaxeEquipped = AbilitySystemComponent
+		&& AbilitySystemComponent->HasMatchingGameplayTag(TAG_State_Equipment_Pickaxe_Equipped);
+	const bool bCarrying = AbilitySystemComponent
+		&& (AbilitySystemComponent->HasMatchingGameplayTag(TAG_State_Carrying_Ore)
+			|| AbilitySystemComponent->HasMatchingGameplayTag(TAG_State_Carrying_Cart));
+	if (!bPickaxeEquipped && bCarrying)
+	{
+		ReceiveEquipPickaxeBlocked();
 		return;
 	}
 
