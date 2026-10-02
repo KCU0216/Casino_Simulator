@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputCoreTypes.h"
 #include "Engine/EngineBaseTypes.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Interfaces/OnlineIdentityInterface.h"
@@ -12,6 +13,7 @@
 class IOnlineSubsystem;
 class IVoiceChatUser;
 class APlayerState;
+class IInputProcessor;
 
 UENUM(BlueprintType)
 enum class ECasinoOnlineState : uint8
@@ -36,6 +38,18 @@ struct FCasinoVoiceDevice
     GENERATED_BODY()
     UPROPERTY(BlueprintReadOnly) FString Name;
     UPROPERTY(BlueprintReadOnly) FString Id;
+};
+
+USTRUCT(BlueprintType)
+struct FCasinoVoiceParticipant
+{
+    GENERATED_BODY()
+    UPROPERTY(BlueprintReadOnly) FString Id;
+    UPROPERTY(BlueprintReadOnly) FString DisplayName;
+    UPROPERTY(BlueprintReadOnly) float Volume = 1.0f;
+    UPROPERTY(BlueprintReadOnly) bool bMuted = false;
+    UPROPERTY(BlueprintReadOnly) bool bTalking = false;
+    UPROPERTY(BlueprintReadOnly) bool bIsLocalPlayer = false;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCasinoOnlineChanged);
@@ -68,6 +82,17 @@ public:
     UFUNCTION(BlueprintPure, Category="Casino|Online") bool IsLoggedIn() const;
     UFUNCTION(BlueprintPure, Category="Casino|Online") FString GetLocalDisplayName() const;
 
+    // Local listening preferences: player IDs come from GetVoiceIdForPlayer/GetVoicePlayers.
+    UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoiceEnabled(bool bEnabled);
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") bool IsVoiceEnabled() const;
+    UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoicePlayerVolume(const FString& VoicePlayerId, float Volume);
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") float GetVoicePlayerVolume(const FString& VoicePlayerId) const;
+    UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetPushToTalkKey(FKey Key);
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") FKey GetPushToTalkKey() const;
+    // Distances are Unreal units (centimeters). Only used during gameplay.
+    UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoiceDistances(float FullVolumeDistance, float MaxDistance);
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") float GetVoiceFullVolumeDistance() const;
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") float GetVoiceMaxDistance() const;
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetMicrophoneMuted(bool bMuted);
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetPushToTalkEnabled(bool bEnabled);
     // Bind key Started -> true and Completed / Canceled -> false.
@@ -81,6 +106,8 @@ public:
     UFUNCTION(BlueprintPure, Category="Casino|Voice") bool IsVoiceConnected() const;
     UFUNCTION(BlueprintPure, Category="Casino|Voice") TArray<FCasinoVoiceDevice> GetVoiceInputDevices() const;
     UFUNCTION(BlueprintPure, Category="Casino|Voice") TArray<FString> GetVoicePlayers() const;
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") TArray<FCasinoVoiceParticipant> GetVoiceParticipants() const;
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") bool IsVoicePlayerMuted(const FString& VoicePlayerId) const;
     UFUNCTION(BlueprintPure, Category="Casino|Voice") bool IsVoicePlayerTalking(const FString& VoicePlayerId) const;
     UFUNCTION(BlueprintPure, Category="Casino|Voice") FString GetVoiceIdForPlayer(APlayerState* Player) const;
 
@@ -92,6 +119,7 @@ private:
     FDelegateHandle LoginHandle, CreateHandle, FindHandle, JoinHandle, DestroyHandle, StartHandle, UpdateHandle;
     FDelegateHandle NetworkHandle, TravelHandle, MapLoadedHandle, DeactivateHandle;
     FTSTicker::FDelegateHandle VoiceTicker;
+    TSharedPtr<IInputProcessor> VoiceInputProcessor;
     FString PendingLobbyPath;
     FString PendingJoinSessionId;
     bool bMenuTravelPending = false;
@@ -101,6 +129,7 @@ private:
     bool bHadVoiceChannel = false;
     bool bSessionWasPresent = false;
     TSet<FString> MutedPlayers;
+    TArray<FString> LastVoicePlayerIds;
 
     bool EnsureInterfaces();
     void SetState(ECasinoOnlineState NewState);
@@ -122,4 +151,5 @@ private:
     IVoiceChatUser* VoiceUser() const;
     bool TickVoice(float DeltaSeconds);
     void ApplyVoiceSettings();
+    void UpdateVoicePlayerVolumes();
 };

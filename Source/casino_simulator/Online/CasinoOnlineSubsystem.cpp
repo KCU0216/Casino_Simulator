@@ -16,6 +16,13 @@
 #include "VoiceChat.h"
 #include "HAL/IConsoleManager.h"
 #include "Engine/PendingNetGame.h"
+#include "Engine/GameViewportClient.h"
+#include "GameFramework/Pawn.h"
+#include "casino_loop_gamestate.h"
+#include "Framework/Application/IInputProcessor.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Widgets/SViewport.h"
+#include "Input/Events.h"
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
 #endif
@@ -39,6 +46,50 @@ namespace CasinoOnline
     }
 }
 
+namespace CasinoVoice
+{
+    float DistanceGain(float Distance, float FullDistance, float MaxDistance)
+    {
+        if (!FMath::IsFinite(Distance) || Distance < 0.0f) return 0.0f;
+        FullDistance = FMath::Max(0.0f, FullDistance);
+        MaxDistance = FMath::Max(FullDistance + 1.0f, MaxDistance);
+        if (Distance <= FullDistance) return 1.0f;
+        return FMath::Clamp((MaxDistance - Distance) / (MaxDistance - FullDistance), 0.0f, 1.0f);
+    }
+
+    // Slate receives key releases even when a lobby/menu uses UIOnly input mode.
+    // Never consume the event: regular game/UI input still receives it.
+    class FTalkInput : public IInputProcessor
+    {
+    public:
+        explicit FTalkInput(UCasinoOnlineSubsystem* InOnline) : Online(InOnline) {}
+        void Tick(float, FSlateApplication& App, TSharedRef<ICursor>) override
+        {
+            if (Online.IsValid() && !IsOurWindow(App)) Online->SetPushToTalkHeld(false);
+        }
+        bool HandleKeyDownEvent(FSlateApplication& App, const FKeyEvent& Event) override
+        {
+            if (Online.IsValid() && IsOurWindow(App) && Event.GetKey() == Online->GetPushToTalkKey() && !Event.IsRepeat())
+                Online->SetPushToTalkHeld(true);
+            return false;
+        }
+        bool HandleKeyUpEvent(FSlateApplication&, const FKeyEvent& Event) override
+        {
+            if (Online.IsValid() && Event.GetKey() == Online->GetPushToTalkKey()) Online->SetPushToTalkHeld(false);
+            return false;
+        }
+    private:
+        bool IsOurWindow(FSlateApplication& App) const
+        {
+            UGameInstance* GI = Online.IsValid() ? Online->GetGameInstance() : nullptr;
+            UGameViewportClient* Viewport = GI ? GI->GetGameViewportClient() : nullptr;
+            const auto Widget = Viewport ? Viewport->GetGameViewportWidget() : nullptr;
+            return Widget.IsValid() && App.FindWidgetWindow(Widget.ToSharedRef()) == App.GetActiveTopLevelWindow();
+        }
+        TWeakObjectPtr<UCasinoOnlineSubsystem> Online;
+    };
+}
+
 void UCasinoOnlineSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
@@ -56,6 +107,9 @@ void UCasinoOnlineSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UCasinoOnlineSubsystem::Deinitialize()
 {
     if (IVoiceChatUser* Voice = VoiceUser()) Voice->TransmitToNoChannels();
+    if (VoiceInputProcessor && FSlateApplication::IsInitialized())
+        FSlateApplication::Get().UnregisterInputPreProcessor(VoiceInputProcessor);
+    VoiceInputProcessor.Reset();
     FTSTicker::GetCoreTicker().RemoveTicker(VoiceTicker);
     FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(MapLoadedHandle);
     FCoreDelegates::ApplicationWillDeactivateDelegate.Remove(DeactivateHandle);
@@ -502,6 +556,11 @@ IVoiceChatUser* UCasinoOnlineSubsystem::VoiceUser() const
 
 bool UCasinoOnlineSubsystem::TickVoice(float)
 {
+    if (!VoiceInputProcessor && FSlateApplication::IsInitialized() && !IsRunningDedicatedServer())
+    {
+        VoiceInputProcessor = MakeShared<CasinoVoice::FTalkInput>(this);
+        FSlateApplication::Get().RegisterInputPreProcessor(VoiceInputProcessor);
+    }
     if (bMenuTravelPending)
     {
         bMenuTravelPending = false;
@@ -514,8 +573,17 @@ bool UCasinoOnlineSubsystem::TickVoice(float)
         SetState(ECasinoOnlineState::InGame);
     IVoiceChatUser* Voice = VoiceUser();
     const bool bConnected = Voice && !Voice->GetChannels().IsEmpty();
-    if (bConnected != bHadVoiceChannel) { bVoiceDirty = true; bHadVoiceChannel = bConnected; OnChanged.Broadcast(); }
+    if (bConnected != bHadVoiceChannel)
+    {
+        bVoiceDirty = true; bHadVoiceChannel = bConnected;
+        UE_LOG(LogTemp, Log, TEXT("CasinoVoice: Connected=%d Channels=%d"), bConnected, Voice ? Voice->GetChannels().Num() : 0);
+        OnChanged.Broadcast();
+    }
     if (bVoiceDirty && Voice) ApplyVoiceSettings();
+    if (bConnected) UpdateVoicePlayerVolumes();
+    TArray<FString> PlayerIds = GetVoicePlayers();
+    PlayerIds.Sort();
+    if (PlayerIds != LastVoicePlayerIds) { LastVoicePlayerIds = MoveTemp(PlayerIds); OnChanged.Broadcast(); }
     // EOS lobby is not migrated if the listen host leaves.
     if (bSessionWasPresent && Sessions && !Sessions->GetNamedSession(NAME_GameSession) &&
         (State == ECasinoOnlineState::InRoom || State == ECasinoOnlineState::InGame))
@@ -528,16 +596,87 @@ void UCasinoOnlineSubsystem::ApplyVoiceSettings()
     IVoiceChatUser* Voice = VoiceUser();
     if (!Voice) return;
     const auto* Pref = GetDefault<UCasinoVoicePreferences>();
-    Voice->SetAudioInputDeviceMuted(Pref->bMicrophoneMuted);
+    Voice->SetAudioInputDeviceMuted(!Pref->bVoiceEnabled || Pref->bMicrophoneMuted);
+    Voice->SetAudioOutputDeviceMuted(!Pref->bVoiceEnabled);
     Voice->SetAudioOutputVolume(Pref->OutputVolume);
     Voice->SetInputDeviceId(Pref->InputDeviceId);
     for (const FString& Id : MutedPlayers) Voice->SetPlayerMuted(Id, true);
-    if (!Pref->bMicrophoneMuted && (!Pref->bPushToTalk || bTalkHeld) &&
+    if (Pref->bVoiceEnabled && !Pref->bMicrophoneMuted && (!Pref->bPushToTalk || bTalkHeld) &&
         (State == ECasinoOnlineState::InRoom || State == ECasinoOnlineState::Starting || State == ECasinoOnlineState::InGame))
         Voice->TransmitToAllChannels();
     else Voice->TransmitToNoChannels();
     bVoiceDirty = false;
+    UpdateVoicePlayerVolumes();
 }
+
+void UCasinoOnlineSubsystem::UpdateVoicePlayerVolumes()
+{
+    IVoiceChatUser* Voice = VoiceUser();
+    UWorld* World = GetWorld();
+    if (!Voice || !World) return;
+    const auto* Pref = GetDefault<UCasinoVoicePreferences>();
+    const APlayerController* PC = GetGameInstance()->GetFirstLocalPlayerController();
+    const APawn* Listener = PC ? PC->GetPawn() : nullptr;
+    const AGameStateBase* GS = World->GetGameState();
+    const bool bUseDistance = State == ECasinoOnlineState::InGame ||
+        (Cast<ACasinoLoopGameState>(GS) && State != ECasinoOnlineState::Ready && State != ECasinoOnlineState::Offline);
+    for (const FString& Id : GetVoicePlayers())
+    {
+        float Gain = bUseDistance ? 0.0f : 1.0f;
+        if (bUseDistance && Listener && GS)
+        {
+            for (APlayerState* PS : GS->PlayerArray)
+            {
+                if (PS && GetVoiceIdForPlayer(PS) == Id)
+                {
+                    if (const APawn* Speaker = PS->GetPawn())
+                        Gain = CasinoVoice::DistanceGain(FVector::Dist(Listener->GetActorLocation(), Speaker->GetActorLocation()),
+                            Pref->FullVolumeDistance, Pref->MaxVoiceDistance);
+                    break;
+                }
+            }
+        }
+        Voice->SetPlayerVolume(Id, GetVoicePlayerVolume(Id) * Gain);
+        Voice->SetPlayerMuted(Id, !Pref->bVoiceEnabled || MutedPlayers.Contains(Id));
+    }
+}
+
+void UCasinoOnlineSubsystem::SetVoiceEnabled(bool bEnabled)
+{
+    auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
+    Pref->bVoiceEnabled = bEnabled; Pref->SaveConfig(); bTalkHeld = false; bVoiceDirty = true; ApplyVoiceSettings();
+    OnChanged.Broadcast();
+}
+bool UCasinoOnlineSubsystem::IsVoiceEnabled() const { return GetDefault<UCasinoVoicePreferences>()->bVoiceEnabled; }
+void UCasinoOnlineSubsystem::SetVoicePlayerVolume(const FString& Id, float Volume)
+{
+    if (Id.IsEmpty() || !FMath::IsFinite(Volume)) return;
+    auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
+    Pref->PlayerVolumes.Add(Id, FMath::Clamp(Volume, 0.0f, 2.0f)); Pref->SaveConfig();
+    UpdateVoicePlayerVolumes(); OnChanged.Broadcast();
+}
+float UCasinoOnlineSubsystem::GetVoicePlayerVolume(const FString& Id) const
+{
+    const float* Volume = GetDefault<UCasinoVoicePreferences>()->PlayerVolumes.Find(Id);
+    return Volume && FMath::IsFinite(*Volume) ? FMath::Clamp(*Volume, 0.0f, 2.0f) : 1.0f;
+}
+void UCasinoOnlineSubsystem::SetPushToTalkKey(FKey Key)
+{
+    if (!Key.IsValid() || Key.IsGamepadKey() || Key.IsMouseButton() || Key == EKeys::AnyKey) return;
+    auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
+    Pref->PushToTalkKey = Key; Pref->SaveConfig(); SetPushToTalkHeld(false);
+}
+FKey UCasinoOnlineSubsystem::GetPushToTalkKey() const { return GetDefault<UCasinoVoicePreferences>()->PushToTalkKey; }
+void UCasinoOnlineSubsystem::SetVoiceDistances(float FullDistance, float MaxDistance)
+{
+    if (!FMath::IsFinite(FullDistance) || !FMath::IsFinite(MaxDistance)) return;
+    auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
+    Pref->FullVolumeDistance = FMath::Max(0.0f, FullDistance);
+    Pref->MaxVoiceDistance = FMath::Max(Pref->FullVolumeDistance + 1.0f, MaxDistance);
+    Pref->SaveConfig(); UpdateVoicePlayerVolumes();
+}
+float UCasinoOnlineSubsystem::GetVoiceFullVolumeDistance() const { return GetDefault<UCasinoVoicePreferences>()->FullVolumeDistance; }
+float UCasinoOnlineSubsystem::GetVoiceMaxDistance() const { return GetDefault<UCasinoVoicePreferences>()->MaxVoiceDistance; }
 
 void UCasinoOnlineSubsystem::SetMicrophoneMuted(bool bMuted)
 {
@@ -551,6 +690,7 @@ void UCasinoOnlineSubsystem::SetPushToTalkEnabled(bool bEnabled)
 }
 void UCasinoOnlineSubsystem::SetPushToTalkHeld(bool bHeld)
 {
+    if (bTalkHeld == bHeld) return;
     bTalkHeld = bHeld; bVoiceDirty = true; ApplyVoiceSettings();
 }
 void UCasinoOnlineSubsystem::SetVoiceOutputVolume(float Volume)
@@ -566,8 +706,35 @@ void UCasinoOnlineSubsystem::SetVoiceInputDevice(const FString& DeviceId)
 }
 void UCasinoOnlineSubsystem::SetVoicePlayerMuted(const FString& Id, bool bMuted)
 {
+    if (Id.IsEmpty()) return;
     if (bMuted) MutedPlayers.Add(Id); else MutedPlayers.Remove(Id);
-    if (IVoiceChatUser* Voice = VoiceUser()) Voice->SetPlayerMuted(Id, bMuted);
+    UpdateVoicePlayerVolumes();
+    OnChanged.Broadcast();
+}
+bool UCasinoOnlineSubsystem::IsVoicePlayerMuted(const FString& Id) const { return MutedPlayers.Contains(Id); }
+TArray<FCasinoVoiceParticipant> UCasinoOnlineSubsystem::GetVoiceParticipants() const
+{
+    TArray<FCasinoVoiceParticipant> Result;
+    const AGameStateBase* GS = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+    const APlayerController* PC = GetGameInstance()->GetFirstLocalPlayerController();
+    for (const FString& Id : GetVoicePlayers())
+    {
+        FCasinoVoiceParticipant Entry;
+        Entry.Id = Id; Entry.DisplayName = TEXT("Player");
+        Entry.Volume = GetVoicePlayerVolume(Id); Entry.bMuted = IsVoicePlayerMuted(Id);
+        Entry.bTalking = IsVoicePlayerTalking(Id);
+        if (GS) for (APlayerState* PS : GS->PlayerArray)
+        {
+            if (PS && GetVoiceIdForPlayer(PS) == Id)
+            {
+                Entry.DisplayName = PS->GetPlayerName();
+                Entry.bIsLocalPlayer = PC && PC->PlayerState == PS;
+                break;
+            }
+        }
+        Result.Add(Entry);
+    }
+    return Result;
 }
 bool UCasinoOnlineSubsystem::IsMicrophoneMuted() const { return GetDefault<UCasinoVoicePreferences>()->bMicrophoneMuted; }
 bool UCasinoOnlineSubsystem::IsPushToTalkEnabled() const { return GetDefault<UCasinoVoicePreferences>()->bPushToTalk; }
@@ -612,6 +779,22 @@ bool FCasinoRoomAdmissionTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("Starting/playing rooms are excluded even with open player slots"), CasinoOnline::IsAdmissionOpen(Settings));
     Settings.Set(CasinoOnline::AdmissionKey, FString(TEXT("true")), EOnlineDataAdvertisementType::ViaOnlineService);
     TestFalse(TEXT("Malformed admission attributes fail closed"), CasinoOnline::IsAdmissionOpen(Settings));
+    return true;
+}
+#endif
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCasinoVoiceDistanceTest, "Casino.Voice.DistanceAttenuation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FCasinoVoiceDistanceTest::RunTest(const FString& Parameters)
+{
+    TestEqual(TEXT("Nearby player at full volume"), CasinoVoice::DistanceGain(100.0f, 500.0f, 2000.0f), 1.0f);
+    TestEqual(TEXT("Five meter boundary"), CasinoVoice::DistanceGain(500.0f, 500.0f, 2000.0f), 1.0f);
+    TestEqual(TEXT("Halfway through fade"), CasinoVoice::DistanceGain(1250.0f, 500.0f, 2000.0f), 0.5f);
+    TestEqual(TEXT("Twenty meter cutoff"), CasinoVoice::DistanceGain(2000.0f, 500.0f, 2000.0f), 0.0f);
+    TestEqual(TEXT("Beyond cutoff remains silent"), CasinoVoice::DistanceGain(4000.0f, 500.0f, 2000.0f), 0.0f);
+    TestEqual(TEXT("Personal volume multiplies distance gain"), 0.4f * CasinoVoice::DistanceGain(1250.0f, 500.0f, 2000.0f), 0.2f);
+    TestEqual(TEXT("Invalid distance is silent"), CasinoVoice::DistanceGain(-1.0f, 500.0f, 2000.0f), 0.0f);
     return true;
 }
 #endif

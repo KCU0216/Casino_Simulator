@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputCoreTypes.h"
 #include "Engine/DeveloperSettings.h"
 #include "casino_simulatorGameMode.h"
 #include "CasinoOnlineSettings.generated.h"
@@ -35,6 +36,11 @@ class CASINO_SIMULATOR_API UCasinoVoicePreferences : public UObject
 {
     GENERATED_BODY()
 public:
+    UPROPERTY(Config) bool bVoiceEnabled = true;
+    UPROPERTY(Config) FKey PushToTalkKey = EKeys::V;
+    UPROPERTY(Config) float FullVolumeDistance = 500.0f;
+    UPROPERTY(Config) float MaxVoiceDistance = 2000.0f;
+    UPROPERTY(Config) TMap<FString, float> PlayerVolumes;
     UPROPERTY(Config) bool bMicrophoneMuted = false;
     UPROPERTY(Config) bool bPushToTalk = true;
     UPROPERTY(Config) float OutputVolume = 1.0f;
