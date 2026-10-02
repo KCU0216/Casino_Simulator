@@ -86,6 +86,9 @@ protected:
     virtual void PreLogin(const FString& Options, const FString& Address,
         const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FCasinoPaymentCompletionTest;
+#endif
     FTimerHandle OnlineArrivalTimer;
     double OnlineArrivalDeadline = 0.0;
     int32 OnlineExpectedPlayers = 0;

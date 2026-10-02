@@ -297,8 +297,9 @@ bool Acasino_simulatorGameMode::SubmitDailyPayment(Acasino_simulatorCharacter* P
     // Send acknowledgement before the outcome so the UI cannot reopen waiting after closing.
     if (auto* PC = Cast<Acasino_simulatorPlayerController>(Player->GetController()))
         PC->ClientDailyPaymentResult(true);
-    if (Status.CollectedPayment >= Status.RequiredPayment ||
-        Status.PaymentSubmittedCount >= Status.PaymentParticipantCount) FinishPaymentPhase();
+    // Reaching the shared target does not remove the other players' chance to contribute.
+    // Finish only after everyone submits (including explicit zero), or the deadline timer fires.
+    if (Status.PaymentSubmittedCount >= Status.PaymentParticipantCount) FinishPaymentPhase();
     return true;
 }
 

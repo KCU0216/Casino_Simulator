@@ -61,7 +61,32 @@ void UCasinoUIManagerComponent::RefreshCasinoUIScreen()
         }
     }
     SetCasinoUIScreen(Screen);
-    if (GS) PC->OnUILoopStatusUpdated(GS->LoopStatus);
+    if (GS)
+    {
+        UpdateActiveScreenLoopStatus(GS->LoopStatus);
+        PC->OnUILoopStatusUpdated(GS->LoopStatus);
+    }
+}
+
+void UCasinoUIManagerComponent::UpdateActiveScreenLoopStatus(const FCasinoLoopStatus& Status)
+{
+    if (bUITravelPending || bClosingWidgets) return;
+    ECasinoUIScreen StatusScreen = ECasinoUIScreen::Loading;
+    switch (Status.Phase)
+    {
+    case ECasinoLoopPhase::DayIntro: StatusScreen = ECasinoUIScreen::DayIntro; break;
+    case ECasinoLoopPhase::Playing: StatusScreen = ECasinoUIScreen::Playing; break;
+    case ECasinoLoopPhase::Settling: StatusScreen = ECasinoUIScreen::Payment; break;
+    case ECasinoLoopPhase::DayPassed: StatusScreen = ECasinoUIScreen::DayPassed; break;
+    case ECasinoLoopPhase::GameOver:
+    case ECasinoLoopPhase::Cleared: StatusScreen = ECasinoUIScreen::Result; break;
+    default: return;
+    }
+    // A controller RPC can open the next screen before GameState replication arrives.
+    // Do not initialize that screen using the previous phase's snapshot.
+    if (UIScreen != StatusScreen) return;
+    if (auto* Managed = Cast<UCasinoManagedWidget>(ActiveScreenWidget))
+        Managed->NotifyLoopStatusUpdated(Status);
 }
 
 void UCasinoUIManagerComponent::CloseManagedWidget(UUserWidget* Widget)
@@ -149,6 +174,8 @@ bool UCasinoUIManagerComponent::ShowScreenUI(UUserWidget* Widget, ECasinoUIScree
     UIRoot->AddModal(Widget);
     Widget->SetVisibility(ESlateVisibility::Visible);
     if (auto* Managed = Cast<UCasinoManagedWidget>(Widget)) Managed->NotifyOpened(this);
+    if (auto* GS = GetWorld()->GetGameState<ACasinoLoopGameState>())
+        UpdateActiveScreenLoopStatus(GS->LoopStatus);
     ApplyUIScreenInput();
     return true;
 }

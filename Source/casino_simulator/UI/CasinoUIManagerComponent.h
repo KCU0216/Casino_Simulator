@@ -34,6 +34,10 @@ public:
     void CloseManagedWidget(UUserWidget* Widget);
     void ClearInteractionWidgets();
 private:
+    void UpdateActiveScreenLoopStatus(const FCasinoLoopStatus& Status);
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FCasinoUIScreenStatusTest;
+#endif
     Acasino_simulatorPlayerController* GetCasinoController() const;
     void ApplyInteractionInput();
     UPROPERTY() TArray<TObjectPtr<UUserWidget>> ManagedInteractions;
