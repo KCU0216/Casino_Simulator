@@ -1,6 +1,7 @@
 #include "Interaction/WorldInteractionDetectorComponent.h"
 
 #include "casino_simulatorCharacter.h"
+#include "casino_simulatorPlayerController.h"
 #include "Camera/CameraComponent.h"
 
 UWorldInteractionDetectorComponent::UWorldInteractionDetectorComponent()
@@ -144,6 +145,15 @@ void UWorldInteractionDetectorComponent::SetFocusedTarget(const TScriptInterface
 	UObject* CurrentObject = FocusedTarget.GetObject();
 	UObject* NewObject = NewFocusedTarget.GetObject();
 
+	// Clear stale prompts even when both the previous and new targets are null.
+	if (!IsValid(NewObject) && IsValid(OwnerCharacter))
+	{
+		if (Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(OwnerCharacter->GetController()))
+		{
+			PC->SetWorldInteractionTargetFocused(false);
+		}
+	}
+
 	if (CurrentObject == NewObject)
 	{
 		return;
@@ -153,17 +163,16 @@ void UWorldInteractionDetectorComponent::SetFocusedTarget(const TScriptInterface
 	// was shared with NPCs), so they're invoked via Execute_ rather than a direct call - see
 	// IWorldInteractable's class comment. Both AWorldInteractableBase and ANPC_Base now react by
 	// opening/closing the same PlayerHUDWidget panel (via SetWorldInteractionTargetFocused /
-	// SetInteractionTarget-ClearInteractionTarget respectively) - the detector itself no longer needs
-	// to know which family it's looking at.
+	// SetInteractionTarget-ClearInteractionTarget respectively).
 	
-	if (CurrentObject)
+	if (IsValid(CurrentObject))
 	{
 		IWorldInteractable::Execute_OnInteractionFocusEnded(CurrentObject, OwnerCharacter);
 	}
 
 	FocusedTarget = NewFocusedTarget;
 
-	if (NewObject)
+	if (IsValid(NewObject))
 	{
 		IWorldInteractable::Execute_OnInteractionFocusStarted(NewObject, OwnerCharacter);
 	}
