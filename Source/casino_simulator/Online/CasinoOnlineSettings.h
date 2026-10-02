@@ -44,5 +44,6 @@ public:
     UPROPERTY(Config) bool bMicrophoneMuted = false;
     UPROPERTY(Config) bool bPushToTalk = true;
     UPROPERTY(Config) float OutputVolume = 1.0f;
+    UPROPERTY(Config) float InputVolume = 1.0f;
     UPROPERTY(Config) FString InputDeviceId;
 };

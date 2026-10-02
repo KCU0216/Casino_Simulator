@@ -55,7 +55,7 @@ struct FCasinoVoiceParticipant
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCasinoOnlineChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCasinoOnlineError, FString, Operation, FString, Message);
 
-UCLASS()
+UCLASS(BlueprintType)
 class CASINO_SIMULATOR_API UCasinoOnlineSubsystem : public UGameInstanceSubsystem
 {
     GENERATED_BODY()
@@ -98,11 +98,13 @@ public:
     // Bind key Started -> true and Completed / Canceled -> false.
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetPushToTalkHeld(bool bHeld);
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoiceOutputVolume(float Volume);
+    UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoiceInputVolume(float Volume);
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoiceInputDevice(const FString& DeviceId);
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoicePlayerMuted(const FString& VoicePlayerId, bool bMuted);
     UFUNCTION(BlueprintPure, Category="Casino|Voice") bool IsMicrophoneMuted() const;
     UFUNCTION(BlueprintPure, Category="Casino|Voice") bool IsPushToTalkEnabled() const;
     UFUNCTION(BlueprintPure, Category="Casino|Voice") float GetVoiceOutputVolume() const;
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") float GetVoiceInputVolume() const;
     UFUNCTION(BlueprintPure, Category="Casino|Voice") bool IsVoiceConnected() const;
     UFUNCTION(BlueprintPure, Category="Casino|Voice") TArray<FCasinoVoiceDevice> GetVoiceInputDevices() const;
     UFUNCTION(BlueprintPure, Category="Casino|Voice") TArray<FString> GetVoicePlayers() const;

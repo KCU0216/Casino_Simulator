@@ -599,6 +599,7 @@ void UCasinoOnlineSubsystem::ApplyVoiceSettings()
     Voice->SetAudioInputDeviceMuted(!Pref->bVoiceEnabled || Pref->bMicrophoneMuted);
     Voice->SetAudioOutputDeviceMuted(!Pref->bVoiceEnabled);
     Voice->SetAudioOutputVolume(Pref->OutputVolume);
+    Voice->SetAudioInputVolume(GetVoiceInputVolume());
     Voice->SetInputDeviceId(Pref->InputDeviceId);
     for (const FString& Id : MutedPlayers) Voice->SetPlayerMuted(Id, true);
     if (Pref->bVoiceEnabled && !Pref->bMicrophoneMuted && (!Pref->bPushToTalk || bTalkHeld) &&
@@ -698,6 +699,18 @@ void UCasinoOnlineSubsystem::SetVoiceOutputVolume(float Volume)
     if (!FMath::IsFinite(Volume)) return;
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
     Pref->OutputVolume = FMath::Clamp(Volume, 0.0f, 1.0f); Pref->SaveConfig(); bVoiceDirty = true; ApplyVoiceSettings();
+}
+void UCasinoOnlineSubsystem::SetVoiceInputVolume(float Volume)
+{
+    if (!FMath::IsFinite(Volume)) return;
+    auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
+    Pref->InputVolume = FMath::Clamp(Volume, 0.0f, 2.0f);
+    Pref->SaveConfig(); bVoiceDirty = true; ApplyVoiceSettings();
+}
+float UCasinoOnlineSubsystem::GetVoiceInputVolume() const
+{
+    const float Volume = GetDefault<UCasinoVoicePreferences>()->InputVolume;
+    return FMath::IsFinite(Volume) ? FMath::Clamp(Volume, 0.0f, 2.0f) : 1.0f;
 }
 void UCasinoOnlineSubsystem::SetVoiceInputDevice(const FString& DeviceId)
 {
