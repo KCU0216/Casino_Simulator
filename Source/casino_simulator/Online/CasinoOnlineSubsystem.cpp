@@ -15,13 +15,23 @@
 #include "IOnlineSubsystemEOS.h"
 #include "VoiceChat.h"
 #include "HAL/IConsoleManager.h"
+#include "Engine/PendingNetGame.h"
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#endif
 
 namespace CasinoOnline
 {
     const FName RoomKey(TEXT("CASINO_ROOM"));
     const FName ProjectKey(TEXT("CASINO_PROJECT"));
     const FName BuildKey(TEXT("CASINO_BUILD_ID"));
+    const FName AdmissionKey(TEXT("CASINO_ADMISSION_OPEN"));
     const FString ProjectValue(TEXT("CasinoSimulatorKCU"));
+    bool IsAdmissionOpen(const FOnlineSessionSettings& Settings)
+    {
+        bool bOpen = false;
+        return Settings.Get(AdmissionKey, bOpen) && bOpen;
+    }
     FString MapPath(const TSoftObjectPtr<UWorld>& Map)
     {
         const FString Path = Map.ToSoftObjectPath().GetLongPackageName();
@@ -140,6 +150,7 @@ void UCasinoOnlineSubsystem::CreateRoom(const FString& RoomName)
     BuildSetting.AdvertisementType = EOnlineDataAdvertisementType::ViaOnlineService;
     BuildSetting.Data.SetValue(static_cast<int64>(Config->BuildId));
     Settings.Set(CasinoOnline::BuildKey, BuildSetting);
+    Settings.Set(CasinoOnline::AdmissionKey, true, EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(SETTING_HOST_MIGRATION, false, EOnlineDataAdvertisementType::DontAdvertise);
     Settings.Set(CasinoOnline::RoomKey, RoomName.TrimStartAndEnd().Left(48), EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(CasinoOnline::ProjectKey, CasinoOnline::ProjectValue, EOnlineDataAdvertisementType::ViaOnlineService);
@@ -176,6 +187,7 @@ void UCasinoOnlineSubsystem::FindRooms()
     Search = MakeShared<FOnlineSessionSearch>();
     Search->bIsLanQuery = false;
     Search->MaxSearchResults = 50;
+    Search->QuerySettings.Set(CasinoOnline::AdmissionKey, true, EOnlineComparisonOp::Equals);
     Search->QuerySettings.Set(SEARCH_LOBBIES, true, EOnlineComparisonOp::Equals);
     Search->QuerySettings.Set(CasinoOnline::ProjectKey, CasinoOnline::ProjectValue, EOnlineComparisonOp::Equals);
     UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Searching rooms. ExpectedGameBuild=%d"),
@@ -237,6 +249,11 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
                 UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: no open public slots."), I);
                 continue;
             }
+            if (!CasinoOnline::IsAdmissionOpen(Result.Session.SessionSettings))
+            {
+                UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Result[%d] excluded: room admission closed or missing."), I);
+                continue;
+            }
             FCasinoRoomInfo Room;
             Room.SearchIndex = I;
             Result.Session.SessionSettings.Get(CasinoOnline::RoomKey, Room.RoomName);
@@ -249,7 +266,22 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
         }
     }
     UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Search visible rooms=%d"), Rooms.Num());
+    const FString SessionId = MoveTemp(PendingJoinSessionId);
+    PendingJoinSessionId.Reset();
     SetState(ECasinoOnlineState::Ready);
+    if (!SessionId.IsEmpty())
+    {
+        for (const auto& Room : Rooms)
+        {
+            if (Search->SearchResults[Room.SearchIndex].GetSessionIdStr() == SessionId)
+            {
+                JoinVerifiedRoom(Room.SearchIndex);
+                return;
+            }
+        }
+        Error(TEXT("JoinRoom"), TEXT("This room has started, is full, or is no longer available. Refresh the room list."));
+        return;
+    }
     if (!bSuccess) Error(TEXT("FindRooms"), TEXT("EOS room search failed."));
 }
 
@@ -259,6 +291,16 @@ void UCasinoOnlineSubsystem::JoinRoom(int32 SearchIndex)
     if (!Search || !Search->SearchResults.IsValidIndex(SearchIndex))
     { Error(TEXT("JoinRoom"), TEXT("Search results expired. Search again.")); return; }
     if (Sessions->GetNamedSession(NAME_GameSession)) return;
+    // Re-query EOS: the user may be clicking a lobby result captured before the host started.
+    PendingJoinSessionId = Search->SearchResults[SearchIndex].GetSessionIdStr();
+    FindRooms();
+}
+
+void UCasinoOnlineSubsystem::JoinVerifiedRoom(int32 SearchIndex)
+{
+    if (State != ECasinoOnlineState::Ready || Sessions->GetNamedSession(NAME_GameSession)) return;
+    if (!Search || !Search->SearchResults.IsValidIndex(SearchIndex) ||
+        !CasinoOnline::IsAdmissionOpen(Search->SearchResults[SearchIndex].Session.SessionSettings)) return;
     SetState(ECasinoOnlineState::Joining);
     JoinHandle = Sessions->AddOnJoinSessionCompleteDelegate_Handle(
         FOnJoinSessionCompleteDelegate::CreateUObject(this, &ThisClass::JoinComplete));
@@ -318,6 +360,7 @@ void UCasinoOnlineSubsystem::StartHostedGame()
 #endif
     ExpectedPlayers = Lobby->GetNumPlayers();
     auto* Session = Sessions->GetNamedSession(NAME_GameSession);
+    Session->SessionSettings.Set(CasinoOnline::AdmissionKey, false, EOnlineDataAdvertisementType::ViaOnlineService);
     Session->SessionSettings.bAllowJoinInProgress = false;
     Session->SessionSettings.bAllowJoinViaPresence = false;
     Session->SessionSettings.bShouldAdvertise = false;
@@ -383,16 +426,30 @@ void UCasinoOnlineSubsystem::DestroyComplete(FName Name, bool bSuccess)
 void UCasinoOnlineSubsystem::ReturnToMenu()
 {
     bSessionWasPresent = false; bHadVoiceChannel = false; bVoiceDirty = true;
+    PendingJoinSessionId.Reset();
     MutedPlayers.Reset(); Rooms.Reset(); Search.Reset();
     SetState(IsLoggedIn() ? ECasinoOnlineState::Ready : ECasinoOnlineState::Offline);
     const FString Path = CasinoOnline::MapPath(GetDefault<UCasinoOnlineSettings>()->MenuMap);
-    if (!Path.IsEmpty()) UGameplayStatics::OpenLevel(this, FName(*Path), true);
+    // Failure delegates run before the engine schedules its default-map fallback.
+    // Open the menu from the next ticker iteration, after that fallback is scheduled.
+    if (!Path.IsEmpty()) bMenuTravelPending = true;
     else Error(TEXT("Menu"), TEXT("Menu Map is not configured."));
 }
 
-void UCasinoOnlineSubsystem::NetworkFailure(UWorld* World, UNetDriver*, ENetworkFailure::Type, const FString& Message)
+void UCasinoOnlineSubsystem::NetworkFailure(UWorld* World, UNetDriver* Driver, ENetworkFailure::Type Type, const FString& Message)
 {
-    if (World != GetWorld() || State == ECasinoOnlineState::Leaving || State == ECasinoOnlineState::Ready || State == ECasinoOnlineState::Offline) return;
+    // Pending connections can fail without a World. Match their driver to this game instance.
+    if (!World)
+    {
+        const FWorldContext* Context = GetGameInstance()->GetWorldContext();
+        if (!Context || !Context->PendingNetGame || Context->PendingNetGame->NetDriver != Driver) return;
+    }
+    else if (World != GetWorld()) return;
+    // A departing/rejected peer must not destroy the listen host's room.
+    if (Driver && Driver->GetNetMode() != NM_Client &&
+        (Type == ENetworkFailure::ConnectionLost || Type == ENetworkFailure::ConnectionTimeout ||
+         Type == ENetworkFailure::NetGuidMismatch || Type == ENetworkFailure::NetChecksumMismatch)) return;
+    if ( State == ECasinoOnlineState::Leaving || State == ECasinoOnlineState::Ready || State == ECasinoOnlineState::Offline) return;
     Error(TEXT("Network"), Message);
     ClearOnlineDelegates();
     SetState(ECasinoOnlineState::InRoom);
@@ -445,6 +502,13 @@ IVoiceChatUser* UCasinoOnlineSubsystem::VoiceUser() const
 
 bool UCasinoOnlineSubsystem::TickVoice(float)
 {
+    if (bMenuTravelPending)
+    {
+        bMenuTravelPending = false;
+        const FString Path = CasinoOnline::MapPath(GetDefault<UCasinoOnlineSettings>()->MenuMap);
+        if (!Path.IsEmpty()) UGameplayStatics::OpenLevel(this, FName(*Path), true);
+        return true;
+    }
     if (State == ECasinoOnlineState::InRoom && GetWorld() &&
         UGameplayStatics::HasOption(GetWorld()->URL.ToString(), TEXT("CasinoOnlineMatch")))
         SetState(ECasinoOnlineState::InGame);
@@ -533,3 +597,21 @@ FString UCasinoOnlineSubsystem::GetVoiceIdForPlayer(APlayerState* Player) const
     Player->GetUniqueId()->ToString().Split(TEXT("|"), &Account, &Product);
     return Product;
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCasinoRoomAdmissionTest, "Casino.Online.RoomAdmission",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCasinoRoomAdmissionTest::RunTest(const FString& Parameters)
+{
+    FOnlineSessionSettings Settings;
+    TestFalse(TEXT("Old rooms without an admission attribute are excluded"), CasinoOnline::IsAdmissionOpen(Settings));
+    Settings.Set(CasinoOnline::AdmissionKey, true, EOnlineDataAdvertisementType::ViaOnlineService);
+    TestTrue(TEXT("Lobby explicitly allows admission"), CasinoOnline::IsAdmissionOpen(Settings));
+    Settings.Set(CasinoOnline::AdmissionKey, false, EOnlineDataAdvertisementType::ViaOnlineService);
+    TestFalse(TEXT("Starting/playing rooms are excluded even with open player slots"), CasinoOnline::IsAdmissionOpen(Settings));
+    Settings.Set(CasinoOnline::AdmissionKey, FString(TEXT("true")), EOnlineDataAdvertisementType::ViaOnlineService);
+    TestFalse(TEXT("Malformed admission attributes fail closed"), CasinoOnline::IsAdmissionOpen(Settings));
+    return true;
+}
+#endif

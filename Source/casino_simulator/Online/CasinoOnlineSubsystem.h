@@ -93,6 +93,8 @@ private:
     FDelegateHandle NetworkHandle, TravelHandle, MapLoadedHandle, DeactivateHandle;
     FTSTicker::FDelegateHandle VoiceTicker;
     FString PendingLobbyPath;
+    FString PendingJoinSessionId;
+    bool bMenuTravelPending = false;
     int32 ExpectedPlayers = 0;
     bool bTalkHeld = false;
     bool bVoiceDirty = true;
@@ -107,6 +109,7 @@ private:
     void LoginComplete(int32 LocalUser, bool bSuccess, const FUniqueNetId& Id, const FString& ErrorText);
     void CreateComplete(FName Name, bool bSuccess);
     void FindComplete(bool bSuccess);
+    void JoinVerifiedRoom(int32 SearchIndex);
     void JoinComplete(FName Name, EOnJoinSessionCompleteResult::Type Result);
     void DestroyComplete(FName Name, bool bSuccess);
     void UpdateComplete(FName Name, bool bSuccess);
