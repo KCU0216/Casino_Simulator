@@ -195,7 +195,11 @@ void UCasinoUIManagerComponent::SetCasinoUIScreen(ECasinoUIScreen Screen)
     UIScreen = Screen;
     PC->UIScreen = Screen;
     UE_LOG(LogTemp, Log, TEXT("CasinoUI: %s -> %s"), *PC->GetName(), *UEnum::GetValueAsString(Screen));
-    if (Screen != ECasinoUIScreen::Playing) ClearInteractionWidgets();
+    if (Screen != ECasinoUIScreen::Playing)
+    {
+        ClearWorldEventAnnouncement();
+        ClearInteractionWidgets();
+    }
     CloseManagedWidget(ActiveScreenWidget);
     ActiveScreenWidget = nullptr;
     PC->ActiveScreenWidget = nullptr;
@@ -267,8 +271,29 @@ UUserWidget* UCasinoUIManagerComponent::OpenInteractionUI(TSubclassOf<UUserWidge
     }
     return ShowInteractionUI(Widget) ? Widget : nullptr;
 }
+void UCasinoUIManagerComponent::ShowWorldEventAnnouncement(const FText& Message, float Duration)
+{
+    auto* PC = GetCasinoController();
+    if (!PC || !PC->IsLocalController() || bUITravelPending || UIScreen != ECasinoUIScreen::Playing) return;
+    if (Message.IsEmpty() || Duration <= 0.f)
+    {
+        ClearWorldEventAnnouncement();
+        return;
+    }
+    PC->TryInitializePlayerHUD();
+    if (IsValid(PC->PlayerHUDWidget)) PC->PlayerHUDWidget->BP_ShowWorldEventAnnouncement(Message, Duration);
+}
+
+void UCasinoUIManagerComponent::ClearWorldEventAnnouncement()
+{
+    auto* PC = GetCasinoController();
+    if (PC && PC->IsLocalController() && IsValid(PC->PlayerHUDWidget))
+        PC->PlayerHUDWidget->BP_ClearWorldEventAnnouncement();
+}
+
 void UCasinoUIManagerComponent::ShutdownUI()
 {
+    ClearWorldEventAnnouncement();
     auto* PC = GetCasinoController();
     if (!PC) return;
     if (UIObservedGameState) UIObservedGameState->OnLoopChanged.RemoveDynamic(this, &ThisClass::RefreshCasinoUIScreen);

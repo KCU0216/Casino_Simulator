@@ -5,6 +5,8 @@
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
 #include "GameFramework/PlayerState.h"
+#include "GameFramework/GameStateBase.h"
+#include "Components/StaticMeshComponent.h"
 
 static const TCHAR* KRNames[] = {
 	TEXT("김춘수"), TEXT("박막례"), TEXT("이순자"), TEXT("최봉팔"),
@@ -108,8 +110,14 @@ FRaceRunnerStats ARaceManager::RollStats(int32 LaneIndex) const
 FRunnerRaceScript ARaceManager::RollScript(const FRaceRunnerStats& S, const FVector& StartLoc, const FVector& Dir) const
 {
 	FRunnerRaceScript R;
-	R.StartLoc     = StartLoc;
+	R.SpawnLoc     = StartLoc;
 	R.Dir          = Dir.GetSafeNormal();
+	R.StartLoc     = R.SpawnLoc + R.Dir * EnterDistance;
+	R.FinishLoc    = R.StartLoc + R.Dir * TrackLength;
+	R.ExitLoc      = R.FinishLoc + R.Dir * ExitDistance;
+	R.EnterStartServerTime = EnterStartServerTime;
+	R.EnterDuration = EnterDuration;
+	R.ExitDuration = ExitDuration;
 	R.TrackLength  = TrackLength;
 	R.Speed        = S.BaseSpeed * FMath::FRandRange(0.85f, 1.15f);   // 운 반영, 레이스 내내 고정
 	R.bWillAwaken  = FMath::FRand() < S.AwakenChance;
@@ -122,6 +130,11 @@ FRunnerRaceScript ARaceManager::RollScript(const FRaceRunnerStats& S, const FVec
 void ARaceManager::StartNewRound()
 {
 	if (!HasAuthority() || Phase != ERacePhase::Idle) return;
+	if (RunnerSpawnPoints.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RaceManager] RunnerSpawnPoints must be assigned."));
+		return;
+	}
 	
 	for (ARaceRunner* R : Runners) { if (R) R->Destroy(); }
 	Runners.Reset();
@@ -137,42 +150,41 @@ void ARaceManager::StartNewRound()
 		return;
 	}
 	CurrentRoundNumber++;
-	const bool bUseSpawnPoints = RunnerSpawnPoints.Num() > 0;
-	const int32 Count = bUseSpawnPoints ? RunnerSpawnPoints.Num() : NumRunners;
-
-	const FVector DirN = RaceDirection.GetSafeNormal();
-	const FVector Side = FVector::CrossProduct(DirN, FVector::UpVector).GetSafeNormal();
+	EnterStartServerTime = GetServerTime();
+	EnterDuration = FMath::Max(0.f, EnterDistance) / FMath::Max(1.f, TransitSpeed);
+	ExitDuration = FMath::Max(0.f, ExitDistance) / FMath::Max(1.f, TransitSpeed);
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	for (int32 i = 0; i < Count; ++i)
+	for (int32 i = 0; i < RunnerSpawnPoints.Num(); ++i)
 	{
-		FVector  Loc;
-		FRotator Rot;
-		if (bUseSpawnPoints)
-		{
-			if (!RunnerSpawnPoints[i]) continue;                    // 순서대로: i번 지점 = i번 러너
-			Loc = RunnerSpawnPoints[i]->GetActorLocation();
-			Rot = RunnerSpawnPoints[i]->GetActorRotation();
-		}
-		else
-		{
-			Loc = StartLocation + Side * (LaneSpacing * i);   // 폴백: 하드코딩 계산
-			Rot = DirN.Rotation();
-		}
+		if (!IsValid(RunnerSpawnPoints[i])) continue;
+		const FVector Loc = RunnerSpawnPoints[i]->GetActorLocation();
+		const FRotator Rot = RunnerSpawnPoints[i]->GetActorRotation();
 
 		ARaceRunner* R = GetWorld()->SpawnActor<ARaceRunner>(RunnerClass, Loc, Rot, SP);
 		if (!R) continue;
 
 		R->InitStats(RollStats(i));
-		R->ServerSetRacing(false);
+		R->ServerSetupScript(RollScript(R->Stats, Loc, Rot.Vector()));
 		Runners.Add(R);
 	}
 
-	Phase = ERacePhase::Betting;
+	if (Runners.IsEmpty()) return;
+	Entering();
+}
+
+void ARaceManager::Entering()
+{
+	if (!HasAuthority() || Phase != ERacePhase::Idle || Runners.IsEmpty()) return;
+	for (ARaceRunner* Runner : Runners)
+	{
+		if (IsValid(Runner)) Runner->ServerSetEntering(true);
+	}
+	Phase = ERacePhase::Entering;
 	OnRep_Phase();
-	OnLineupReady.Broadcast();
+	ForceNetUpdate();
 }
 
 void ARaceManager::StartRace()
@@ -187,9 +199,7 @@ void ARaceManager::StartRace()
 		ARaceRunner* Rn = Runners[i];
 		if (!Rn) continue;
 
-		// 이번 판 레시피 롤 (랜덤은 여기서 한 번에 다 굴림). 방향 = 러너가 바라보는 쪽(스폰지점 방향).
-		const FRunnerRaceScript Script = RollScript(Rn->Stats, Rn->GetActorLocation(), Rn->GetActorForwardVector());
-		Rn->ServerSetupScript(Script);
+		const FRunnerRaceScript& Script = Rn->RaceScript;
 
 		// 완주 시각 결정론 계산 → 순위 판정용
 		const float FinishT = SimulateFinishTime(Script);
@@ -207,7 +217,11 @@ void ARaceManager::StartRace()
 	RaceElapsed = 0.f;
 	bResultBroadcast = false;
 
-	for (ARaceRunner* Rn : Runners) { if (Rn) Rn->ServerSetRacing(true); }   // 출발 신호(복제)
+	RaceStartServerTime = GetServerTime();
+	for (ARaceRunner* Rn : Runners)
+	{
+		if (IsValid(Rn)) Rn->ServerSetRacing(true, RaceStartServerTime);
+	}
 
 	Phase = ERacePhase::Racing;
 	OnRep_Phase();
@@ -217,18 +231,81 @@ void ARaceManager::StartRace()
 void ARaceManager::Tick(float Dt)
 {
 	Super::Tick(Dt);
-	if (!HasAuthority() || Phase != ERacePhase::Racing) return;
+	if (!HasAuthority()) return;
+	if (Phase == ERacePhase::Entering)
+	{
+		if (GetServerTime() - EnterStartServerTime >= EnterDuration) BeginBetting();
+		return;
+	}
+	if (Phase == ERacePhase::Betting)
+	{
+		if (GetServerTime() - BettingStartServerTime >= BettingDuration) StartRace();
+		return;
+	}
+	if (Phase == ERacePhase::Exiting)
+	{
+		if (GetServerTime() - ExitStartServerTime >= ExitDuration) FinishExiting();
+		return;
+	}
+	if (Phase != ERacePhase::Racing) return;
 
-	RaceElapsed += Dt;
+	RaceElapsed = static_cast<float>(GetServerTime() - RaceStartServerTime);
 	if (!bResultBroadcast && RaceElapsed >= RaceDuration)
 	{
 		bResultBroadcast = true;
-		Phase = ERacePhase::Finished;
-		OnRep_Phase();
-		OnRaceFinished.Broadcast(GetWinner(), WinnerIndex);
-
 		SettleTickets();   // 단승: 진 마권 자동삭제, 당첨 마권 유지(환전 대기)
+		Exiting();
 	}
+}
+
+double ARaceManager::GetServerTime() const
+{
+	const AGameStateBase* GS = GetWorld()->GetGameState();
+	return GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+}
+
+void ARaceManager::BeginBetting()
+{
+	for (ARaceRunner* Runner : Runners)
+	{
+		if (IsValid(Runner)) Runner->ServerSetEntering(false);
+	}
+	BettingStartServerTime = GetServerTime();
+	Phase = ERacePhase::Betting;
+	OnRep_Phase();
+	ForceNetUpdate();
+	OnLineupReady.Broadcast();
+}
+
+void ARaceManager::Exiting()
+{
+	if (!HasAuthority() || Phase != ERacePhase::Racing || !bResultBroadcast) return;
+	ExitStartServerTime = GetServerTime();
+	for (ARaceRunner* Runner : Runners)
+	{
+		if (!IsValid(Runner)) continue;
+		Runner->ServerSetRacing(false);
+		Runner->ServerSetExiting(true, ExitStartServerTime);
+	}
+	Phase = ERacePhase::Exiting;
+	OnRep_Phase();
+	ForceNetUpdate();
+	OnRaceFinished.Broadcast(GetWinner(), WinnerIndex);
+	OnLineupExit.Broadcast();
+}
+
+void ARaceManager::FinishExiting()
+{
+	for (ARaceRunner* Runner : Runners)
+	{
+		if (!IsValid(Runner)) continue;
+		Runner->ServerSetExiting(false);
+		Runner->Destroy();
+	}
+	Runners.Reset();
+	Phase = ERacePhase::Finished;
+	OnRep_Phase();
+	ForceNetUpdate();
 }
 
 void ARaceManager::ResetRace()

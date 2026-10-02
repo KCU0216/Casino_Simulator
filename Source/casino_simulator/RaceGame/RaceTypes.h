@@ -10,8 +10,10 @@ UENUM(BlueprintType)
 enum class ERacePhase : uint8
 {
 	Idle     UMETA(DisplayName = "대기"),
+	Entering UMETA(DisplayName = "입장"),
 	Betting  UMETA(DisplayName = "배팅"),
 	Racing   UMETA(DisplayName = "레이스"),
+	Exiting  UMETA(DisplayName = "퇴장"),
 	Finished UMETA(DisplayName = "종료")
 };
 
@@ -29,14 +31,22 @@ struct FRaceRunnerStats
 	UPROPERTY(BlueprintReadOnly, Category = "Race") float  StumbleChance = 0.f;
 };
 
-// 이번 판 "주행 레시피". 서버가 레이스 시작 때 1번 롤 → 러너에 리플리케이트.
+// 이번 판 "주행 레시피". 서버가 입장 시작 때 1번 롤 → 러너에 리플리케이트.
 // 클라는 이 레시피만 받아서 매 프레임 위치를 스스로 계산 (위치 스트리밍 X).
 USTRUCT(BlueprintType)
 struct FRunnerRaceScript
 {
 	GENERATED_BODY()
 
-	UPROPERTY() FVector StartLoc = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Race") FVector SpawnLoc = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Race") FVector StartLoc = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Race") FVector FinishLoc = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Race") FVector ExitLoc = FVector::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Race") double EnterStartServerTime = 0.0;
+	UPROPERTY(BlueprintReadOnly, Category = "Race") float EnterDuration = 0.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Race") double RaceStartServerTime = -1.0;
+	UPROPERTY(BlueprintReadOnly, Category = "Race") double ExitStartServerTime = -1.0;
+	UPROPERTY(BlueprintReadOnly, Category = "Race") float ExitDuration = 0.f;
 	UPROPERTY() FVector Dir = FVector(1, 0, 0);
 	UPROPERTY() float   TrackLength = 3000.f;
 	UPROPERTY() float   Speed = 200.f;          // 운 반영된 실제 속도 (레이스 내내 고정)
@@ -45,7 +55,6 @@ struct FRunnerRaceScript
 	UPROPERTY() bool    bWillStumble = false;
 	UPROPERTY() float   StumbleAtPos = 0.f;     // 이 위치 지나면 삐끗
 };
-
 // 마권 1장(묶음). 매니저가 원장으로 보유. 구매 시점 배당(Odds) 고정.
 USTRUCT(BlueprintType)
 struct FBetTicket
@@ -70,4 +79,3 @@ struct FBetTicket
 
 	int32 Payout() const { return FMath::FloorToInt(Amount * Count * Odds); }
 };
-	

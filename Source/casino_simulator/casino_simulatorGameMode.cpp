@@ -1,6 +1,7 @@
 ﻿// Copyright Epic Games, Inc. All Rights Reserved.
 #include "casino_simulatorGameMode.h"
 #include "Police/PoliceEncounterComponent.h"
+#include "RaceGame/RaceManager.h"
 #include "Enemy/ThiefCharacter.h"
 #include "casino_simulatorPlayerState.h"
 #include "GameFramework/Pawn.h"
@@ -21,6 +22,79 @@ Acasino_simulatorGameMode::Acasino_simulatorGameMode()
     bUseSeamlessTravel = true;
 
     PoliceEncounter = CreateDefaultSubobject<UPoliceEncounterComponent>(TEXT("PoliceEncounter"));
+}
+
+void Acasino_simulatorGameMode::StartRaceRound(ARaceManager* RaceManager)
+{
+    if (HasAuthority() && IsValid(RaceManager) && RaceManager->GetWorld() == GetWorld())
+    {
+        if (RaceManager->Phase == ERacePhase::Finished) RaceManager->ResetRace();
+        RaceManager->StartNewRound();
+    }
+}
+
+void Acasino_simulatorGameMode::ScheduleRaceEvent(float DayDuration)
+{
+    CancelRaceEventTimers();
+    if (!HasAuthority() || !CanPlayCasino() || !bEnableDailyRaceEvent) return;
+    ARaceManager* Manager = RaceEventManager;
+    if (!IsValid(Manager))
+    {
+        TArray<AActor*> Managers;
+        UGameplayStatics::GetAllActorsOfClass(this, ARaceManager::StaticClass(), Managers);
+        if (Managers.IsEmpty()) return;
+        if (Managers.Num() != 1)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Race event: assign RaceEventManager when multiple managers exist."));
+            return;
+        }
+        Manager = Cast<ARaceManager>(Managers[0]);
+    }
+    if (Manager->GetWorld() != GetWorld()) return;
+    ScheduledRaceManager = Manager;
+    const float StartDelay = FMath::Max(1.f, DayDuration) * 0.5f;
+    const auto* GS = GetGameState<ACasinoLoopGameState>();
+    RaceEventStartServerTime = GS->GetServerWorldTimeSeconds() + StartDelay;
+    GetWorldTimerManager().SetTimer(RaceEventTimer, this,
+        &ThisClass::StartScheduledRaceEvent, StartDelay, false);
+    const float AnnouncementDelay = FMath::Max(0.f, StartDelay - 10.f);
+    if (AnnouncementDelay > 0.f)
+        GetWorldTimerManager().SetTimer(RaceAnnouncementTimer, this,
+            &ThisClass::AnnounceRaceEvent, AnnouncementDelay, false);
+    else
+        AnnounceRaceEvent();
+}
+
+void Acasino_simulatorGameMode::AnnounceRaceEvent()
+{
+    const ARaceManager* Manager = ScheduledRaceManager.Get();
+    if (!HasAuthority() || !CanPlayCasino() || !IsValid(Manager)
+        || (Manager->Phase != ERacePhase::Idle && Manager->Phase != ERacePhase::Finished)) return;
+    const auto* GS = GetGameState<ACasinoLoopGameState>();
+    const float Remaining = FMath::Max(0.f, static_cast<float>(RaceEventStartServerTime - GS->GetServerWorldTimeSeconds()));
+    if (Remaining <= 0.f) return;
+    const FText Message = FText::Format(NSLOCTEXT("CasinoRace", "EventStartingSoon",
+        "\uacbd\ub9c8 \uc774\ubca4\ud2b8\uac00 {0}\ucd08 \ud6c4 \uc2dc\uc791\ub429\ub2c8\ub2e4."),
+        FText::AsNumber(FMath::CeilToInt(Remaining)));
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+        if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
+            PC->ClientShowWorldEventAnnouncement(Message, Remaining);
+}
+
+void Acasino_simulatorGameMode::StartScheduledRaceEvent()
+{
+    ARaceManager* Manager = ScheduledRaceManager.Get();
+    CancelRaceEventTimers();
+    if (!HasAuthority() || !CanPlayCasino() || !IsValid(Manager)) return;
+    StartRaceRound(Manager);
+}
+
+void Acasino_simulatorGameMode::CancelRaceEventTimers()
+{
+    GetWorldTimerManager().ClearTimer(RaceEventTimer);
+    GetWorldTimerManager().ClearTimer(RaceAnnouncementTimer);
+    ScheduledRaceManager.Reset();
+    RaceEventStartServerTime = 0.0;
 }
 
 void Acasino_simulatorGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
@@ -86,6 +160,7 @@ void Acasino_simulatorGameMode::WaitForOnlinePlayers()
 
 void Acasino_simulatorGameMode::EndPlay(const EEndPlayReason::Type Reason)
 {
+    CancelRaceEventTimers();
     GetWorldTimerManager().ClearTimer(IntroTimer);
     GetWorldTimerManager().ClearTimer(DayLoopTimer);
     GetWorldTimerManager().ClearTimer(PaymentTimer);
@@ -175,6 +250,7 @@ void Acasino_simulatorGameMode::ActivateCasinoDay()
     {
         PoliceEncounter->BeginPoliceDay(GS->GetRemainingDaySeconds());
     }
+    ScheduleRaceEvent(Duration);
 }
 
 bool Acasino_simulatorGameMode::MovePlayersToCentralSpawns(bool bForPayment)
@@ -213,6 +289,7 @@ void Acasino_simulatorGameMode::BeginPaymentPhase()
 {
     auto* GS = GetGameState<ACasinoLoopGameState>();
     if (!GS || GS->LoopStatus.Phase != ECasinoLoopPhase::Playing) return;
+    CancelRaceEventTimers();
     FCasinoLoopStatus Status = GS->LoopStatus;
     Status.Phase = ECasinoLoopPhase::Settling;
     Status.DayEndServerTime = 0.0;

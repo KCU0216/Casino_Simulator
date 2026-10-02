@@ -39,6 +39,10 @@ void Acasino_simulatorPlayerController::SetCasinoUIScreen(ECasinoUIScreen Screen
 { UIManager->SetCasinoUIScreen(Screen); }
 void Acasino_simulatorPlayerController::ApplyUIScreenInput()
 { UIManager->ApplyUIScreenInput(); }
+void Acasino_simulatorPlayerController::ClientShowWorldEventAnnouncement_Implementation(const FText& Message, float Duration)
+{
+    if (IsLocalController() && IsValid(UIManager)) UIManager->ShowWorldEventAnnouncement(Message, Duration);
+}
 void Acasino_simulatorPlayerController::ReturnToMainMenu()
 {
     if (!IsLocalController() || UIManager->IsTravelPending()) return;

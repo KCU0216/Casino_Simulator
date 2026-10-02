@@ -44,6 +44,11 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD", meta = (DisplayName = "Set Interaction Prompt Text"))
 	void BP_SetInteractionPromptText(const FText& PromptText);
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|World Event", meta = (DisplayName = "Show World Event Announcement"))
+	void BP_ShowWorldEventAnnouncement(const FText& Message, float Duration);
+	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|World Event", meta = (DisplayName = "Clear World Event Announcement"))
+	void BP_ClearWorldEventAnnouncement();
+
 	/** Passes the full current inventory to Blueprint whenever PlayerState's inventory changes, so item slot widgets (e.g. WBP_ItemSlot) can be rebuilt/refreshed. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD", meta = (DisplayName = "Inventory Updated"))
 	void BP_InventoryUpdated(const TArray<FInventoryEntry>& Inventory);

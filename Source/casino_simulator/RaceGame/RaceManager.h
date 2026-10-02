@@ -14,7 +14,9 @@ class Acasino_simulatorCharacter;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceLineupReady);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceStarted);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceLineupExit);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnRaceFinished, ARaceRunner*, Winner, int32, WinnerIndex);
+
 
 UCLASS()
 class CASINO_SIMULATOR_API ARaceManager : public AActor
@@ -28,20 +30,21 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race") TSubclassOf<ARaceRunner> RunnerClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race") int32 NumRunners = 5;
-
 	UPROPERTY(VisibleAnywhere, Category = "Race") USceneComponent* SceneRoot;
 	UPROPERTY(EditAnywhere, Category = "Race|Track") UStaticMeshComponent* Track;
 	// 레벨에 배치한 스폰 지점들. 순서대로 러너 스폰 (0번 지점 = 0번 러너).
-	// 비어있으면 아래 StartLocation/LaneSpacing로 자동 계산(폴백).
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Race|Track") TArray<AActor*> RunnerSpawnPoints;
 	
 
-	// ↓ RunnerSpawnPoints 없을 때만 쓰는 폴백 값들
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Track") FVector StartLocation = FVector::ZeroVector;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Track") FVector RaceDirection = FVector(1, 0, 0);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Track") float   TrackLength = 2700.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Track") float   LaneSpacing = 200.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Track", meta = (ClampMin = "0.0"))
+	float EnterDistance = 800.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Track", meta = (ClampMin = "0.0"))
+	float ExitDistance = 800.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Track", meta = (ClampMin = "1.0"))
+	float TransitSpeed = 200.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race", meta = (ClampMin = "0.0"))
+	float BettingDuration = 30.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Odds")  float   HouseMargin = 0.15f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC") TSubclassOf<ANPC_InteractionCameraBase> NPCClass;
@@ -60,11 +63,15 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race") int32 CurrentRoundNumber = 0;
 
 	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceLineupReady OnLineupReady;
-	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceStarted     OnRaceStarted;
-	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceFinished    OnRaceFinished;
+	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceStarted OnRaceStarted;
+
+	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceLineupExit OnLineupExit;
+	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceFinished OnRaceFinished;
 
 	// 새 라운드: 러너 스폰 + 스탯 롤 + 배당 공개 (서버)
 	UFUNCTION(BlueprintCallable, Category = "Race") void StartNewRound();
+	UFUNCTION(BlueprintCallable, Category = "Race") void Entering();
+	UFUNCTION(BlueprintCallable, Category = "Race") void Exiting();
 	// 배팅 마감 → 레이스 시작: 레시피 롤 + 승자 확정 + 출발 (서버)
 	UFUNCTION(BlueprintCallable, Category = "Race") void StartRace();
 	UFUNCTION(BlueprintCallable, Category = "Race") void ResetRace();
@@ -79,6 +86,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Race|Bet") float GetOdds(int32 RunnerIndex) const;
 
 protected:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRaceEntranceFlowTest;
+#endif
 	virtual void BeginPlay() override;
 	UFUNCTION() void OnRep_Phase();
 
@@ -94,4 +104,13 @@ protected:
 	float RaceElapsed = 0.f;
 	float RaceDuration = 0.f;
 	bool  bResultBroadcast = false;
+	double EnterStartServerTime = 0.0;
+	float EnterDuration = 0.f;
+	double RaceStartServerTime = 0.0;
+	double BettingStartServerTime = 0.0;
+	double ExitStartServerTime = 0.0;
+	float ExitDuration = 0.f;
+	double GetServerTime() const;
+	void BeginBetting();
+	void FinishExiting();
 };

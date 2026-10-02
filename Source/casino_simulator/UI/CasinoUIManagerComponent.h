@@ -20,6 +20,9 @@ public:
     bool ShowScreenUI(UUserWidget* Widget, ECasinoUIScreen ExpectedScreen);
     UFUNCTION(BlueprintCallable, Category="Casino|UI")
     UUserWidget* OpenInteractionUI(TSubclassOf<UUserWidget> WidgetClass);
+    UFUNCTION(BlueprintCallable, Category="Casino|UI")
+    void ShowWorldEventAnnouncement(const FText& Message, float Duration);
+    void ClearWorldEventAnnouncement();
     UPROPERTY(BlueprintReadOnly, Category="Casino|UI") TObjectPtr<UCasinoUIRoot> UIRoot;
     UPROPERTY(BlueprintReadOnly, Category="Casino|UI") TObjectPtr<UUserWidget> ActiveScreenWidget;
     UPROPERTY(BlueprintReadOnly, Category="Casino|UI") ECasinoUIScreen UIScreen = ECasinoUIScreen::Loading;

@@ -2,6 +2,8 @@
 #include "RaceRunner.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "GameFramework/GameStateBase.h"
+#include "Engine/World.h"
 
 ARaceRunner::ARaceRunner()
 {
@@ -23,6 +25,8 @@ void ARaceRunner::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ARaceRunner, Stats);
 	DOREPLIFETIME(ARaceRunner, RaceScript);
 	DOREPLIFETIME(ARaceRunner, bRacing);
+	DOREPLIFETIME(ARaceRunner, bIsEntering);
+	DOREPLIFETIME(ARaceRunner, bIsExiting);
 }
 
 void ARaceRunner::InitStats(const FRaceRunnerStats& In)
@@ -33,15 +37,54 @@ void ARaceRunner::InitStats(const FRaceRunnerStats& In)
 
 void ARaceRunner::ServerSetupScript(const FRunnerRaceScript& S)
 {
+	if (!HasAuthority()) return;
 	RaceScript = S;
-	ResetVisual();
-	SetActorLocation(RaceScript.StartLoc);
+	OnRep_RaceScript();
+	ForceNetUpdate();
 }
 
-void ARaceRunner::ServerSetRacing(bool bNew)
+void ARaceRunner::OnRep_RaceScript()
 {
+	if (!bHasRaceScript)
+	{
+		SetActorLocation(GetServerTime() >= RaceScript.EnterStartServerTime + RaceScript.EnterDuration
+			? RaceScript.StartLoc : RaceScript.SpawnLoc);
+	}
+	bHasRaceScript = true;
+	SetActorRotation(RaceScript.Dir.Rotation());
+	ApplyMovementState();
+}
+
+void ARaceRunner::ServerSetEntering(bool bNew)
+{
+	if (!HasAuthority() || (bNew && (bRacing || bIsExiting))) return;
+	bIsEntering = bNew;
+	OnRep_Entering();
+	ForceNetUpdate();
+}
+
+void ARaceRunner::ServerSetRacing(bool bNew, double StartServerTime)
+{
+	if (!HasAuthority() || (bNew && (bIsEntering || bIsExiting))) return;
+	if (bNew)
+	{
+		RaceScript.RaceStartServerTime = StartServerTime >= 0.0 ? StartServerTime : GetServerTime();
+	}
 	bRacing = bNew;
-	if (HasAuthority()) OnRep_Racing();   // 서버에서도 리셋 반영
+	OnRep_Racing();
+	ForceNetUpdate();
+}
+
+void ARaceRunner::ServerSetExiting(bool bNew, double StartServerTime)
+{
+	if (!HasAuthority() || (bNew && (bIsEntering || bRacing))) return;
+	if (bNew)
+	{
+		RaceScript.ExitStartServerTime = StartServerTime >= 0.0 ? StartServerTime : GetServerTime();
+	}
+	bIsExiting = bNew;
+	OnRep_Exiting();
+	ForceNetUpdate();
 }
 
 void ARaceRunner::ResetVisual()
@@ -56,12 +99,55 @@ void ARaceRunner::ResetVisual()
 
 void ARaceRunner::OnRep_Racing()
 {
-	// bRacing이 true로 바뀌는 순간 = 이 머신의 출발 신호
-	if (bRacing)
+	ApplyMovementState();
+}
+
+void ARaceRunner::OnRep_Entering()
+{
+	ApplyMovementState();
+}
+
+void ARaceRunner::OnRep_Exiting()
+{
+	ApplyMovementState();
+}
+
+void ARaceRunner::ApplyMovementState()
+{
+	// Either the script or the replicated start flag may arrive first.
+	if (!bHasRaceScript) return;
+	if ((bRacing && RaceScript.RaceStartServerTime < 0.0)
+		|| (bIsExiting && RaceScript.ExitStartServerTime < 0.0)) return;
+
+	const ERacePhase NewPhase = bIsExiting ? ERacePhase::Exiting
+		: bRacing ? ERacePhase::Racing
+		: bIsEntering ? ERacePhase::Entering : ERacePhase::Idle;
+	const ERacePhase PreviousPhase = LocalMovementPhase;
+	if (NewPhase != LocalMovementPhase)
 	{
 		ResetVisual();
+		LocalMovementPhase = NewPhase;
+		bIsRunning = NewPhase == ERacePhase::Entering || NewPhase == ERacePhase::Racing
+			|| NewPhase == ERacePhase::Exiting;
+	}
+
+	if (NewPhase == ERacePhase::Idle)
+	{
+		if (PreviousPhase == ERacePhase::Entering) SetActorLocation(RaceScript.StartLoc);
+		else if (PreviousPhase == ERacePhase::Racing) SetActorLocation(RaceScript.FinishLoc);
+		else if (PreviousPhase == ERacePhase::Exiting) SetActorLocation(RaceScript.ExitLoc);
+	}
+	else if (NewPhase == ERacePhase::Entering)
+	{
+		TickEntering();
+	}
+	else if (NewPhase == ERacePhase::Exiting)
+	{
+		TickExiting();
+	}
+	else if (NewPhase != PreviousPhase)
+	{
 		SetActorLocation(RaceScript.StartLoc);
-		bIsRunning = true;
 	}
 }
 
@@ -70,29 +156,72 @@ void ARaceRunner::OnRep_Stats() { OnStatsUpdated(); }
 void ARaceRunner::Tick(float Dt)
 {
 	Super::Tick(Dt);
-	if (!bIsRunning) return;
+	if (!bHasRaceScript) return;
+	if (LocalMovementPhase == ERacePhase::Entering && bIsEntering) TickEntering();
+	else if (LocalMovementPhase == ERacePhase::Racing && bRacing) TickRacing();
+	else if (LocalMovementPhase == ERacePhase::Exiting && bIsExiting) TickExiting();
+}
 
-	LocalTime += Dt;
+double ARaceRunner::GetServerTime() const
+{
+	const AGameStateBase* GS = GetWorld()->GetGameState();
+	return GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+}
 
-	// 각성 (레시피에 이미 정해져 있음 → 서버·클라 동일 지점에서 발동)
-	if (RaceScript.bWillAwaken && !bAwakenedLocal && PosUnits >= RaceScript.AwakenAtPos)
+void ARaceRunner::TickTransit(const FVector& From, const FVector& To, double StartServerTime, float Duration)
+{
+	const float Alpha = Duration > 0.f ? FMath::Clamp(static_cast<float>(
+		(GetServerTime() - StartServerTime) / Duration), 0.f, 1.f) : 1.f;
+	SetActorLocation(FMath::Lerp(From, To, Alpha));
+	bIsRunning = Alpha < 1.f;
+}
+
+void ARaceRunner::TickEntering()
+{
+	TickTransit(RaceScript.SpawnLoc, RaceScript.StartLoc,
+		RaceScript.EnterStartServerTime, RaceScript.EnterDuration);
+}
+
+void ARaceRunner::TickExiting()
+{
+	if (RaceScript.ExitStartServerTime < 0.0) return;
+	TickTransit(RaceScript.FinishLoc, RaceScript.ExitLoc,
+		RaceScript.ExitStartServerTime, RaceScript.ExitDuration);
+}
+
+void ARaceRunner::TickRacing()
+{
+	if (!bIsRunning || RaceScript.RaceStartServerTime < 0.0) return;
+	const float Elapsed = FMath::Max(0.f, static_cast<float>(GetServerTime() - RaceScript.RaceStartServerTime));
+	constexpr float Step = 1.f / 120.f;
+	// Match the manager's fixed-step finish simulation, including late replication.
+	while (LocalTime + Step <= Elapsed && PosUnits < RaceScript.TrackLength)
 	{
-		bAwakenedLocal = true;
-		OnAwakenFX();
+		// 각성 (레시피에 이미 정해져 있음 → 서버·클라 동일 지점에서 발동)
+		if (RaceScript.bWillAwaken && !bAwakenedLocal && PosUnits >= RaceScript.AwakenAtPos)
+		{
+			bAwakenedLocal = true;
+			OnAwakenFX();
+		}
+		// 장애물 (각성 안 했을 때만)
+		if (!bAwakenedLocal && RaceScript.bWillStumble && !bStumbledLocal && PosUnits >= RaceScript.StumbleAtPos)
+		{
+			bStumbledLocal = true;
+			StumbleUntil = LocalTime + 0.7f;
+			OnStumbleFX();
+		}
+
+		float Mult = bAwakenedLocal ? 2.3f : 1.f;
+		if (LocalTime < StumbleUntil) Mult *= 0.3f;
+
+		PosUnits += RaceScript.Speed * Mult * Step;
+		LocalTime += Step;
 	}
-	// 장애물 (각성 안 했을 때만)
-	if (!bAwakenedLocal && RaceScript.bWillStumble && !bStumbledLocal && PosUnits >= RaceScript.StumbleAtPos)
+	if (PosUnits >= RaceScript.TrackLength)
 	{
-		bStumbledLocal = true;
-		StumbleUntil = LocalTime + 0.7f;
-		OnStumbleFX();
+		PosUnits = RaceScript.TrackLength;
+		bIsRunning = false;
 	}
-
-	float Mult = bAwakenedLocal ? 2.3f : 1.f;
-	if (LocalTime < StumbleUntil) Mult *= 0.3f;
-
-	PosUnits += RaceScript.Speed * Mult * Dt;
-	if (PosUnits >= RaceScript.TrackLength) { PosUnits = RaceScript.TrackLength; bIsRunning = false; }
 
 	SetActorLocation(RaceScript.StartLoc + RaceScript.Dir * PosUnits);
 }

@@ -13,6 +13,7 @@
 class APawn;
 class Acasino_simulatorCharacter;
 class UPoliceEncounterComponent;
+class ARaceManager;
 /**
  *  Simple GameMode for a first person game
  */
@@ -23,6 +24,14 @@ class Acasino_simulatorGameMode : public AGameModeBase
 
 public:
 	Acasino_simulatorGameMode();
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Race")
+	void StartRaceRound(ARaceManager* RaceManager);
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Race")
+    bool bEnableDailyRaceEvent = true;
+    // Set explicitly before day activation if the level contains multiple managers.
+    UPROPERTY(Transient, BlueprintReadWrite, Category="Casino|Race")
+    TObjectPtr<ARaceManager> RaceEventManager;
     virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Police")
@@ -88,7 +97,16 @@ protected:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FCasinoPaymentCompletionTest;
+    friend class FRaceWorldEventTest;
 #endif
+    FTimerHandle RaceEventTimer;
+    FTimerHandle RaceAnnouncementTimer;
+    TWeakObjectPtr<ARaceManager> ScheduledRaceManager;
+    double RaceEventStartServerTime = 0.0;
+    void ScheduleRaceEvent(float DayDuration);
+    void AnnounceRaceEvent();
+    void StartScheduledRaceEvent();
+    void CancelRaceEventTimers();
     FTimerHandle OnlineArrivalTimer;
     double OnlineArrivalDeadline = 0.0;
     int32 OnlineExpectedPlayers = 0;
