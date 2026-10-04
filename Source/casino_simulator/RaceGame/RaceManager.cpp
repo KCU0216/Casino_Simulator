@@ -1,4 +1,4 @@
-﻿// RaceManager.cpp
+// RaceManager.cpp
 #include "RaceManager.h"
 #include "RaceRunner.h"
 #include "Engine/World.h"
@@ -100,6 +100,24 @@ void ARaceManager::BeginPlay()
 	}
 }
 
+
+FRaceRunnerStats ARaceManager::RollStats(int32 LaneIndex) const
+{
+	static const int32 Lo[4] = { 65, 75, 85, 95 };
+	static const int32 Hi[4] = { 74, 84, 94, 104 };
+	const int32 Bucket = (LaneIndex < 4) ? LaneIndex : FMath::RandRange(0, 3);
+
+	FRaceRunnerStats S;
+	S.Age           = FMath::RandRange(Lo[Bucket], Hi[Bucket]);
+	S.Name          = KRNames[FMath::RandRange(0, UE_ARRAY_COUNT(KRNames) - 1)];
+	S.BaseSpeed     = 225.f - (S.Age - 60) * 2.6f;
+	S.AwakenChance  = FMath::Max(0.f, (S.Age - 68) / 27.f) * 0.32f;
+	S.StumbleChance = FMath::Max(0.f, (S.Age - 68) / 27.f) * 0.30f;
+
+	const float Raw = 1.8f + FMath::Pow((S.Age - 60) / 35.f, 1.4f) * 7.f;
+	S.Odds = FMath::RoundToFloat(Raw * 10.f) / 10.f;
+	return S;
+}
 
 FRunnerRaceScript ARaceManager::RollScript(const FRaceRunnerStats& S, const FVector& StartLoc, const FVector& Dir) const
 {
