@@ -174,7 +174,9 @@ void Acasino_simulatorPlayerState::ResetForNewCasinoRun()
 {
     if (!HasAuthority()) return;
     const auto* Defaults = GetClass()->GetDefaultObject<Acasino_simulatorPlayerState>();
-    Inventory = Defaults->Inventory;
+    // AGameModeBase creates a new PlayerState during seamless travel; the old inventory is not copied.
+    // BeginPlay may already have granted its starting items when a remote player finishes loading.
+    // Keep those items instead of replacing them with the empty class-default inventory.
     NumberSlots = Defaults->NumberSlots;
     MiningPowerUpgradeLevel = Defaults->MiningPowerUpgradeLevel;
     MiningSpeedUpgradeLevel = Defaults->MiningSpeedUpgradeLevel;

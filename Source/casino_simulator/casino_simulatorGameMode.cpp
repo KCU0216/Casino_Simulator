@@ -496,8 +496,8 @@ bool Acasino_simulatorGameMode::RestartCasinoRun(APlayerController* Requester)
     if (!HasAuthority() || bRestartTravelPending || !Requester || !Requester->IsLocalController() ||
         Requester->GetWorld() != GetWorld() || !GS ||
         (GS->LoopStatus.Phase != ECasinoLoopPhase::GameOver && GS->LoopStatus.Phase != ECasinoLoopPhase::Cleared)) return false;
-    // Keep the EOS session and connected controllers. The map (including pawns/ASCs/games) is recreated.
-    // PlayerStates survive seamless travel and are reset in HandleStartingNewPlayer on the destination.
+    // Keep the EOS session and connected players. The map (including pawns/ASCs/games) is recreated.
+    // AGameModeBase replaces controllers/PlayerStates and copies identity; reset run flags on the new states.
     const FString Map = UWorld::RemovePIEPrefix(GetWorld()->GetOutermost()->GetName());
     const FString URL = Map + TEXT("?game=") + GetClass()->GetPathName()
         + FString::Printf(TEXT("?SeamlessTravel?CasinoOnlineMatch=1?CasinoRestart=1?ExpectedPlayers=%d"), GetNumPlayers());

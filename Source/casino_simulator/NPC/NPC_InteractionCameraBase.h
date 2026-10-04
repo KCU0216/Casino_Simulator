@@ -19,6 +19,8 @@ class CASINO_SIMULATOR_API ANPC_InteractionCameraBase : public ANPC_Base
 
 public:
 	ANPC_InteractionCameraBase();
+	virtual void PostLoad() override;
+	virtual void PostActorCreated() override;
 
 	/** Returns the camera component used by this NPC's interaction view. */
 	UCameraComponent* GetInteractionCameraComponent() const { return InteractionCameraComponent; }

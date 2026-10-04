@@ -33,7 +33,7 @@ class CASINO_SIMULATOR_API Acasino_simulatorPlayerState : public APlayerState
 
 public:
 	Acasino_simulatorPlayerState();
-    // Server-only: preserve identity, restore run data to class defaults on a host restart.
+    // Server-only: reset run flags/upgrades on the new PlayerState, preserving its starting inventory.
     void ResetForNewCasinoRun();
 
     UPROPERTY(Replicated, BlueprintReadOnly, Category="Casino|Lobby")

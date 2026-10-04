@@ -15,6 +15,29 @@ ANPC_InteractionCameraBase::ANPC_InteractionCameraBase()
 	InteractionCameraComponent->bAutoActivate = true;
 }
 
+void ANPC_InteractionCameraBase::PostLoad()
+{
+	Super::PostLoad();
+
+	// Reconstructed map-loaded children can leave stale destruction records during
+	// seamless travel. Replicated child NPCs should be spawned from the server.
+	if (IsChildActor())
+	{
+		bNetLoadOnClient = false;
+	}
+}
+
+void ANPC_InteractionCameraBase::PostActorCreated()
+{
+	Super::PostActorCreated();
+
+	// Apply the same policy before a newly created child receives a NetGUID.
+	if (IsChildActor())
+	{
+		bNetLoadOnClient = false;
+	}
+}
+
 AActor* ANPC_InteractionCameraBase::GetInteractionCameraTarget() const
 {
 	return InteractionCameraTarget ? InteractionCameraTarget.Get() : const_cast<ANPC_InteractionCameraBase*>(this);
