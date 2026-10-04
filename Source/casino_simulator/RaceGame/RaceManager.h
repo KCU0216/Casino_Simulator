@@ -11,6 +11,10 @@
 
 class ARaceRunner;
 class Acasino_simulatorCharacter;
+class UWidgetComponent;
+class URaceBillboardWidget;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRacePhaseChanged, ERacePhase, NewPhase);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceLineupReady);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceStarted);
@@ -43,7 +47,7 @@ public:
 	float ExitDistance = 800.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Track", meta = (ClampMin = "1.0"))
 	float TransitSpeed = 200.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_BillboardData, Category = "Race", meta = (ClampMin = "0.0"))
 	float BettingDuration = 30.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Odds")  float   HouseMargin = 0.15f;
@@ -54,7 +58,7 @@ public:
 	
 
 	UPROPERTY(ReplicatedUsing = OnRep_Phase, BlueprintReadOnly, Category = "Race") ERacePhase Phase = ERacePhase::Idle;
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race")                     int32 WinnerIndex = -1;
+	UPROPERTY(ReplicatedUsing=OnRep_BillboardData, BlueprintReadOnly, Category = "Race") int32 WinnerIndex = -1;
 	// 완주 순위: FinishOrder[0]=1등, [1]=2등 ... (러너 인덱스). 서버가 확정, 복제.
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race") TArray<int32> FinishOrder;
 	// 마권 원장 (서버 권위, 모두에게 복제)
@@ -68,7 +72,22 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceLineupExit OnLineupExit;
 	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceFinished OnRaceFinished;
 
-	// 새 라운드: 러너 스폰 + 스탯 롤 + 배당 공개 (서버)
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Race|Billboard")
+    TObjectPtr<UWidgetComponent> BillboardWidget;
+
+    UPROPERTY(BlueprintAssignable, Category="Race|Billboard")
+    FOnRacePhaseChanged OnPhaseChanged;
+    // Local presentation hook on server/listen host and replicated clients.
+    UFUNCTION(BlueprintImplementableEvent, Category="Race|Billboard")
+    void OnBillboardPhaseChanged(ERacePhase NewPhase);
+    UFUNCTION(BlueprintPure, Category="Race|Billboard")
+    URaceBillboardWidget* GetBillboardWidget() const;
+    UFUNCTION(BlueprintPure, Category="Race|Billboard")
+    ARaceRunner* GetLeadingRunner() const;
+    UFUNCTION(BlueprintPure, Category="Race|Billboard")
+    float GetRemainingBettingSeconds() const;
+
+    // 새 라운드: 러너 스폰 + 스탯 롤 + 배당 공개 (서버)
 	UFUNCTION(BlueprintCallable, Category = "Race") void StartNewRound();
 	UFUNCTION(BlueprintCallable, Category = "Race") void Entering();
 	UFUNCTION(BlueprintCallable, Category = "Race") void Exiting();
@@ -88,12 +107,17 @@ public:
 protected:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRaceEntranceFlowTest;
+    friend class FRaceBillboardFlowTest;
 #endif
 	virtual void BeginPlay() override;
-	UFUNCTION() void OnRep_Phase();
+    UFUNCTION() void OnRep_Phase();
+    UFUNCTION() void OnRep_BillboardData();
+    void RefreshBillboard();
+    bool bBillboardPhaseInitialized = false;
+    ERacePhase LastBillboardPhase = ERacePhase::Idle;
 
 	// 서버가 스폰한 러너의 순서를 클라이언트 UI에도 전달한다.
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race") TArray<ARaceRunner*> Runners;
+	UPROPERTY(ReplicatedUsing=OnRep_BillboardData, BlueprintReadOnly, Category = "Race") TArray<ARaceRunner*> Runners;
 
 	int32 NextTicketId = 1;
 	void SettleTickets();   // 단승 정산: 진 마권 삭제, 당첨 마권 유지
@@ -107,7 +131,8 @@ protected:
 	double EnterStartServerTime = 0.0;
 	float EnterDuration = 0.f;
 	double RaceStartServerTime = 0.0;
-	double BettingStartServerTime = 0.0;
+    UPROPERTY(ReplicatedUsing=OnRep_BillboardData)
+    double BettingStartServerTime = 0.0;
 	double ExitStartServerTime = 0.0;
 	float ExitDuration = 0.f;
 	double GetServerTime() const;

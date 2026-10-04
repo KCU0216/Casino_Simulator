@@ -21,7 +21,7 @@ public:
     UFUNCTION(BlueprintCallable, Category="Casino|UI")
     UUserWidget* OpenInteractionUI(TSubclassOf<UUserWidget> WidgetClass);
     UFUNCTION(BlueprintCallable, Category="Casino|UI")
-    void ShowWorldEventAnnouncement(const FText& Message, float Duration);
+    void ShowWorldEventAnnouncement();
     void ClearWorldEventAnnouncement();
     UPROPERTY(BlueprintReadOnly, Category="Casino|UI") TObjectPtr<UCasinoUIRoot> UIRoot;
     UPROPERTY(BlueprintReadOnly, Category="Casino|UI") TObjectPtr<UUserWidget> ActiveScreenWidget;

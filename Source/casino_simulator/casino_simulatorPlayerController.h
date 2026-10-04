@@ -135,7 +135,7 @@ public:
     UFUNCTION(Client, Reliable)
     void ClientPrepareCasinoDay(FRotator Facing);
     UFUNCTION(Client, Reliable)
-    void ClientShowWorldEventAnnouncement(const FText& Message, float Duration);
+    void ClientShowWorldEventAnnouncement();
     UFUNCTION(Client, Reliable)
     void ClientPrepareDayIntro(FRotator Facing);
     UFUNCTION(BlueprintImplementableEvent, Category="Casino|Loop")

@@ -22,7 +22,7 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	// 스탯 (이름/나이/배당 — UI용). 서버가 세팅, 리플리케이트.
+    // 스탯 (이름/나이/배당 — UI용). 서버가 세팅, 리플리케이트.
 	UPROPERTY(ReplicatedUsing = OnRep_Stats, BlueprintReadOnly, Category = "Race")
 	FRaceRunnerStats Stats;
 

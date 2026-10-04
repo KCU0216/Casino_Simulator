@@ -16,7 +16,7 @@ ARaceRunner::ARaceRunner()
 
 	Skin = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Skin"));
 	Skin->SetupAttachment(SceneRoot);
-	Skin->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    Skin->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void ARaceRunner::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

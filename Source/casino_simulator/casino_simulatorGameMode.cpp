@@ -73,12 +73,9 @@ void Acasino_simulatorGameMode::AnnounceRaceEvent()
     const auto* GS = GetGameState<ACasinoLoopGameState>();
     const float Remaining = FMath::Max(0.f, static_cast<float>(RaceEventStartServerTime - GS->GetServerWorldTimeSeconds()));
     if (Remaining <= 0.f) return;
-    const FText Message = FText::Format(NSLOCTEXT("CasinoRace", "EventStartingSoon",
-        "\uacbd\ub9c8 \uc774\ubca4\ud2b8\uac00 {0}\ucd08 \ud6c4 \uc2dc\uc791\ub429\ub2c8\ub2e4."),
-        FText::AsNumber(FMath::CeilToInt(Remaining)));
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
         if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
-            PC->ClientShowWorldEventAnnouncement(Message, Remaining);
+            PC->ClientShowWorldEventAnnouncement();
 }
 
 void Acasino_simulatorGameMode::StartScheduledRaceEvent()

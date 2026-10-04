@@ -44,8 +44,9 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD", meta = (DisplayName = "Set Interaction Prompt Text"))
 	void BP_SetInteractionPromptText(const FText& PromptText);
 
+	// Race announcement trigger only. Choose the message and display duration in the HUD Blueprint.
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|World Event", meta = (DisplayName = "Show World Event Announcement"))
-	void BP_ShowWorldEventAnnouncement(const FText& Message, float Duration);
+	void BP_ShowWorldEventAnnouncement();
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD|World Event", meta = (DisplayName = "Clear World Event Announcement"))
 	void BP_ClearWorldEventAnnouncement();
 

@@ -271,17 +271,12 @@ UUserWidget* UCasinoUIManagerComponent::OpenInteractionUI(TSubclassOf<UUserWidge
     }
     return ShowInteractionUI(Widget) ? Widget : nullptr;
 }
-void UCasinoUIManagerComponent::ShowWorldEventAnnouncement(const FText& Message, float Duration)
+void UCasinoUIManagerComponent::ShowWorldEventAnnouncement()
 {
     auto* PC = GetCasinoController();
     if (!PC || !PC->IsLocalController() || bUITravelPending || UIScreen != ECasinoUIScreen::Playing) return;
-    if (Message.IsEmpty() || Duration <= 0.f)
-    {
-        ClearWorldEventAnnouncement();
-        return;
-    }
     PC->TryInitializePlayerHUD();
-    if (IsValid(PC->PlayerHUDWidget)) PC->PlayerHUDWidget->BP_ShowWorldEventAnnouncement(Message, Duration);
+    if (IsValid(PC->PlayerHUDWidget)) PC->PlayerHUDWidget->BP_ShowWorldEventAnnouncement();
 }
 
 void UCasinoUIManagerComponent::ClearWorldEventAnnouncement()

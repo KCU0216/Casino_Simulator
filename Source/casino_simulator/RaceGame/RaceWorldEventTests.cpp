@@ -9,6 +9,7 @@
 #include "Engine/Engine.h"
 #include "Engine/TargetPoint.h"
 #include "Engine/World.h"
+#include "Engine/LocalPlayer.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
 
@@ -114,20 +115,20 @@ bool FRaceWorldEventTest::RunTest(const FString& Parameters)
     auto* HUDProperty = FindFProperty<FObjectPropertyBase>(Acasino_simulatorPlayerController::StaticClass(), TEXT("PlayerHUDWidget"));
     if (!TestNotNull(TEXT("Controller"), PC) || !TestNotNull(TEXT("HUD"), HUD)
         || !TestNotNull(TEXT("HUD property"), HUDProperty)) return false;
+    // Client RPCs require an owning player even in a standalone test world.
+    PC->Player = NewObject<ULocalPlayer>(GEngine);
+    PC->Player->PlayerController = PC;
+    PC->SetAsLocalPlayerController();
     HUDProperty->SetObjectPropertyValue_InContainer(PC, HUD);
     PC->UIManager->UIScreen = ECasinoUIScreen::Playing;
-    PC->ClientShowWorldEventAnnouncement(FText::FromString(TEXT("Race starts soon")), 10.f);
+    PC->ClientShowWorldEventAnnouncement();
     TestEqual(TEXT("Client RPC reaches the player HUD event"), HUD->ShowCount, 1);
-    TestEqual(TEXT("HUD receives announcement text"), HUD->LastMessage.ToString(), FString(TEXT("Race starts soon")));
-    TestEqual(TEXT("HUD receives duration for BP presentation"), HUD->LastDuration, 10.f);
-    PC->ClientShowWorldEventAnnouncement(FText::FromString(TEXT("Updated notice")), 5.f);
+    PC->ClientShowWorldEventAnnouncement();
     TestEqual(TEXT("Repeated announcement reaches the same HUD"), HUD->ShowCount, 2);
-    TestEqual(TEXT("Repeated announcement replaces text"), HUD->LastMessage.ToString(), FString(TEXT("Updated notice")));
-    TestEqual(TEXT("Repeated announcement supplies the new duration"), HUD->LastDuration, 5.f);
     PC->UIManager->ClearWorldEventAnnouncement();
     TestEqual(TEXT("Cleanup reaches the HUD clear event"), HUD->ClearCount, 1);
     PC->UIManager->UIScreen = ECasinoUIScreen::Payment;
-    PC->ClientShowWorldEventAnnouncement(FText::FromString(TEXT("Late notice")), 10.f);
+    PC->ClientShowWorldEventAnnouncement();
     TestEqual(TEXT("Announcements outside gameplay are ignored"), HUD->ShowCount, 2);
     return true;
 }

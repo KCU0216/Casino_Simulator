@@ -7,6 +7,8 @@
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/GameStateBase.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WidgetComponent.h"
+#include "RaceBillboardWidget.h"
 
 static const TCHAR* KRNames[] = {
 	TEXT("김춘수"), TEXT("박막례"), TEXT("이순자"), TEXT("최봉팔"),
@@ -50,7 +52,13 @@ ARaceManager::ARaceManager()
 
 	// NPC 스폰 포인트는 루트에 부착 → Track 스케일 영향 안 받음
 	NPCSpawnPoints = CreateDefaultSubobject<USceneComponent>(TEXT("NPCSpawnPoints"));
-	NPCSpawnPoints->SetupAttachment(SceneRoot);
+    NPCSpawnPoints->SetupAttachment(SceneRoot);
+
+    BillboardWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("BillboardWidget"));
+    BillboardWidget->SetupAttachment(SceneRoot);
+    BillboardWidget->SetWidgetSpace(EWidgetSpace::World);
+    BillboardWidget->SetDrawSize(FVector2D(1920.f, 1080.f));
+    BillboardWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 }
 
@@ -63,11 +71,14 @@ void ARaceManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ARaceManager, Tickets);
 	DOREPLIFETIME(ARaceManager, CurrentRoundNumber);
 	DOREPLIFETIME(ARaceManager, Runners);
+    DOREPLIFETIME(ARaceManager, BettingStartServerTime);
+    DOREPLIFETIME(ARaceManager, BettingDuration);
 }
 
 void ARaceManager::BeginPlay()
 {
 	Super::BeginPlay();
+    OnRep_Phase();
 	// NPC는 서버에서만 스폰 (복제 액터 → 클라엔 자동으로 복제됨). 클라가 또 스폰하면 2개가 됨.
 	if (HasAuthority())
 	{
@@ -89,23 +100,6 @@ void ARaceManager::BeginPlay()
 	}
 }
 
-FRaceRunnerStats ARaceManager::RollStats(int32 LaneIndex) const
-{
-	static const int32 Lo[4] = { 65, 75, 85, 95 };
-	static const int32 Hi[4] = { 74, 84, 94, 104 };
-	const int32 Bucket = (LaneIndex < 4) ? LaneIndex : FMath::RandRange(0, 3);
-
-	FRaceRunnerStats S;
-	S.Age           = FMath::RandRange(Lo[Bucket], Hi[Bucket]);
-	S.Name          = KRNames[FMath::RandRange(0, UE_ARRAY_COUNT(KRNames) - 1)];
-	S.BaseSpeed     = 225.f - (S.Age - 60) * 2.6f;
-	S.AwakenChance  = FMath::Max(0.f, (S.Age - 68) / 27.f) * 0.32f;
-	S.StumbleChance = FMath::Max(0.f, (S.Age - 68) / 27.f) * 0.30f;
-
-	const float Raw = 1.8f + FMath::Pow((S.Age - 60) / 35.f, 1.4f) * 7.f;
-	S.Odds = FMath::RoundToFloat(Raw * 10.f) / 10.f;
-	return S;
-}
 
 FRunnerRaceScript ARaceManager::RollScript(const FRaceRunnerStats& S, const FVector& StartLoc, const FVector& Dir) const
 {
@@ -231,6 +225,7 @@ void ARaceManager::StartRace()
 void ARaceManager::Tick(float Dt)
 {
 	Super::Tick(Dt);
+    RefreshBillboard(); // Also initializes a widget created or replaced after BeginPlay.
 	if (!HasAuthority()) return;
 	if (Phase == ERacePhase::Entering)
 	{
@@ -334,7 +329,57 @@ ARaceRunner* ARaceManager::GetWinner() const
 
 void ARaceManager::OnRep_Phase()
 {
-	// 클라: 페이즈 바뀔 때 UI 전환 등 (BP에서 OnRep 후크로 처리)
+    RefreshBillboard();
+    if (GetNetMode() == NM_DedicatedServer) return;
+    if (!bBillboardPhaseInitialized || LastBillboardPhase != Phase)
+    {
+        bBillboardPhaseInitialized = true;
+        LastBillboardPhase = Phase;
+        OnPhaseChanged.Broadcast(Phase);
+        OnBillboardPhaseChanged(Phase);
+    }
+}
+
+void ARaceManager::RefreshBillboard()
+{
+    if (GetNetMode() == NM_DedicatedServer || !BillboardWidget) return;
+    BillboardWidget->InitWidget();
+    if (auto* Widget = GetBillboardWidget()) Widget->RefreshFromManager(this);
+}
+
+void ARaceManager::OnRep_BillboardData()
+{
+    RefreshBillboard();
+    if (auto* Widget = GetBillboardWidget()) Widget->OnRaceDataUpdated();
+}
+
+URaceBillboardWidget* ARaceManager::GetBillboardWidget() const
+{
+    return BillboardWidget ? Cast<URaceBillboardWidget>(BillboardWidget->GetUserWidgetObject()) : nullptr;
+}
+
+ARaceRunner* ARaceManager::GetLeadingRunner() const
+{
+    if (Phase != ERacePhase::Racing) return nullptr;
+    ARaceRunner* Leader = nullptr;
+    float BestDistance = -1.f;
+    for (ARaceRunner* Runner : Runners)
+    {
+        if (!IsValid(Runner)) continue;
+        const float Distance = Runner->GetPosUnits();
+        if (Distance > BestDistance)
+        {
+            BestDistance = Distance;
+            Leader = Runner;
+        }
+    }
+    return Leader;
+}
+
+float ARaceManager::GetRemainingBettingSeconds() const
+{
+    return Phase == ERacePhase::Betting
+        ? static_cast<float>(FMath::Max(0.0, BettingStartServerTime + BettingDuration - GetServerTime())) : 0.f;
 }
 
 // ───────────────────────── 마권 ─────────────────────────
