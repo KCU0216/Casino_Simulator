@@ -24,6 +24,7 @@ class Acasino_simulatorGameMode : public AGameModeBase
 
 public:
 	Acasino_simulatorGameMode();
+    virtual void PostLoad() override;
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Race")
 	void StartRaceRound(ARaceManager* RaceManager);
@@ -63,10 +64,16 @@ public:
     float ResultDurationSeconds = 5.0f;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop")
     bool bAutoStartDayLoop = true;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop")
-    TArray<int32> DailyPayments = {100, 200, 350, 500, 750};
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="1"))
+    // Preserve saved settings from the old per-day table; PostLoad keeps its first value.
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Loop", meta=(DeprecatedProperty, DeprecationMessage="Use First Day Payment and daily payment multipliers."))
+    TArray<int32> DailyPayments;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="1", DisplayName="First Day Payment"))
     int32 DefaultDailyPayment = 100;
+    // Day 2 starts here; later days add the increase once per day.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="0.0"))
+    double DailyPaymentBaseMultiplier = 1.5;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="0.0"))
+    double DailyPaymentMultiplierIncreasePerDay = 0.0;
     // Place one tagged TargetPoint per player. Locations must be clear of collision.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop")
     FName PaymentSpawnTag = TEXT("CasinoPaymentSpawn");
@@ -97,6 +104,7 @@ protected:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FCasinoPaymentCompletionTest;
+    friend class FCasinoAdaptivePaymentTest;
     friend class FRaceWorldEventTest;
 #endif
     FTimerHandle RaceEventTimer;
@@ -119,6 +127,7 @@ private:
     TArray<TWeakObjectPtr<AActor>> PaymentSpawns;
     TArray<TWeakObjectPtr<class Acasino_simulatorPlayerState>> PaymentParticipants;
     bool bCollectingPayment = false;
+    int32 CalculateRequiredPayment(int32 Day) const;
     void BeginCasinoDay(int32 Day);
     void ActivateCasinoDay();
     void BeginPaymentPhase();

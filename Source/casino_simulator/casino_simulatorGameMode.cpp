@@ -24,6 +24,16 @@ Acasino_simulatorGameMode::Acasino_simulatorGameMode()
     PoliceEncounter = CreateDefaultSubobject<UPoliceEncounterComponent>(TEXT("PoliceEncounter"));
 }
 
+void Acasino_simulatorGameMode::PostLoad()
+{
+    Super::PostLoad();
+    if (!DailyPayments.IsEmpty())
+    {
+        DefaultDailyPayment = FMath::Max(1, DailyPayments[0]);
+        DailyPayments.Reset();
+    }
+}
+
 void Acasino_simulatorGameMode::StartRaceRound(ARaceManager* RaceManager)
 {
     if (HasAuthority() && IsValid(RaceManager) && RaceManager->GetWorld() == GetWorld())
@@ -189,6 +199,34 @@ void Acasino_simulatorGameMode::StartDayLoop()
     BeginCasinoDay(FMath::Max(1, StartDay));
 }
 
+int32 Acasino_simulatorGameMode::CalculateRequiredPayment(int32 Day) const
+{
+    if (Day <= 1) return FMath::Max(1, DefaultDailyPayment);
+
+    double TeamCurrency = 0.0;
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+        const auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get());
+        const auto* PS = PC ? PC->GetPlayerState<Acasino_simulatorPlayerState>() : nullptr;
+        const auto* Player = PC ? Cast<Acasino_simulatorCharacter>(PC->GetPawn()) : nullptr;
+        if (!IsValid(PS) || PS->IsInactive() || PS->IsOnlyASpectator() || !IsValid(Player)) continue;
+        const float Currency = Player->GetCurrency();
+        if (FMath::IsFinite(Currency) && Currency > 0.0f) TeamCurrency += Currency;
+    }
+    if (TeamCurrency <= 0.0) return 1;
+    const double Base = FMath::IsFinite(DailyPaymentBaseMultiplier)
+        ? FMath::Max(0.0, DailyPaymentBaseMultiplier) : 1.5;
+    const double Increase = FMath::IsFinite(DailyPaymentMultiplierIncreasePerDay)
+        ? FMath::Max(0.0, DailyPaymentMultiplierIncreasePerDay) : 0.0;
+    const double Multiplier = Base + FMath::Max(0, Day - 2) * Increase;
+    // Snapshot once at day start. Integer payments round up without overflowing the UI total.
+    double Target = FMath::Clamp(TeamCurrency * Multiplier, 1.0, static_cast<double>(MAX_int32));
+    const double Rounded = FMath::RoundToDouble(Target);
+    // Decimal multipliers must not add a won solely due to floating-point roundoff.
+    if (FMath::IsNearlyEqual(Target, Rounded, 1.e-6)) Target = Rounded;
+    return static_cast<int32>(FMath::CeilToDouble(Target));
+}
+
 void Acasino_simulatorGameMode::BeginCasinoDay(int32 Day)
 {
     auto* GS = GetGameState<ACasinoLoopGameState>();
@@ -205,8 +243,7 @@ void Acasino_simulatorGameMode::BeginCasinoDay(int32 Day)
     Status.Phase = ECasinoLoopPhase::DayIntro;
     Status.CurrentDay = Day;
     Status.FinalDay = FMath::Max(1, StartDay) + FMath::Max(1, DaysToPlay) - 1;
-    Status.RequiredPayment = FMath::Max(1, DailyPayments.IsValidIndex(Day - 1)
-        ? DailyPayments[Day - 1] : DefaultDailyPayment);
+    Status.RequiredPayment = CalculateRequiredPayment(Day);
     Status.IntroEndServerTime = GS->GetServerWorldTimeSeconds() + FMath::Max(0.1f, DayIntroDurationSeconds);
     GS->SetLoopStatus(Status);
     if (!MovePlayersToCentralSpawns(false))
