@@ -48,7 +48,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Track", meta = (ClampMin = "1.0"))
 	float TransitSpeed = 200.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_BillboardData, Category = "Race", meta = (ClampMin = "0.0"))
-	float BettingDuration = 30.f;
+	float BettingDuration = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Race|Odds")  float   HouseMargin = 0.15f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC") TSubclassOf<ANPC_InteractionCameraBase> NPCClass;
