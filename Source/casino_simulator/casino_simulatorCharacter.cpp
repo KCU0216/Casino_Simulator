@@ -13,6 +13,8 @@
 #include "Abilities/GameplayAbility.h"
 #include "casino_simulatorAbilitySystemComponent.h"
 #include "Blackjack/BlackjackPlayerComponent.h"
+#include "Blackjack/BlackjackTableActor.h"
+#include "Blackjack/BlackjackTableInteractionActor.h"
 #include "Interaction/WorldInteractionDetectorComponent.h"
 #include "Interaction/WorldInteractionCandidateComponent.h"
 #include "Machine/SeatedMachineBase.h"
@@ -732,6 +734,25 @@ void Acasino_simulatorCharacter::InteractInput(const FInputActionValue& Value)
 	if (InputController && (InputController->IsPauseMenuOpen() ||
 		InputController->IsInventoryOpen() || InputController->IsDailyPaymentControlLocked()))
 	{
+		return;
+	}
+
+	if (BlackjackPlayerComponent && BlackjackPlayerComponent->IsInBlackjackSeat())
+	{
+		Acasino_simulatorPlayerController* PC =
+			Cast<Acasino_simulatorPlayerController>(GetController());
+		ABlackjackTableActor* Table = BlackjackPlayerComponent->GetCurrentBlackjackTable();
+		if (PC && PC->IsLocalController() && !PC->IsAnyGameplayUIOpen() &&
+			!PC->IsPoliceCinematicActive() && IsValid(Table))
+		{
+			if (ABlackjackTableInteractionActor* Target = Table->GetBettingInteractionTarget(this))
+			{
+				TScriptInterface<IWorldInteractable> BettingTarget;
+				BettingTarget.SetObject(Target);
+				BettingTarget.SetInterface(Target);
+				PC->RequestWorldInteraction(BettingTarget);
+			}
+		}
 		return;
 	}
 

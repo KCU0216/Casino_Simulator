@@ -9,6 +9,7 @@
 
 class ABlackjackTableActor;
 class Acasino_simulatorCharacter;
+class UCameraComponent;
 
 /**
  * Interaction entry for one blackjack seat.
@@ -26,6 +27,7 @@ public:
 
 	virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
 	virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
+	virtual void CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult) override;
 
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
 	ABlackjackTableActor* GetBlackjackTable() const;
@@ -33,11 +35,18 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
 	int32 GetSeatIndex() const { return SeatIndex; }
 
+	UFUNCTION(BlueprintPure, Category="Blackjack|Camera")
+	UCameraComponent* GetSeatCamera() const { return SeatCamera; }
+
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seat")
 	EBlackjackSeatClaimResult GetCurrentClaimResult(Acasino_simulatorCharacter* InteractingCharacter) const;
 
 protected:
 	virtual void BeginPlay() override;
+
+	/** Adjust this component's transform and FOV in each seat Blueprint. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Blackjack|Camera")
+	TObjectPtr<UCameraComponent> SeatCamera;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Seat", meta=(AllowPrivateAccess="true"))
 	TObjectPtr<ABlackjackTableActor> BlackjackTable;

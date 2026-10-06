@@ -3,6 +3,11 @@
 #include "Blackjack/BlackjackPlayerComponent.h"
 
 #include "Blackjack/BlackjackTableActor.h"
+#include "Blackjack/BlackjackSeatInteractionActor.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Interaction/CasinoDayParticipant.h"
+#include "UI/CasinoUIManagerComponent.h"
+#include "casino_simulatorPlayerController.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -12,8 +17,91 @@
 
 UBlackjackPlayerComponent::UBlackjackPlayerComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 	SetIsReplicatedByDefault(true);
+}
+
+void UBlackjackPlayerComponent::TickComponent(float DeltaTime, ELevelTick TickType,
+	FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	RefreshLocalSeatView();
+	if (auto* Character = GetOwnerCharacter())
+		if (auto* PC = Cast<Acasino_simulatorPlayerController>(Character->GetController()); PC && PC->IsLocalController())
+			PC->RefreshBlackjackInteractionPrompt();
+}
+
+void UBlackjackPlayerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ReleaseLocalSeatView();
+	Super::EndPlay(EndPlayReason);
+}
+
+bool UBlackjackPlayerComponent::RefreshLocalSeatView()
+{
+	auto* Character = GetOwnerCharacter();
+	auto* PC = Character ? Cast<Acasino_simulatorPlayerController>(Character->GetController()) : nullptr;
+	if (!IsInBlackjackSeat() || !IsValid(CurrentBlackjackTable) || !Character || !Character->IsLocallyControlled() || !PC
+		|| !PC->IsLocalController() || PC->UIScreen != ECasinoUIScreen::Playing
+		|| !IsCasinoGameplayAllowed(this) || !UInteractionSessionComponent::CanRestoreMovement(Character)
+		|| (PC->UIManager && PC->UIManager->IsTravelPending()))
+	{
+		ReleaseLocalSeatView();
+		return false;
+	}
+	// Cinematics own the view temporarily; resume the same seat once they finish.
+	if (PC->IsPoliceCinematicActive()) return false;
+
+	AActor* CameraTarget = CurrentBlackjackTable->GetSeatCameraTarget(CurrentSeatIndex);
+	if (!IsValid(CameraTarget))
+	{
+		ReleaseLocalSeatView();
+		return false;
+	}
+	if (SeatViewController.IsValid() && SeatViewController.Get() != PC) ReleaseLocalSeatView();
+	SeatViewController = PC;
+	LocalSeatCameraTarget = CameraTarget;
+	bLocalSeatViewApplied = true;
+	if (!bLocalSeatLookLockApplied || !PC->IsLookInputIgnored())
+	{
+		PC->SetIgnoreLookInput(true);
+		bLocalSeatLookLockApplied = true;
+	}
+	// Do not restart an in-progress blend every frame.
+	if (PC->GetViewTarget() != CameraTarget &&
+		(!PC->PlayerCameraManager || PC->PlayerCameraManager->PendingViewTarget.Target != CameraTarget))
+	{
+		PC->SetViewTargetWithBlend(CameraTarget, SeatCameraBlendTime);
+	}
+	PC->SetLocalPawnMeshesHiddenForInteraction(true);
+	return true;
+}
+
+void UBlackjackPlayerComponent::ReleaseLocalSeatView()
+{
+	auto* PC = SeatViewController.Get();
+	auto* Character = GetOwnerCharacter();
+	const bool bCanRestore = PC && Character && PC->UIScreen == ECasinoUIScreen::Playing
+		&& UInteractionSessionComponent::CanRestoreMovement(Character) && IsCasinoGameplayAllowed(this)
+		&& !PC->IsPoliceCinematicActive() && (!PC->UIManager || !PC->UIManager->IsTravelPending());
+	// Release only our counted lock, even if a cinematic currently owns another one.
+	if (PC && bLocalSeatLookLockApplied) PC->SetIgnoreLookInput(false);
+	bLocalSeatLookLockApplied = false;
+	bLocalSeatViewApplied = false;
+	if (PC)
+	{
+		AActor* CameraTarget = LocalSeatCameraTarget.Get();
+		if (bCanRestore && CameraTarget && (PC->GetViewTarget() == CameraTarget ||
+			(PC->PlayerCameraManager && PC->PlayerCameraManager->PendingViewTarget.Target == CameraTarget)))
+		{
+			if (APawn* Pawn = PC->GetPawn()) PC->SetViewTargetWithBlend(Pawn, SeatCameraReleaseBlendTime);
+		}
+		PC->SetLocalPawnMeshesHiddenForInteraction(PC->IsInteractionUIOpen());
+		PC->RefreshBlackjackInteractionPrompt();
+	}
+	LocalSeatCameraTarget.Reset();
+	SeatViewController.Reset();
 }
 
 void UBlackjackPlayerComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -400,16 +488,21 @@ void UBlackjackPlayerComponent::RefreshSeatNotifications()
 	NotifiedSeatIndex = CurrentSeatIndex;
 	if (PreviousTable && PreviousIndex != INDEX_NONE)
 	{
+		ReleaseLocalSeatView();
 		OnBlackjackSeatModeEnded.Broadcast(PreviousTable, PreviousIndex);
 	}
 	if (IsInBlackjackSeat())
 	{
 		ApplyMovementLock();
+		SetComponentTickEnabled(true);
+		RefreshLocalSeatView();
 		OnBlackjackSeatModeStarted.Broadcast(CurrentBlackjackTable, CurrentSeatIndex);
 	}
 	else
 	{
 		ClearMovementLock();
+		ReleaseLocalSeatView();
+		SetComponentTickEnabled(false);
 	}
 }
 
@@ -547,7 +640,8 @@ void UBlackjackPlayerComponent::ClearMovementLock()
 
 	UInteractionSessionComponent::RestoreMovementAfterUse(Character);
 
-	if (AController* Controller = Character->GetController())
+	if (AController* Controller = Character->GetController();
+		Controller && UInteractionSessionComponent::CanRestoreMovement(Character))
 	{
 		Controller->SetIgnoreMoveInput(false);
 	}

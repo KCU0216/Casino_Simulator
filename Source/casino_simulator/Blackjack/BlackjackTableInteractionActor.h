@@ -49,6 +49,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack|Interaction")
 	EBlackjackTableInteractionAction GetInteractionAction() const { return InteractionAction; }
 
+	UFUNCTION(BlueprintPure, Category="Blackjack|Interaction")
+	int32 GetAllowedSeatIndex() const { return AllowedSeatIndex; }
+
 protected:
 	/** -1 allows any seated player. Otherwise only this seat can use the target. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Interaction", meta=(ClampMin="-1"))

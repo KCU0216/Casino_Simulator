@@ -10,6 +10,8 @@
 #include "Online/CasinoOnlineSubsystem.h"
 #include "casino_simulatorGameMode.h"
 #include "casino_simulatorCharacter.h"
+#include "Blackjack/BlackjackPlayerComponent.h"
+#include "Blackjack/BlackjackTableActor.h"
 #include "Engine/World.h"
 
 #include "Police/PoliceCharacter.h"
@@ -482,6 +484,7 @@ void Acasino_simulatorPlayerController::Server_ExitMachine_Implementation(ASeate
 void Acasino_simulatorPlayerController::SetIsInteractionUIOpen(bool Value)
 {
 	bInteractionUIOpen = Value;
+	RefreshBlackjackInteractionPrompt();
 }
 
 void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSuppressed)
@@ -506,6 +509,7 @@ void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSup
 	}
 
 	PlayerCharacter->GetCurrentInteractionTarget();
+	if (RefreshBlackjackInteractionPrompt()) return;
 
 	if ((PlayerCharacter->GetCurrentInteractionTarget() != nullptr || bWorldInteractionTargetFocused) && !bInteractionUIOpen)
 	{
@@ -516,8 +520,11 @@ void Acasino_simulatorPlayerController::SetInteractionPromptSuppressed(bool bSup
 void Acasino_simulatorPlayerController::EnterInteractionUIMode(AActor* CameraTarget, float BlendTime)
 {
     if (!IsCasinoGameplayAllowed(this)) return;
+	auto* InteractionPlayer = Cast<Acasino_simulatorCharacter>(GetPawn());
+	auto* Blackjack = InteractionPlayer ? InteractionPlayer->GetBlackjackPlayerComponent() : nullptr;
 	if (bInteractionUIOpen)
 	{
+		if (Blackjack) Blackjack->RefreshLocalSeatView();
 		return;
 	}
 
@@ -533,7 +540,11 @@ void Acasino_simulatorPlayerController::EnterInteractionUIMode(AActor* CameraTar
 
 	SetIgnoreMoveInput(true);
 	SetIgnoreLookInput(true);
+	bInteractionUIMoveLockApplied = true;
+	bInteractionUILookLockApplied = true;
 	SetLocalPawnMeshesHiddenForInteraction(true);
+	// Existing chip BP may still supply a camera target. The occupied seat owns the view.
+	if (Blackjack && Blackjack->RefreshLocalSeatView()) return;
 
 	if (CameraTarget)
 	{
@@ -547,12 +558,17 @@ void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
         InteractionCharacter && !UInteractionSessionComponent::CanRestoreMovement(InteractionCharacter))
     {
         SetIsInteractionUIOpen(false);
+        bInteractionUIMoveLockApplied = false;
+        bInteractionUILookLockApplied = false;
+        InteractionCharacter->GetBlackjackPlayerComponent()->RefreshLocalSeatView();
         SetLocalPawnMeshesHiddenForInteraction(false);
         return; // Payment/result UI owns input and camera.
     }
 
 	if (!bInteractionUIOpen)
 	{
+		if (auto* InteractionPlayer = Cast<Acasino_simulatorCharacter>(GetPawn()))
+			InteractionPlayer->GetBlackjackPlayerComponent()->RefreshLocalSeatView();
 		return;
 	}
 
@@ -562,9 +578,23 @@ void Acasino_simulatorPlayerController::ExitInteractionUIMode(float BlendTime)
 
 	FInputModeGameOnly InputMode;
 	SetInputMode(InputMode);
+	if (auto* InteractionPlayer = Cast<Acasino_simulatorCharacter>(GetPawn());
+		InteractionPlayer && InteractionPlayer->GetBlackjackPlayerComponent()->IsInBlackjackSeat())
+	{
+		// Only remove locks added by EnterInteractionUIMode, keeping the seat's own locks.
+		if (bInteractionUIMoveLockApplied) SetIgnoreMoveInput(false);
+		if (bInteractionUILookLockApplied) SetIgnoreLookInput(false);
+		bInteractionUIMoveLockApplied = false;
+		bInteractionUILookLockApplied = false;
+		InteractionPlayer->GetBlackjackPlayerComponent()->RefreshLocalSeatView();
+		RefreshBlackjackInteractionPrompt();
+		return;
+	}
 
 	SetIgnoreMoveInput(false);
 	SetIgnoreLookInput(false);
+	bInteractionUIMoveLockApplied = false;
+	bInteractionUILookLockApplied = false;
 
 	if (APawn* ControlledPawn = GetPawn())
 	{
@@ -601,6 +631,8 @@ void Acasino_simulatorPlayerController::SetLocalPawnMeshesHiddenForInteraction(b
 
 	USkeletalMeshComponent* FirstPersonMesh = PlayerCharacter->GetFirstPersonMesh();
 	USkeletalMeshComponent* WorldMesh = PlayerCharacter->GetMesh();
+	// Closing the keypad must not expose the seated first-person body again.
+	bShouldHide |= PlayerCharacter->GetBlackjackPlayerComponent()->HasLocalSeatView();
 
 	if (bShouldHide)
 	{
@@ -631,21 +663,55 @@ void Acasino_simulatorPlayerController::SetLocalPawnMeshesHiddenForInteraction(b
 		return;
 	}
 
-	if (FirstPersonMesh)
-	{
-		FirstPersonMesh->SetVisibility(bPreviousFirstPersonMeshVisibility, true);
-	}
-
 	if (WorldMesh)
 	{
 		WorldMesh->SetVisibility(bPreviousWorldMeshVisibility, true);
 	}
 
+	// The first-person mesh is a child of the world mesh. Restore the parent
+	// first so propagated visibility does not overwrite the child's saved state.
+	if (FirstPersonMesh)
+	{
+		FirstPersonMesh->SetVisibility(bPreviousFirstPersonMeshVisibility, true);
+	}
+
 	bInteractionPawnMeshesHidden = false;
+}
+
+bool Acasino_simulatorPlayerController::RefreshBlackjackInteractionPrompt()
+{
+	auto* InteractionPlayer = Cast<Acasino_simulatorCharacter>(GetPawn());
+	auto* Blackjack = InteractionPlayer ? InteractionPlayer->GetBlackjackPlayerComponent() : nullptr;
+	if (!Blackjack || !Blackjack->IsInBlackjackSeat())
+	{
+		if (bBlackjackPromptVisible) CloseInteraction();
+		return false;
+	}
+	auto* Table = Blackjack->GetCurrentBlackjackTable();
+	const bool bShowPrompt = IsLocalController() && UIScreen == ECasinoUIScreen::Playing
+		&& !bInteractionPromptSuppressed && !IsAnyGameplayUIOpen() && !bDailyPaymentControlLocked
+		&& !IsPoliceCinematicActive() && IsCasinoGameplayAllowed(this)
+		&& (!UIManager || !UIManager->IsTravelPending()) && IsValid(Table)
+		&& Table->GetBettingInteractionTarget(InteractionPlayer);
+	if (bShowPrompt && PlayerHUDWidget)
+	{
+		if (!bBlackjackPromptVisible)
+		{
+			PlayerHUDWidget->BP_SetInteractionPromptText(FText::FromString(TEXT("E Bet")));
+			PlayerHUDWidget->BP_OpenInterection();
+			bBlackjackPromptVisible = true;
+		}
+	}
+	else if (bBlackjackPromptVisible)
+	{
+		CloseInteraction();
+	}
+	return true;
 }
 
 void Acasino_simulatorPlayerController::OpenInteraction()
 {
+	if (RefreshBlackjackInteractionPrompt()) return;
 	if (const Acasino_simulatorCharacter* PlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
 	{
 		if (PlayerCharacter->GetCarriedOre() || PlayerCharacter->GetCarriedCart())
@@ -694,6 +760,7 @@ void Acasino_simulatorPlayerController::OpenInteraction()
 
 void Acasino_simulatorPlayerController::CloseInteraction()
 {
+	bBlackjackPromptVisible = false;
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->BP_CloseInterection();
@@ -731,6 +798,8 @@ void Acasino_simulatorPlayerController::OpenCarriedCartInteraction()
 void Acasino_simulatorPlayerController::SetWorldInteractionTargetFocused(bool bFocused)
 {
 	bWorldInteractionTargetFocused = bFocused;
+	// The seated E prompt is independent of what the head camera's trace hits.
+	if (RefreshBlackjackInteractionPrompt()) return;
 
 	if (bFocused)
 	{
