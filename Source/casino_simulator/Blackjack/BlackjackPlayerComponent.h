@@ -41,7 +41,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBlackjackSeatExitRequested, ABlack
  * Player-side blackjack seat state.
  *
  * The table still owns authoritative blackjack rules and seat occupancy. This component only keeps
- * the local player in a seated blackjack mode: movement locked, look input kept alive, and Q exits.
+ * the local player in a seated blackjack mode: movement locked, fixed seat view, and Q exits.
  */
 UCLASS(ClassGroup=(Blackjack), meta=(BlueprintSpawnableComponent))
 class CASINO_SIMULATOR_API UBlackjackPlayerComponent : public UActorComponent
@@ -52,6 +52,14 @@ public:
 	UBlackjackPlayerComponent();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	/** Local presentation only. Also retries when the seat actor arrives after seat replication. */
+	bool RefreshLocalSeatView();
+	bool HasLocalSeatView() const { return bLocalSeatViewApplied; }
+	/** The UI screen reset has cleared controller lock counters; discard our old contribution. */
+	void NotifyLocalInputLocksReset() { bLocalSeatLookLockApplied = false; }
 
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Seat")
 	void EnterBlackjackSeatMode(ABlackjackTableActor* Table, int32 SeatIndex);
@@ -195,6 +203,15 @@ private:
 	bool ExecuteAction(EBlackjackRequestAction Action, int32 Amount = 0);
 
 	bool bMovementLockApplied = false;
+	bool bLocalSeatViewApplied = false;
+	bool bLocalSeatLookLockApplied = false;
+	TWeakObjectPtr<class Acasino_simulatorPlayerController> SeatViewController;
+	TWeakObjectPtr<AActor> LocalSeatCameraTarget;
+	void ReleaseLocalSeatView();
+	UPROPERTY(EditDefaultsOnly, Category="Blackjack|Camera", meta=(ClampMin="0.0"))
+	float SeatCameraBlendTime = 0.35f;
+	UPROPERTY(EditDefaultsOnly, Category="Blackjack|Camera", meta=(ClampMin="0.0"))
+	float SeatCameraReleaseBlendTime = 0.25f;
 
 	Acasino_simulatorCharacter* GetOwnerCharacter() const;
 	void SetBlackjackSeatMode(ABlackjackTableActor* Table, int32 SeatIndex);

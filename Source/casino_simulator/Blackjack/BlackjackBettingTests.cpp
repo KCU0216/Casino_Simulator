@@ -21,7 +21,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlackjackBettingTest,
 bool FBlackjackBettingTest::RunTest(const FString& Parameters)
 {
 	UClass* CharacterClass = LoadClass<Acasino_simulatorCharacter>(nullptr,
-		TEXT("/Game/FirstPerson/Blueprints/BP_FirstPersonCharacter.BP_FirstPersonCharacter_C"));
+		TEXT("/Game/1_BluePrint/Actor/BP_FirstPersonCharacter.BP_FirstPersonCharacter_C"));
 	if (!TestNotNull(TEXT("Playable character class"), CharacterClass))
 	{
 		return false;

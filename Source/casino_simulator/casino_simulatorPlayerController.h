@@ -36,6 +36,7 @@ class CASINO_SIMULATOR_API Acasino_simulatorPlayerController : public APlayerCon
 public:
 
 	friend class UCasinoUIManagerComponent;
+	friend class UBlackjackPlayerComponent;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Casino|UI")
     TObjectPtr<UCasinoUIManagerComponent> UIManager;
     UFUNCTION(BlueprintPure, Category="Casino|UI")
@@ -256,6 +257,10 @@ protected:
 	bool bInteractionPromptSuppressed = false;
 
 	bool bInteractionPawnMeshesHidden = false;
+	bool bInteractionUIMoveLockApplied = false;
+	bool bInteractionUILookLockApplied = false;
+	bool bBlackjackPromptVisible = false;
+	bool RefreshBlackjackInteractionPrompt();
 
 	bool bPreviousFirstPersonMeshVisibility = true;
 

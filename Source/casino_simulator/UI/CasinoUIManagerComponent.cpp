@@ -1,6 +1,8 @@
 #include "UI/CasinoUIManagerComponent.h"
 #include "UI/CasinoManagedWidget.h"
 #include "casino_simulatorPlayerController.h"
+#include "casino_simulatorCharacter.h"
+#include "Blackjack/BlackjackPlayerComponent.h"
 #include "UI/CasinoUIRoot.h"
 #include "UI/casino_simulatorPlayerHUD.h"
 #include "UI/InventoryWidget.h"
@@ -122,6 +124,10 @@ void UCasinoUIManagerComponent::ClearInteractionWidgets()
     for (UUserWidget* Widget : Closing) CloseManagedWidget(Widget);
     PC->InventoryWidget = nullptr;
     PC->PauseMenuWidget = nullptr;
+    if (PC->bInteractionUIMoveLockApplied) PC->SetIgnoreMoveInput(false);
+    if (PC->bInteractionUILookLockApplied) PC->SetIgnoreLookInput(false);
+    PC->bInteractionUIMoveLockApplied = false;
+    PC->bInteractionUILookLockApplied = false;
     PC->SetLocalPawnMeshesHiddenForInteraction(false);
     PC->bInteractionPromptSuppressed = false;
     if (PC->PlayerHUDWidget) PC->PlayerHUDWidget->BP_CloseInterection();
@@ -217,8 +223,12 @@ void UCasinoUIManagerComponent::ApplyUIScreenInput()
     if (!PC) return;
     const bool bPlaying = UIScreen == ECasinoUIScreen::Playing;
     PC->bDailyPaymentControlLocked = !bPlaying && UIScreen != ECasinoUIScreen::MainMenu && UIScreen != ECasinoUIScreen::Lobby;
+    if (auto* Character = Cast<Acasino_simulatorCharacter>(PC->GetPawn()))
+        Character->GetBlackjackPlayerComponent()->NotifyLocalInputLocksReset();
     PC->ResetIgnoreMoveInput();
     PC->ResetIgnoreLookInput();
+    PC->bInteractionUIMoveLockApplied = false;
+    PC->bInteractionUILookLockApplied = false;
     PC->SetIgnoreMoveInput(!bPlaying);
     PC->SetIgnoreLookInput(!bPlaying);
     PC->bShowMouseCursor = !bPlaying && UIScreen != ECasinoUIScreen::DayIntro && UIScreen != ECasinoUIScreen::Loading;
@@ -230,6 +240,8 @@ void UCasinoUIManagerComponent::ApplyUIScreenInput()
         Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
         PC->SetInputMode(Mode);
     }
+    if (auto* Character = Cast<Acasino_simulatorCharacter>(PC->GetPawn()))
+        Character->GetBlackjackPlayerComponent()->RefreshLocalSeatView();
 }
 Acasino_simulatorPlayerController* UCasinoUIManagerComponent::GetCasinoController() const
 {
@@ -310,6 +322,8 @@ void UCasinoUIManagerComponent::ShutdownUI()
     bUIScreenInitialized = false;
     UIScreen = ECasinoUIScreen::Loading;
     PC->UIScreen = UIScreen;
+    if (auto* Character = Cast<Acasino_simulatorCharacter>(PC->GetPawn()))
+        Character->GetBlackjackPlayerComponent()->RefreshLocalSeatView();
 }
 void UCasinoUIManagerComponent::PrepareTravel()
 {

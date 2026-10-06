@@ -15,6 +15,7 @@ void ABlackjackTableInteractionActor::BeginPlay()
 {
 	Super::BeginPlay();
 
+	const bool bHasExplicitTableReference = IsValid(BlackjackTable);
 	if (!BlackjackTable)
 	{
 		BlackjackTable = ResolveBlackjackTable();
@@ -23,6 +24,11 @@ void ABlackjackTableInteractionActor::BeginPlay()
 	if (bUseActionPromptText)
 	{
 		InteractionPromptText = GetActionPromptText();
+	}
+
+	if (bHasExplicitTableReference && IsValid(BlackjackTable))
+	{
+		BlackjackTable->RegisterBettingInteractionTarget(this);
 	}
 }
 
@@ -168,12 +174,26 @@ ABlackjackTableActor* ABlackjackTableInteractionActor::ResolveBlackjackTable() c
 		return BlackjackTable;
 	}
 
-	if (ABlackjackTableActor* OwnerTable = Cast<ABlackjackTableActor>(GetOwner()))
+	TArray<AActor*> ParentActors = { GetOwner(), GetAttachParentActor(), GetParentActor() };
+	TSet<AActor*> VisitedActors;
+	for (int32 Index = 0; Index < ParentActors.Num(); ++Index)
 	{
-		return OwnerTable;
+		AActor* ParentActor = ParentActors[Index];
+		if (!IsValid(ParentActor) || ParentActor == this || VisitedActors.Contains(ParentActor))
+		{
+			continue;
+		}
+		if (ABlackjackTableActor* ParentTable = Cast<ABlackjackTableActor>(ParentActor))
+		{
+			return ParentTable;
+		}
+		VisitedActors.Add(ParentActor);
+		ParentActors.Add(ParentActor->GetOwner());
+		ParentActors.Add(ParentActor->GetAttachParentActor());
+		ParentActors.Add(ParentActor->GetParentActor());
 	}
 
-	return Cast<ABlackjackTableActor>(GetAttachParentActor());
+	return nullptr;
 }
 
 UBlackjackPlayerComponent* ABlackjackTableInteractionActor::GetPlayerBlackjackComponent(Acasino_simulatorCharacter* InteractingCharacter) const

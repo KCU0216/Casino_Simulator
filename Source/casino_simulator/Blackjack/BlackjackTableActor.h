@@ -10,6 +10,8 @@
 #include "BlackjackTableActor.generated.h"
 
 class Acasino_simulatorCharacter;
+class ABlackjackSeatInteractionActor;
+class ABlackjackTableInteractionActor;
 class USceneComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBlackjackTableChanged);
@@ -187,6 +189,18 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack|Layout")
 	USceneComponent* GetSeatPoint(int32 SeatIndex) const;
 
+	/** Finds this seated player's betting control among this table's local interactions. */
+	UFUNCTION(BlueprintPure, Category="Blackjack|Interaction")
+	ABlackjackTableInteractionActor* GetBettingInteractionTarget(Acasino_simulatorCharacter* Player) const;
+
+	/** Each seat actor supplies its own fixed camera, independent of the other seats. */
+	UFUNCTION(BlueprintPure, Category="Blackjack|Layout")
+	ABlackjackSeatInteractionActor* GetSeatCameraTarget(int32 SeatIndex) const;
+
+	// Explicitly referenced placed actors register locally without a world actor search.
+	void RegisterBettingInteractionTarget(ABlackjackTableInteractionActor* Target);
+	void RegisterSeatCameraTarget(ABlackjackSeatInteractionActor* Target);
+
 	UFUNCTION(BlueprintPure, Category="Blackjack|Layout")
 	USceneComponent* GetStandBackPoint() const { return StandBackPoint; }
 
@@ -303,6 +317,7 @@ protected:
 	void OnRep_TableState();
 
 private:
+	void GatherLocalInteractionActors(TArray<AActor*>& OutActors) const;
 	void InitializeSeats();
 	void BuildAndShuffleShoe();
 	bool ShouldShuffleBeforeRound() const;
@@ -334,4 +349,6 @@ private:
 
 	FBlackjackHand ServerDealerHand;
 	FTimerHandle BettingWindowTimerHandle;
+	TArray<TWeakObjectPtr<ABlackjackTableInteractionActor>> RegisteredBettingInteractionTargets;
+	TArray<TWeakObjectPtr<ABlackjackSeatInteractionActor>> RegisteredSeatCameraTargets;
 };

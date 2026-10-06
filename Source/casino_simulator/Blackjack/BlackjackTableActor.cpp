@@ -3,6 +3,9 @@
 #include "Blackjack/BlackjackTableActor.h"
 
 #include "Blackjack/BlackjackPlayerComponent.h"
+#include "Blackjack/BlackjackSeatInteractionActor.h"
+#include "Blackjack/BlackjackTableInteractionActor.h"
+#include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
@@ -982,6 +985,123 @@ USceneComponent* ABlackjackTableActor::GetSeatPoint(int32 SeatIndex) const
 	case 2: return SeatPoint2;
 	case 3: return SeatPoint3;
 	default: return nullptr;
+	}
+}
+
+ABlackjackTableInteractionActor* ABlackjackTableActor::GetBettingInteractionTarget(Acasino_simulatorCharacter* Player) const
+{
+	if (!IsCasinoGameplayAllowed(this))
+	{
+		return nullptr;
+	}
+
+	const int32 PlayerSeatIndex = GetSeatIndexForPlayer(Player);
+	if (!IsValid(Player) || !IsValidSeatIndex(PlayerSeatIndex))
+	{
+		return nullptr;
+	}
+
+	TArray<AActor*> LocalActors;
+	GatherLocalInteractionActors(LocalActors);
+	ABlackjackTableInteractionActor* SharedTarget = nullptr;
+	for (AActor* Actor : LocalActors)
+	{
+		ABlackjackTableInteractionActor* Target = Cast<ABlackjackTableInteractionActor>(Actor);
+		if (!IsValid(Target) || Target->GetBlackjackTable() != this
+			|| Target->GetInteractionAction() != EBlackjackTableInteractionAction::OpenBetting
+			|| !Target->CanInteract(Player))
+		{
+			continue;
+		}
+
+		if (Target->GetAllowedSeatIndex() == PlayerSeatIndex)
+		{
+			return Target;
+		}
+		if (!SharedTarget && Target->GetAllowedSeatIndex() == INDEX_NONE)
+		{
+			SharedTarget = Target;
+		}
+	}
+
+	return SharedTarget;
+}
+
+ABlackjackSeatInteractionActor* ABlackjackTableActor::GetSeatCameraTarget(int32 SeatIndex) const
+{
+	if (!IsValidSeatIndex(SeatIndex))
+	{
+		return nullptr;
+	}
+
+	TArray<AActor*> LocalActors;
+	GatherLocalInteractionActors(LocalActors);
+	for (AActor* Actor : LocalActors)
+	{
+		ABlackjackSeatInteractionActor* Target = Cast<ABlackjackSeatInteractionActor>(Actor);
+		if (IsValid(Target) && Target->GetBlackjackTable() == this
+			&& Target->GetSeatIndex() == SeatIndex && IsValid(Target->GetSeatCamera()))
+		{
+			return Target;
+		}
+	}
+
+	return nullptr;
+}
+
+void ABlackjackTableActor::RegisterBettingInteractionTarget(ABlackjackTableInteractionActor* Target)
+{
+	if (IsValid(Target) && Target->GetBlackjackTable() == this)
+	{
+		RegisteredBettingInteractionTargets.AddUnique(TWeakObjectPtr<ABlackjackTableInteractionActor>(Target));
+	}
+}
+
+void ABlackjackTableActor::RegisterSeatCameraTarget(ABlackjackSeatInteractionActor* Target)
+{
+	if (IsValid(Target) && Target->GetBlackjackTable() == this)
+	{
+		RegisteredSeatCameraTargets.AddUnique(TWeakObjectPtr<ABlackjackSeatInteractionActor>(Target));
+	}
+}
+
+void ABlackjackTableActor::GatherLocalInteractionActors(TArray<AActor*>& OutActors) const
+{
+	OutActors.Reset();
+	TArray<AActor*> PendingActors;
+	GetAllChildActors(PendingActors, false);
+	GetAttachedActors(PendingActors, false, false);
+	TSet<AActor*> VisitedActors;
+	for (int32 Index = 0; Index < PendingActors.Num(); ++Index)
+	{
+		AActor* Actor = PendingActors[Index];
+		if (!IsValid(Actor) || Actor == this || VisitedActors.Contains(Actor))
+		{
+			continue;
+		}
+		VisitedActors.Add(Actor);
+		OutActors.Add(Actor);
+
+		// Walk both relationships at every level, including child actors inside attachments.
+		TArray<AActor*> RelatedActors;
+		Actor->GetAllChildActors(RelatedActors, false);
+		Actor->GetAttachedActors(RelatedActors, false, false);
+		PendingActors.Append(RelatedActors);
+	}
+
+	for (const TWeakObjectPtr<ABlackjackTableInteractionActor>& Target : RegisteredBettingInteractionTargets)
+	{
+		if (Target.IsValid() && Target->GetBlackjackTable() == this)
+		{
+			OutActors.AddUnique(Target.Get());
+		}
+	}
+	for (const TWeakObjectPtr<ABlackjackSeatInteractionActor>& Target : RegisteredSeatCameraTargets)
+	{
+		if (Target.IsValid() && Target->GetBlackjackTable() == this)
+		{
+			OutActors.AddUnique(Target.Get());
+		}
 	}
 }
 

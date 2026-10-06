@@ -4,6 +4,7 @@
 
 #include "Blackjack/BlackjackPlayerComponent.h"
 #include "Blackjack/BlackjackTableActor.h"
+#include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
 #include "casino_simulatorCharacter.h"
 
@@ -11,18 +12,40 @@ ABlackjackSeatInteractionActor::ABlackjackSeatInteractionActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	InteractionPromptText = FText::FromString(TEXT("E Sit"));
+
+	SeatCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("SeatCamera"));
+	SeatCamera->SetupAttachment(SceneRoot);
+	SeatCamera->SetRelativeLocation(FVector(0.0f, 0.0f, 120.0f));
+	SeatCamera->SetRelativeRotation(FRotator(-20.0f, 0.0f, 0.0f));
+	SeatCamera->SetFieldOfView(70.0f);
+	SeatCamera->bUsePawnControlRotation = false;
 }
 
 void ABlackjackSeatInteractionActor::BeginPlay()
 {
 	Super::BeginPlay();
 
+	const bool bHasExplicitTableReference = IsValid(BlackjackTable);
 	if (!BlackjackTable)
 	{
 		BlackjackTable = ResolveBlackjackTable();
 	}
 
 	SyncSeatIndexFromNearestSeatPoint();
+	if (bHasExplicitTableReference && IsValid(BlackjackTable))
+	{
+		BlackjackTable->RegisterSeatCameraTarget(this);
+	}
+}
+
+void ABlackjackSeatInteractionActor::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
+{
+	if (IsValid(SeatCamera))
+	{
+		SeatCamera->GetCameraView(DeltaTime, OutResult);
+		return;
+	}
+	Super::CalcCamera(DeltaTime, OutResult);
 }
 
 void ABlackjackSeatInteractionActor::Interact(Acasino_simulatorCharacter* InteractingCharacter)
@@ -100,12 +123,26 @@ ABlackjackTableActor* ABlackjackSeatInteractionActor::ResolveBlackjackTable() co
 		return BlackjackTable;
 	}
 
-	if (ABlackjackTableActor* OwnerTable = Cast<ABlackjackTableActor>(GetOwner()))
+	TArray<AActor*> ParentActors = { GetOwner(), GetAttachParentActor(), GetParentActor() };
+	TSet<AActor*> VisitedActors;
+	for (int32 Index = 0; Index < ParentActors.Num(); ++Index)
 	{
-		return OwnerTable;
+		AActor* ParentActor = ParentActors[Index];
+		if (!IsValid(ParentActor) || ParentActor == this || VisitedActors.Contains(ParentActor))
+		{
+			continue;
+		}
+		if (ABlackjackTableActor* ParentTable = Cast<ABlackjackTableActor>(ParentActor))
+		{
+			return ParentTable;
+		}
+		VisitedActors.Add(ParentActor);
+		ParentActors.Add(ParentActor->GetOwner());
+		ParentActors.Add(ParentActor->GetAttachParentActor());
+		ParentActors.Add(ParentActor->GetParentActor());
 	}
 
-	return Cast<ABlackjackTableActor>(GetAttachParentActor());
+	return nullptr;
 }
 
 void ABlackjackSeatInteractionActor::SyncSeatIndexFromNearestSeatPoint()
