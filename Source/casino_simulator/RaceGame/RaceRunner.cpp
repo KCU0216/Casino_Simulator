@@ -4,6 +4,7 @@
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/GameStateBase.h"
 #include "Engine/World.h"
+#include "Engine/Texture2D.h"
 
 ARaceRunner::ARaceRunner()
 {
@@ -23,6 +24,7 @@ void ARaceRunner::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ARaceRunner, Stats);
+	DOREPLIFETIME(ARaceRunner, RunnerPortrait);
 	DOREPLIFETIME(ARaceRunner, RaceScript);
 	DOREPLIFETIME(ARaceRunner, bRacing);
 	DOREPLIFETIME(ARaceRunner, bIsEntering);
@@ -33,6 +35,11 @@ void ARaceRunner::InitStats(const FRaceRunnerStats& In)
 {
 	Stats = In;
 	if (HasAuthority()) OnStatsUpdated();
+}
+
+UTexture2D* ARaceRunner::GetRunnerPortrait() const
+{
+	return RunnerPortrait.Get();
 }
 
 void ARaceRunner::ServerSetupScript(const FRunnerRaceScript& S)

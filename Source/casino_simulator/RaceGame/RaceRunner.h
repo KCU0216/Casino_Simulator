@@ -26,6 +26,10 @@ public:
 	UPROPERTY(ReplicatedUsing = OnRep_Stats, BlueprintReadOnly, Category = "Race")
 	FRaceRunnerStats Stats;
 
+	// 서버가 선택한 사진을 UI와 구매 시점의 마권에서 함께 사용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Runner|Character")
+	TObjectPtr<UTexture2D> RunnerPortrait = nullptr;
+
 	// 이번 판 주행 레시피. 서버가 입장 시작 때 세팅, 리플리케이트.
 	UPROPERTY(ReplicatedUsing = OnRep_RaceScript, BlueprintReadOnly, Category = "Race")
 	FRunnerRaceScript RaceScript;
@@ -52,6 +56,10 @@ public:
 
 	// 매니저(서버)가 승자 판정에 참고
 	float GetPosUnits() const { return PosUnits; }
+
+	// 부모 타입에서 바로 읽을 수 있어 러너 BP로 Cast할 필요가 없다.
+	UFUNCTION(BlueprintPure, Category = "Race")
+	UTexture2D* GetRunnerPortrait() const;
 
 	// BP 연출 훅
 	UFUNCTION(BlueprintImplementableEvent, Category = "Race") void OnStatsUpdated();

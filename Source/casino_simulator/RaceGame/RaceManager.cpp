@@ -449,25 +449,36 @@ bool ARaceManager::ServerBuyTicket(Acasino_simulatorCharacter* Player, int32 Run
 	T.RoundNumber = CurrentRoundNumber;
 	T.RunnerIndex = RunnerIndex;
 	T.RunnerName  = Runners[RunnerIndex]->Stats.Name;
+	T.RunnerAge   = Runners[RunnerIndex]->Stats.Age;
+	T.RunnerPortrait = Runners[RunnerIndex]->GetRunnerPortrait();
 	T.Amount      = Amount;
 	T.Count       = Count;
 	T.Odds        = Runners[RunnerIndex]->Stats.Odds;               // 구매 시점 배당 고정
 	Tickets.Add(T);
+	OnRep_Tickets();
+	ForceNetUpdate();
 	return true;
 }
 
 void ARaceManager::SettleTickets()
 {
 	if (!HasAuthority()) return;
+	bool bTicketsChanged = false;
 	// 단승: WinnerIndex 맞춘 마권만 당첨 → 유지, 나머진 삭제.
 	// 이미 bWon인 건 지난 라운드 당첨분(환전 대기) → 건드리지 않음.
 	for (int32 i = Tickets.Num() - 1; i >= 0; --i)
 	{
 		if (Tickets[i].bWon) continue;
+		bTicketsChanged = true;
 		if (Tickets[i].RunnerIndex == WinnerIndex)
 			Tickets[i].bWon = true;
 		else
 			Tickets.RemoveAt(i);
+	}
+	if (bTicketsChanged)
+	{
+		OnRep_Tickets();
+		ForceNetUpdate();
 	}
 }
 
@@ -488,12 +499,23 @@ int32 ARaceManager::ServerClaimWinnings(Acasino_simulatorCharacter* Player)
 			Tickets.RemoveAt(i);                    // 환전 완료 → 제거
 		}
 	}
+	if (TotalPaid > 0)
+	{
+		OnRep_Tickets();
+		ForceNetUpdate();
+	}
 	return TotalPaid;
+}
+
+void ARaceManager::OnRep_Tickets()
+{
+	OnTicketsChanged.Broadcast();
 }
 
 TArray<FBetTicket> ARaceManager::GetTicketsForPlayer(APlayerState* PS) const
 {
 	TArray<FBetTicket> Out;
+	if (!PS) return Out;
 	for (const FBetTicket& T : Tickets)
 		if (T.Buyer == PS) Out.Add(T);
 	return Out;
