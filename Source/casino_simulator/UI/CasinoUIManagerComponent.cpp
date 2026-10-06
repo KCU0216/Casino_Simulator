@@ -138,7 +138,9 @@ bool UCasinoUIManagerComponent::ShowInteractionUI(UUserWidget* Widget)
     EnsureUIRoot();
     if (!UIRoot) return false;
     UIRoot->AddInteraction(Widget);
-    Widget->SetVisibility(ESlateVisibility::Visible);
+    // Keep HUD quickslots reachable through the inventory's empty screen area.
+    Widget->SetVisibility(Widget->IsA<UInventoryWidget>()
+        ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Visible);
     const bool bNewOpen = !ManagedInteractions.Contains(Widget);
     ManagedInteractions.AddUnique(Widget);
     if (bNewOpen)
