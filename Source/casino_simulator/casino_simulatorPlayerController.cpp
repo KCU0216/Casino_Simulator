@@ -1000,6 +1000,15 @@ void Acasino_simulatorPlayerController::EndPoliceCinematic()
 void Acasino_simulatorPlayerController::ClientBeginPoliceArrival_Implementation()
 {
 	bPoliceCinematicActive = true;
+
+	if (IsValid(UIManager))
+	{
+		UIManager->EnsureUIRoot();
+		if(IsValid(UIManager->UIRoot))
+		{
+			UIManager->UIRoot->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
 	OnPoliceArrivalRequested();
 }
 
@@ -1007,6 +1016,11 @@ void Acasino_simulatorPlayerController::ClientEndPoliceCinematic_Implementation(
 {
 	bPoliceCinematicActive = false;
 	OnPoliceCinematicStopped();
+
+	if (IsValid(UIManager) && IsValid(UIManager->UIRoot))
+	{
+		UIManager->UIRoot->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
 }
 
 void Acasino_simulatorPlayerController::BeginPoliceArrest(APoliceCharacter* Police)
