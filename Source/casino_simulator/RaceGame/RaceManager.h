@@ -18,6 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRacePhaseChanged, ERacePhase, New
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceLineupReady);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceStarted);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceTicketsChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceLineupExit);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnRaceFinished, ARaceRunner*, Winner, int32, WinnerIndex);
 
@@ -62,7 +63,8 @@ public:
 	// 완주 순위: FinishOrder[0]=1등, [1]=2등 ... (러너 인덱스). 서버가 확정, 복제.
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race") TArray<int32> FinishOrder;
 	// 마권 원장 (서버 권위, 모두에게 복제)
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race|Bet") TArray<FBetTicket> Tickets;
+	UPROPERTY(ReplicatedUsing=OnRep_Tickets, BlueprintReadOnly, Category = "Race|Bet") TArray<FBetTicket> Tickets;
+	UPROPERTY(BlueprintAssignable, Category = "Race|Bet") FOnRaceTicketsChanged OnTicketsChanged;
 	//현재 경마 라운드
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Race") int32 CurrentRoundNumber = 0;
 
@@ -108,10 +110,12 @@ protected:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRaceEntranceFlowTest;
     friend class FRaceBillboardFlowTest;
+    friend class FRaceOwnedTicketsUITest;
 #endif
 	virtual void BeginPlay() override;
     UFUNCTION() void OnRep_Phase();
     UFUNCTION() void OnRep_BillboardData();
+    UFUNCTION() void OnRep_Tickets();
     void RefreshBillboard();
     bool bBillboardPhaseInitialized = false;
     ERacePhase LastBillboardPhase = ERacePhase::Idle;

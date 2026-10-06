@@ -5,6 +5,7 @@
 #include "RaceTypes.generated.h"
 
 class APlayerState;
+class UTexture2D;
 
 UENUM(BlueprintType)
 enum class ERacePhase : uint8
@@ -70,6 +71,9 @@ struct FBetTicket
 	// 어느 러너에
 	UPROPERTY(BlueprintReadOnly, Category = "Bet") int32 RunnerIndex = -1;
 	UPROPERTY(BlueprintReadOnly, Category = "Bet") FString RunnerName;
+	// 구매 당시 정보를 보관한다. 다음 라운드의 러너를 다시 조회하지 않는다.
+	UPROPERTY(BlueprintReadOnly, Category = "Bet") int32 RunnerAge = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Bet") TObjectPtr<UTexture2D> RunnerPortrait = nullptr;
 	// 장당 배팅액 / 개수 / 구매시점 배당
 	UPROPERTY(BlueprintReadOnly, Category = "Bet") int32 Amount = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Bet") int32 Count = 1;
