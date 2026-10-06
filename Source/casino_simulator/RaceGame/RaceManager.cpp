@@ -1,4 +1,4 @@
-// RaceManager.cpp
+﻿// RaceManager.cpp
 #include "RaceManager.h"
 #include "RaceRunner.h"
 #include "Engine/World.h"
@@ -109,7 +109,6 @@ FRaceRunnerStats ARaceManager::RollStats(int32 LaneIndex) const
 
 	FRaceRunnerStats S;
 	S.Age           = FMath::RandRange(Lo[Bucket], Hi[Bucket]);
-	S.Name          = KRNames[FMath::RandRange(0, UE_ARRAY_COUNT(KRNames) - 1)];
 	S.BaseSpeed     = 225.f - (S.Age - 60) * 2.6f;
 	S.AwakenChance  = FMath::Max(0.f, (S.Age - 68) / 27.f) * 0.32f;
 	S.StumbleChance = FMath::Max(0.f, (S.Age - 68) / 27.f) * 0.30f;
@@ -147,6 +146,11 @@ void ARaceManager::StartNewRound()
 		UE_LOG(LogTemp, Warning, TEXT("[RaceManager] RunnerSpawnPoints must be assigned."));
 		return;
 	}
+	if (RunnerSpawnPoints.Num() > UE_ARRAY_COUNT(KRNames))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RaceManager] Not enough unique names for RunnerSpawnPoints."));
+		return;
+	}
 	
 	for (ARaceRunner* R : Runners) { if (R) R->Destroy(); }
 	Runners.Reset();
@@ -169,6 +173,30 @@ void ARaceManager::StartNewRound()
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
+	// 매 라운드 이름 목록을 섞고, 스폰된 러너에게 순서대로 배정한다.
+	TArray<const TCHAR*> ShuffledNames;
+	for (const TCHAR* Name : KRNames)
+	{
+		ShuffledNames.Add(Name);
+	}
+	for (int32 i = ShuffledNames.Num() - 1; i > 0; --i)
+	{
+		ShuffledNames.Swap(i, FMath::RandRange(0, i));
+	}
+
+	// 나이대별 스탯과 이름을 먼저 정한 뒤, 묶음 전체를 섞어 레일에 배정한다.
+	TArray<FRaceRunnerStats> ShuffledStats;
+	for (int32 i = 0; i < RunnerSpawnPoints.Num(); ++i)
+	{
+		FRaceRunnerStats Stats = RollStats(i);
+		Stats.Name = ShuffledNames[i];
+		ShuffledStats.Add(Stats);
+	}
+	for (int32 i = ShuffledStats.Num() - 1; i > 0; --i)
+	{
+		ShuffledStats.Swap(i, FMath::RandRange(0, i));
+	}
+
 	for (int32 i = 0; i < RunnerSpawnPoints.Num(); ++i)
 	{
 		if (!IsValid(RunnerSpawnPoints[i])) continue;
@@ -178,7 +206,7 @@ void ARaceManager::StartNewRound()
 		ARaceRunner* R = GetWorld()->SpawnActor<ARaceRunner>(RunnerClass, Loc, Rot, SP);
 		if (!R) continue;
 
-		R->InitStats(RollStats(i));
+		R->InitStats(ShuffledStats[i]);
 		R->ServerSetupScript(RollScript(R->Stats, Loc, Rot.Vector()));
 		Runners.Add(R);
 	}
