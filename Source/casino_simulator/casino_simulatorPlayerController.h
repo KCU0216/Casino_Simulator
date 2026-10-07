@@ -21,6 +21,7 @@ class UInventoryWidget;
 class UPauseMenuWidget;
 class UCasinoShopComponent;
 class APoliceCharacter;
+class ABailATM;
 struct FOnAttributeChangeData;
 
 /**
@@ -93,6 +94,11 @@ public:
 	void BeginPoliceArrest(APoliceCharacter* Police);
 	void EndPoliceCinematic();
 
+	// 결제 실패를 E키를 누른 플레이어에게 전달합니다.
+	UFUNCTION(Client, Reliable)
+	void ClientBailPaymentFailed(ABailATM* ATM);
+
+
 private:
     void RefreshCasinoUIScreen();
     void EnsureUIRoot();
@@ -113,6 +119,8 @@ private:
 
 	virtual void BuildInputStack(
 		TArray<UInputComponent*>& InputStack) override;
+
+	FTimerHandle BailPromptResetTimerHandle;
 public:
 
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Shop")

@@ -13,7 +13,7 @@
 #include "Blackjack/BlackjackPlayerComponent.h"
 #include "Blackjack/BlackjackTableActor.h"
 #include "Engine/World.h"
-
+#include "Police/BailATM.h"
 #include "Police/PoliceCharacter.h"
 #include "Camera/CameraComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -1133,4 +1133,80 @@ void Acasino_simulatorPlayerController::BuildInputStack(
 	{
 		InputStack.Reset();
 	}
+}
+
+void Acasino_simulatorPlayerController::ClientBailPaymentFailed_Implementation(
+	ABailATM* ATM)
+{
+	if (!IsLocalController()
+		|| !IsCasinoGameplayAllowed(this)
+		|| IsPoliceCinematicActive()
+		|| IsAnyGameplayUIOpen()
+		|| IsInteractionPromptSuppressed())
+	{
+		return;
+	}
+
+	auto* BailPlayerCharacter = Cast<Acasino_simulatorCharacter>(GetPawn());
+	if (!IsValid(BailPlayerCharacter))
+	{
+		return;
+	}
+
+	auto* Detector = BailPlayerCharacter->GetWorldInteractionDetector();
+
+	// 여전히 같은 ATM을 바라보고 있고 결제가 가능하면 E키 안내를 복구합니다.
+	if (IsValid(ATM)
+		&& IsValid(Detector)
+		&& Detector->GetFocusedTarget().GetObject() == ATM
+		&& ATM->CanInteract(BailPlayerCharacter))
+	{
+		OpenInteraction();
+		if (IsValid(PlayerHUDWidget.Get()))
+		{
+			PlayerHUDWidget->BP_SetInteractionPromptText(
+				FText::FromString(TEXT("보석금이 부족합니다.")));
+
+			const TWeakObjectPtr<ABailATM> WeakBailATM(ATM);
+
+			GetWorldTimerManager().SetTimer(
+				BailPromptResetTimerHandle,
+				FTimerDelegate::CreateWeakLambda(this, [this, WeakBailATM]()
+					{
+						if (!IsLocalController()
+							|| !IsCasinoGameplayAllowed(this)
+							|| IsPoliceCinematicActive()
+							|| IsAnyGameplayUIOpen()
+							|| IsInteractionPromptSuppressed())
+						{
+							return;
+						}
+
+						auto* CurrentBailPlayerCharacter =
+							Cast<Acasino_simulatorCharacter>(GetPawn());
+
+						if (!IsValid(CurrentBailPlayerCharacter))
+						{
+							return;
+						}
+
+						auto* CurrentBailDetector =
+							CurrentBailPlayerCharacter->GetWorldInteractionDetector();
+
+						auto* CurrentBailATM = WeakBailATM.Get();
+
+						if (IsValid(CurrentBailATM)
+							&& IsValid(CurrentBailDetector)
+							&& CurrentBailDetector->GetFocusedTarget().GetObject()
+							== CurrentBailATM
+							&& CurrentBailATM->CanInteract(CurrentBailPlayerCharacter))
+						{
+							OpenInteraction();
+						}
+					}),
+				1.0f,
+				false);
+		}
+	}
+
 }

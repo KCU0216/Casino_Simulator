@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "Police/BailATM.h"
+#include "casino_simulatorPlayerController.h"
 #include "casino_simulatorCharacter.h"
 #include "Components/SphereComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -40,8 +40,14 @@ void ABailATM::Interact(Acasino_simulatorCharacter* InteractingCharacter)
 
 	if (!InteractingCharacter->TrySpendCurrency(BailAmount))
 	{
-		// 돈이 부족하면 다시 결제할 수 있게 돌립니다.
 		bBailPaymentAvailable = true;
+
+		if (auto* PC = Cast<Acasino_simulatorPlayerController>(
+			InteractingCharacter->GetController()))
+		{
+			PC->ClientBailPaymentFailed(this);
+		}
+
 		return;
 	}
 	ForceNetUpdate();
