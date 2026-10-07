@@ -77,6 +77,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Seats")
 	void LeaveSeat(Acasino_simulatorCharacter* Player);
 
+	// 체포 등으로 강제 퇴장하며, 진행 중인 베팅은 포기합니다.
+	void ForceLeaveSeat(Acasino_simulatorCharacter* Player);
+
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
 	bool CanLeaveSeat(Acasino_simulatorCharacter* Player) const;
 
