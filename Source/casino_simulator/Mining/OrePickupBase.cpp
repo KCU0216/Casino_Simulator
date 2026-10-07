@@ -163,7 +163,7 @@ bool AOrePickupBase::CanJoinCarry(Acasino_simulatorCharacter* Character)
 }
 
 //움직일 수 있냐
-bool AOrePickupBase::CanMoveCarry()
+bool AOrePickupBase::CanMoveCarry() const
 {
 	return Carriers.Num() >= MinCarryCount && Carriers.Num() <= MaxCarryCount;
 }
