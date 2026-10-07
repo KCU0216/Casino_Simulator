@@ -10,7 +10,6 @@ ABailATM::ABailATM()
 {
 	bReplicates = true;
 
-	InteractionPromptText = FText::FromString(TEXT("E Pay Bail"));
 
 	if (InteractionSphere)
 	{

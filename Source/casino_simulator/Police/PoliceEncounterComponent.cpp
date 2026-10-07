@@ -1,4 +1,6 @@
 #include "PoliceEncounterComponent.h"
+#include "Blackjack/BlackjackPlayerComponent.h"
+#include "Blackjack/BlackjackTableActor.h"
 #include "NPC/NPC_Base.h"
 #include "Machine/SeatedMachineBase.h"
 #include "Interaction/WorldInteractableBase.h"
@@ -409,6 +411,21 @@ void UPoliceEncounterComponent::HandlePoliceChaseReachedTarget(APawn* Target)
     Police->GetCharacterMovement()->StopMovementImmediately();
     Police->GetCharacterMovement()->DisableMovement();
     Police->SetActorEnableCollision(false);
+
+    if (Acasino_simulatorCharacter* Player =
+        Cast<Acasino_simulatorCharacter>(Target))
+    {
+        if (UBlackjackPlayerComponent* Blackjack =
+            Player->GetBlackjackPlayerComponent())
+        {
+            if (ABlackjackTableActor* Table =
+                Blackjack->GetCurrentBlackjackTable();
+                IsValid(Table))
+            {
+                Table->ForceLeaveSeat(Player);
+            }
+        }
+    }
 
     Acasino_simulatorPlayerController* PC = Cast<Acasino_simulatorPlayerController>(Target->GetController());
 
