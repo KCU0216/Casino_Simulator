@@ -54,7 +54,7 @@ public:
 	bool CanJoinCarry(Acasino_simulatorCharacter* Character);
 
 	UFUNCTION(BlueprintCallable, Category = "OrePickup")
-	bool CanMoveCarry();
+	bool CanMoveCarry() const;
 
 	UFUNCTION(BlueprintCallable, Category = "OrePickup")
 	bool UpdateCarryTargetLocation(Acasino_simulatorCharacter* Character, FVector TargetLocation);

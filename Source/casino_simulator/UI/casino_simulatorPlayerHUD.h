@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -53,4 +53,8 @@ public:
 	/** Passes the full current inventory to Blueprint whenever PlayerState's inventory changes, so item slot widgets (e.g. WBP_ItemSlot) can be rebuilt/refreshed. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "HUD", meta = (DisplayName = "Inventory Updated"))
 	void BP_InventoryUpdated(const TArray<FInventoryEntry>& Inventory);
+
+	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent, Category = "HUD")
+	void BP_PickaxeEquippedUpdated(bool bEquipped);
+
 };

@@ -213,6 +213,38 @@ void ABlackjackTableActor::LeaveSeat(Acasino_simulatorCharacter* Player)
 	TryStartRoundFromBettingWindow();
 }
 
+
+void ABlackjackTableActor::ForceLeaveSeat(
+	Acasino_simulatorCharacter* Player)
+{
+	if (!HasAuthority() || !IsValid(Player))
+	{
+		return;
+	}
+
+	Player->OnDestroyed.RemoveDynamic(
+		this,
+		&ABlackjackTableActor::HandleOccupantDestroyed);
+
+	// 기존 접속 종료 시의 좌석·베팅 정리를 재사용합니다.
+	HandleOccupantDestroyed(Player);
+
+	if (UBlackjackPlayerComponent* Component =
+		Player->GetBlackjackPlayerComponent())
+	{
+		if (Component->GetCurrentBlackjackTable() == this)
+		{
+			Component->ClearBlackjackSeatMode();
+		}
+	}
+
+	ForceNetUpdate();
+	Player->ForceNetUpdate();
+}
+
+
+
+
 bool ABlackjackTableActor::CanLeaveSeat(Acasino_simulatorCharacter* Player) const
 {
 	if (!Player)
