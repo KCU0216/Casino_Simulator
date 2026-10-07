@@ -172,10 +172,10 @@ protected:
 	TObjectPtr<UTextRenderComponent> ResultText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="ThreeCardPoker|Rules", meta=(ClampMin="1"))
-	int32 MinAnteBet = 10;
+	int32 MinAnteBet = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="ThreeCardPoker|Rules", meta=(ClampMin="1"))
-	int32 MinPairPlusBet = 5;
+	int32 MinPairPlusBet = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="ThreeCardPoker|Rules")
 	bool bEnableAnteBonus = true;
