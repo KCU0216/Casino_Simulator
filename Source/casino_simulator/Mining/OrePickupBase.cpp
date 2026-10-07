@@ -96,15 +96,17 @@ bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 		return false;
 	}
 
-	if (Carriers.Num() == 0)
-	{
-		OrePickupMesh->SetEnableGravity(false);
-	}
-	
-
+	const bool bCouldCarry = CanMoveCarry();
 	Carriers.AddUnique(Character);
 	SetLastCarrier(Character);
 	CarrierTargetLocations.FindOrAdd(Character) = GetActorLocation();
+	const bool bCanCarryNow = CanMoveCarry();
+	if (bCouldCarry != bCanCarryNow)
+	{
+		OrePickupMesh->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		OrePickupMesh->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+	}
+	OrePickupMesh->SetEnableGravity(!bCanCarryNow);
 	Character->SetCarriedOre(this);
 	ForceNetUpdate();
 	return true;
@@ -128,12 +130,16 @@ bool AOrePickupBase::TryDrop(Acasino_simulatorCharacter* Character)
 		return false;
 	}
 
+	const bool bCouldCarry = CanMoveCarry();
 	Carriers.Remove(Character);
 	CarrierTargetLocations.Remove(Character);
-	if (Carriers.Num() == 0)
+	const bool bCanCarryNow = CanMoveCarry();
+	if (bCouldCarry && !bCanCarryNow)
 	{
-		OrePickupMesh->SetEnableGravity(true);
+		OrePickupMesh->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		OrePickupMesh->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
 	}
+	OrePickupMesh->SetEnableGravity(!bCanCarryNow);
 	Character->SetCarriedOre(nullptr);
 	ForceNetUpdate();
 	return true;
@@ -194,8 +200,7 @@ bool AOrePickupBase::UpdateCarryTargetLocation(Acasino_simulatorCharacter* Chara
 void AOrePickupBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	if (!CanMoveCarry() || !HasAuthority())
+	if (!HasAuthority() || Carriers.Num() == 0)
 	{
 		return;
 	}
@@ -226,7 +231,9 @@ void AOrePickupBase::Tick(float DeltaTime)
 	const FVector DampingForce = -CurrentVelocity * CarryDampingStrength;
 	const FVector CarryForce = (TotalSpringForce + DampingForce).GetClampedToMaxSize(MaxCarryForce);
 
-	OrePickupMesh->AddForce(CarryForce);
+	const float ForceScale = FMath::Clamp(
+		GetCarryMovementMultiplier(), MinimumCarryMovementMultiplier, 1.0f);
+	OrePickupMesh->AddForce(CarryForce * ForceScale);
 }
 
 // Called when the game starts or when spawned

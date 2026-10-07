@@ -38,13 +38,13 @@ protected:
 	TObjectPtr<USphereComponent> SellSphere;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mining|Sell")
-	int32 IronSalePrice = 25;
+	int32 IronSalePrice = 100;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mining|Sell")
-	int32 GoldSalePrice = 120;
+	int32 GoldSalePrice = 300;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mining|Sell")
-	int32 DiamondSalePrice = 400;
+	int32 DiamondSalePrice = 1000;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Mining|Sell")
 	bool bRequireDroppedOre = true;
