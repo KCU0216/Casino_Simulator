@@ -410,7 +410,7 @@ void UPoliceEncounterComponent::HandlePoliceChaseReachedTarget(APawn* Target)
 
     Police->GetCharacterMovement()->StopMovementImmediately();
     Police->GetCharacterMovement()->DisableMovement();
-    Police->SetActorEnableCollision(false);
+    //Police->SetActorEnableCollision(false);
 
     if (Acasino_simulatorCharacter* Player =
         Cast<Acasino_simulatorCharacter>(Target))
