@@ -344,7 +344,6 @@ void UPoliceEncounterComponent::EndPoliceDay()
     }
 
     PoliceChaseTarget.Reset();
-    CurrentJailedPlayer.Reset();
 }
 
 
@@ -373,7 +372,6 @@ void UPoliceEncounterComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
     }
 
     PoliceChaseTarget.Reset();
-    CurrentJailedPlayer.Reset();
 
     Super::EndPlay(EndPlayReason);
 }
@@ -510,7 +508,10 @@ void UPoliceEncounterComponent::FinishPoliceArrest()
         return;
     }
 
-    CurrentJailedPlayer = Player;
+    if (IsValid(Police))
+    {
+        Police->OnPolicePlayerJailed();
+    }
 
     UE_LOG(
         LogTemp,

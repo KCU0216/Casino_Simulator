@@ -110,6 +110,9 @@ private:
 
 	UFUNCTION(Client, Reliable)
 	void ClientEndPoliceCinematic();
+
+	virtual void BuildInputStack(
+		TArray<UInputComponent*>& InputStack) override;
 public:
 
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Shop")

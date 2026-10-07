@@ -1123,3 +1123,14 @@ void Acasino_simulatorPlayerController::ClientBeginPoliceArrest_Implementation(
 	bPoliceCinematicActive = true;
 	OnPoliceArrestRequested(Police);
 }
+
+void Acasino_simulatorPlayerController::BuildInputStack(
+	TArray<UInputComponent*>& InputStack)
+{
+	Super::BuildInputStack(InputStack);
+
+	if (bPoliceCinematicActive)
+	{
+		InputStack.Reset();
+	}
+}

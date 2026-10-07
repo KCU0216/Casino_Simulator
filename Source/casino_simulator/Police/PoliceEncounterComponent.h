@@ -84,9 +84,6 @@ private:
     // 서버만 보관하는 추격 대상
     TWeakObjectPtr<Acasino_simulatorCharacter> PoliceChaseTarget;
 
-    // 보석금 처리 대상인 수감자
-    TWeakObjectPtr<Acasino_simulatorCharacter> CurrentJailedPlayer;
-
     // 경찰의 최초 배치 위치와 회전
     FTransform PoliceInitialTransform = FTransform::Identity;
 
