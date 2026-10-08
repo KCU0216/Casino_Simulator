@@ -121,6 +121,10 @@ private:
 		TArray<UInputComponent*>& InputStack) override;
 
 	FTimerHandle BailPromptResetTimerHandle;
+
+	// 점프스퀘어 때문에 일시로 숨긴 취객을 기록
+	TArray<TWeakObjectPtr<AActor>> PoliceArrestHiddenActors;
+
 public:
 
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Shop")

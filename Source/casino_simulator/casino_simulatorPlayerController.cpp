@@ -19,6 +19,8 @@
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 #include "Engine/LocalPlayer.h"
+#include "EngineUtils.h"
+#include "Enemy/DrunkCharacter.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
 #include "casino_simulatorCameraManager.h"
@@ -1086,6 +1088,16 @@ void Acasino_simulatorPlayerController::ClientEndPoliceCinematic_Implementation(
 	bPoliceCinematicActive = false;
 	OnPoliceCinematicStopped();
 
+	for (const TWeakObjectPtr<AActor>& HiddenActor : PoliceArrestHiddenActors)
+	{
+		if (AActor* ActorToRestore = HiddenActor.Get())
+		{
+			HiddenActors.Remove(ActorToRestore);
+		}
+	}
+
+	PoliceArrestHiddenActors.Reset();
+
 	if (IsValid(UIManager) && IsValid(UIManager->UIRoot))
 	{
 		UIManager->UIRoot->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -1118,6 +1130,20 @@ void Acasino_simulatorPlayerController::ClientBeginPoliceArrest_Implementation(
 
 		// UI에 남아 있던 입력 차단을 현재 게임 단계에 맞게 정리합니다.
 		UIManager->ApplyUIScreenInput();
+	}
+
+	if (IsLocalController())
+	{
+		for (TActorIterator<ADrunkCharacter> It(GetWorld()); It; ++It)
+		{
+			ADrunkCharacter* Drunk = *It;
+
+			if (IsValid(Drunk) && !HiddenActors.Contains(Drunk))
+			{
+				HiddenActors.Add(Drunk);
+				PoliceArrestHiddenActors.Add(Drunk);
+			}
+		}
 	}
 
 	bPoliceCinematicActive = true;
