@@ -6,10 +6,12 @@
 #include "GameFramework/Actor.h"
 #include "Mining/OreTypes.h"
 #include "Interaction/WorldInteractableBase.h"
+#include "GameplayEffectTypes.h"
 #include "OrePickupBase.generated.h"
 
 class UStaticMeshComponent;
 class Acasino_simulatorCharacter;
+class UGameplayEffect;
 
 UCLASS()
 class CASINO_SIMULATOR_API AOrePickupBase :  public AWorldInteractableBase
@@ -85,11 +87,19 @@ public:
 
 	void SetLastCarrier(Acasino_simulatorCharacter* Character);
 
+	void RefreshCarryMovementEffects();
+
 protected:
 
 	virtual void Tick(float DeltaTime) override;
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+
+	UPROPERTY(EditDefaultsOnly, Category = "OrePickup")
+	TSubclassOf<UGameplayEffect> CarryEffectClass;
+
+	UPROPERTY()
+	TMap<TWeakObjectPtr<Acasino_simulatorCharacter>, FActiveGameplayEffectHandle> CarryEffectHandles;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OrePickup|Components")
 	TObjectPtr<UStaticMeshComponent> OrePickupMesh;

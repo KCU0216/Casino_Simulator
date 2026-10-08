@@ -11,6 +11,7 @@
 #include "NativeGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "casino_simulatorCharacter.h"
+#include "GameplayEffect.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Event_Ore_Pickup, "Event.Ore.Pickup");
 
@@ -85,8 +86,13 @@ bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 		return false;
 	}
 
-	if (const UAbilitySystemComponent* AbilitySystem = Character->GetAbilitySystemComponent();
-		AbilitySystem && AbilitySystem->HasMatchingGameplayTag(MiningGameplayTags::PickaxeEquipped))
+	UAbilitySystemComponent* AbilitySystem = Character->GetAbilitySystemComponent();
+	if (!AbilitySystem)
+	{
+		return false;
+	}
+
+	if (AbilitySystem && AbilitySystem->HasMatchingGameplayTag(MiningGameplayTags::PickaxeEquipped))
 	{
 		return false;
 	}
@@ -100,6 +106,26 @@ bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 	Carriers.AddUnique(Character);
 	SetLastCarrier(Character);
 	CarrierTargetLocations.FindOrAdd(Character) = GetActorLocation();
+
+	FGameplayEffectContextHandle Context = AbilitySystem->MakeEffectContext();
+	Context.AddSourceObject(this);
+
+	FGameplayEffectSpecHandle Spec = AbilitySystem->MakeOutgoingSpec(CarryEffectClass, 1.f , Context);
+
+	if (Spec.IsValid())
+	{
+		Spec.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(
+			FName(TEXT("Data.Ore.CarryMovementMultiplier"))),
+			GetCarryMovementMultiplier()
+		);
+
+		FActiveGameplayEffectHandle Handle = AbilitySystem->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+
+		CarryEffectHandles.Add(Character, Handle);
+	}
+
+	RefreshCarryMovementEffects();
+
 	const bool bCanCarryNow = CanMoveCarry();
 	if (bCouldCarry != bCanCarryNow)
 	{
@@ -111,6 +137,7 @@ bool AOrePickupBase::TryPickUp(Acasino_simulatorCharacter* Character)
 	ForceNetUpdate();
 	return true;
 }
+
 void AOrePickupBase::SetLastCarrier(Acasino_simulatorCharacter* Character)
 {
 	if (HasAuthority() && IsValid(Character))
@@ -119,11 +146,41 @@ void AOrePickupBase::SetLastCarrier(Acasino_simulatorCharacter* Character)
 	}
 }
 
+void AOrePickupBase::RefreshCarryMovementEffects()
+{
+
+	const float Multiplier = GetCarryMovementMultiplier();
+
+	const FGameplayTag DataTag = FGameplayTag::RequestGameplayTag(FName(TEXT("Data.Ore.CarryMovementMultiplier")));
+
+	for (const auto& Carrier : Carriers)
+	{
+		if (!IsValid(Carrier.Get()))
+		{
+			continue;
+		}
+
+		UAbilitySystemComponent* ASC = Carrier->GetAbilitySystemComponent();
+		const FActiveGameplayEffectHandle* Handle =
+			CarryEffectHandles.Find(Carrier.Get());
+
+		if (!ASC || !Handle || !Handle->IsValid())
+		{
+			continue;
+		}
+
+		ASC->UpdateActiveGameplayEffectSetByCallerMagnitude(
+			*Handle, DataTag, Multiplier);
+	}
+
+
+}
+
 //놓아보기
 bool AOrePickupBase::TryDrop(Acasino_simulatorCharacter* Character)
 {
 	if (!HasAuthority()
-		|| !Character
+		|| !IsValid(Character)
 		|| Character->GetCarriedOre() != this
 		)
 	{
@@ -133,6 +190,19 @@ bool AOrePickupBase::TryDrop(Acasino_simulatorCharacter* Character)
 	const bool bCouldCarry = CanMoveCarry();
 	Carriers.Remove(Character);
 	CarrierTargetLocations.Remove(Character);
+
+	if (UAbilitySystemComponent* AbilitySystem = Character->GetAbilitySystemComponent())
+	{
+		if (const FActiveGameplayEffectHandle* Handle = CarryEffectHandles.Find(Character);
+			Handle && Handle->IsValid())
+		{
+			AbilitySystem->RemoveActiveGameplayEffect(*Handle);
+		}
+	}
+
+	CarryEffectHandles.Remove(Character);
+	RefreshCarryMovementEffects();
+
 	const bool bCanCarryNow = CanMoveCarry();
 	if (bCouldCarry && !bCanCarryNow)
 	{
