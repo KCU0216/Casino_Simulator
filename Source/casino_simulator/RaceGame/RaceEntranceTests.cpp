@@ -140,6 +140,33 @@ bool FRaceEntranceFlowTest::RunTest(const FString& Parameters)
 	SignalFirst->RaceScript = EntryScript;
 	SignalFirst->OnRep_RaceScript();
 	TestTrue(TEXT("Late script activates pending entry signal"), SignalFirst->bIsRunning);
+
+    for (int32 Bucket = 0; Bucket < 6; ++Bucket)
+    {
+        for (int32 Sample = 0; Sample < 32; ++Sample)
+        {
+            const FRaceRunnerStats Stats = Manager->RollStats(Bucket);
+            TestTrue(TEXT("Age remains inside its ten-year bucket"),
+                Stats.Age >= 55 + Bucket * 10 && Stats.Age <= 64 + Bucket * 10);
+            TestTrue(TEXT("Young and old runners have valid positive odds"),
+                FMath::IsFinite(Stats.Odds) && Stats.Odds >= 1.8f);
+            if (Stats.Age < 60) TestEqual(TEXT("Under-60 odds use the floor"), Stats.Odds, 1.8f);
+        }
+    }
+    for (int32 Index = 1; Index < 6; ++Index)
+        Manager->RunnerSpawnPoints.Add(World->SpawnActor<ATargetPoint>());
+    Manager->StartNewRound();
+    if (!TestEqual(TEXT("Six age buckets produce six runners"), Manager->GetRunners().Num(), 6)) return false;
+    int32 BucketCounts[6] = {};
+    for (const ARaceRunner* Entrant : Manager->GetRunners())
+    {
+        const int32 Bucket = (Entrant->Stats.Age - 55) / 10;
+        if (!TestTrue(TEXT("Shuffled runner has a supported age"),
+            Entrant->Stats.Age >= 55 && Entrant->Stats.Age <= 114)) return false;
+        ++BucketCounts[Bucket];
+    }
+    for (int32 Count : BucketCounts)
+        TestEqual(TEXT("Shuffling preserves one runner from every age bucket"), Count, 1);
     return true;
 }
 
