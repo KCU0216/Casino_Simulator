@@ -98,6 +98,10 @@ void UBlackjackPlayerComponent::ReleaseLocalSeatView()
 			if (APawn* Pawn = PC->GetPawn()) PC->SetViewTargetWithBlend(Pawn, SeatCameraReleaseBlendTime);
 		}
 		PC->SetLocalPawnMeshesHiddenForInteraction(PC->IsInteractionUIOpen());
+		if (bCanRestore && !PC->IsInteractionUIOpen())
+		{
+			Character->RefreshEquipmentVisuals();
+		}
 		PC->RefreshBlackjackInteractionPrompt();
 	}
 	LocalSeatCameraTarget.Reset();
