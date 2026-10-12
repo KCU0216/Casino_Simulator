@@ -33,7 +33,7 @@ bool FRaceWorldEventTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("GameMode"), Mode) || !TestNotNull(TEXT("Manager"), Manager)) return false;
     Mode->GameState = State;
     Mode->bEnableDailyRaceEvent = true;
-    Mode->DayDurationSeconds = 60.f;
+    Mode->DayDurationSeconds = 120.f;
     Manager->RunnerClass = ARaceRunner::StaticClass();
     auto* SpawnPoint = World->SpawnActor<ATargetPoint>();
     Manager->RunnerSpawnPoints.Add(SpawnPoint);
@@ -51,16 +51,16 @@ bool FRaceWorldEventTest::RunTest(const FString& Parameters)
     TickTimers(0.f);
     TestTrue(TEXT("Day activation resolves the level manager"), Mode->ScheduledRaceManager.Get() == Manager);
     TestEqual(TEXT("Race starts halfway through the day"),
-        World->GetTimerManager().GetTimerRemaining(Mode->RaceEventTimer), 30.f);
-    TestEqual(TEXT("Announcement is ten seconds earlier"),
-        World->GetTimerManager().GetTimerRemaining(Mode->RaceAnnouncementTimer), 20.f);
-    TickTimers(19.9f);
+        World->GetTimerManager().GetTimerRemaining(Mode->RaceEventTimer), 60.f);
+    TestEqual(TEXT("Announcement is thirty seconds earlier"),
+        World->GetTimerManager().GetTimerRemaining(Mode->RaceAnnouncementTimer), 30.f);
+    TickTimers(29.9f);
     TestTrue(TEXT("No early announcement"), World->GetTimerManager().IsTimerActive(Mode->RaceAnnouncementTimer));
     TestEqual(TEXT("No early runners"), Manager->GetRunners().Num(), 0);
     TickTimers(0.2f);
     TestFalse(TEXT("Announcement timer fires once"), World->GetTimerManager().IsTimerActive(Mode->RaceAnnouncementTimer));
     TestEqual(TEXT("Announcement does not spawn runners"), Manager->GetRunners().Num(), 0);
-    TickTimers(9.8f);
+    TickTimers(29.8f);
     TestTrue(TEXT("Manager stays idle before midpoint"), Manager->Phase == ERacePhase::Idle);
     TickTimers(0.2f);
     TestTrue(TEXT("Midpoint starts entry, not racing"), Manager->Phase == ERacePhase::Entering);

@@ -67,7 +67,7 @@ void Acasino_simulatorGameMode::ScheduleRaceEvent(float DayDuration)
     RaceEventStartServerTime = GS->GetServerWorldTimeSeconds() + StartDelay;
     GetWorldTimerManager().SetTimer(RaceEventTimer, this,
         &ThisClass::StartScheduledRaceEvent, StartDelay, false);
-    const float AnnouncementDelay = FMath::Max(0.f, StartDelay - 10.f);
+    const float AnnouncementDelay = FMath::Max(0.f, StartDelay - 30.f);
     if (AnnouncementDelay > 0.f)
         GetWorldTimerManager().SetTimer(RaceAnnouncementTimer, this,
             &ThisClass::AnnounceRaceEvent, AnnouncementDelay, false);
