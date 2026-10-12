@@ -201,11 +201,86 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 	CollectCardWidgets(Rows, CardClass, Cards);
 	TestEqual(TEXT("Repeated snapshots do not duplicate cards"), Cards.Num(), 6);
 
+	UVerticalBox* OwnPanels[] = {
+		Cast<UVerticalBox>(HUD->GetWidgetFromName(TEXT("Hand1Panel"))),
+		Cast<UVerticalBox>(HUD->GetWidgetFromName(TEXT("Hand2Panel")))};
+	UTextBlock* OwnResults[] = {
+		Cast<UTextBlock>(HUD->GetWidgetFromName(TEXT("BlackjackOwnHand1Result"))),
+		Cast<UTextBlock>(HUD->GetWidgetFromName(TEXT("BlackjackOwnHand2Result")))};
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		if (!TestNotNull(TEXT("Shipped own-hand panel"), OwnPanels[Index])
+			|| !TestNotNull(TEXT("Own-hand result label"), OwnResults[Index])) return false;
+		TestTrue(TEXT("Result belongs to its own hand panel"), OwnResults[Index]->GetParent() == OwnPanels[Index]);
+		TestTrue(TEXT("Missing hand has no old result"), OwnResults[Index]->GetText().IsEmpty());
+		TestTrue(TEXT("Missing hand result is collapsed"), OwnResults[Index]->GetVisibility() == ESlateVisibility::Collapsed);
+	}
+	Seats[0].Hands = {First, Second};
+	Seats[0].Hands[0].LastResult = EBlackjackSeatResult::PlayerWin;
+	Seats[0].Hands[1].LastResult = EBlackjackSeatResult::DealerWin;
+	Seats[0].LastResult = EBlackjackSeatResult::DealerWin; // The seat summary is only the final split hand.
+	Phase->GetUnderlyingProperty()->SetIntPropertyValue(Phase->ContainerPtrToValuePtr<void>(Table),
+		static_cast<int64>(EBlackjackRoundState::RoundComplete));
+	Table->OnTableChanged.Broadcast();
+	TestEqual(TEXT("First split hand keeps its own win"), OwnResults[0]->GetText().ToString(), FString(TEXT("승리")));
+	TestEqual(TEXT("Second split hand keeps its own loss"), OwnResults[1]->GetText().ToString(), FString(TEXT("패배")));
+	TestTrue(TEXT("Settled result does not intercept mouse input"),
+		OwnResults[0]->GetVisibility() == ESlateVisibility::HitTestInvisible);
+	for (UTextBlock* OwnResult : OwnResults)
+	{
+		for (UWidget* Parent = OwnResult->GetParent(); Parent; Parent = Parent->GetParent())
+		{
+			TestTrue(FString::Printf(TEXT("Settled own result's parent %s remains visible"), *Parent->GetName()),
+				Parent->GetVisibility() != ESlateVisibility::Collapsed && Parent->GetVisibility() != ESlateVisibility::Hidden);
+		}
+	}
+	UTextBlock* OwnScores[] = {
+		Cast<UTextBlock>(HUD->GetWidgetFromName(TEXT("Text_Hand1Value"))),
+		Cast<UTextBlock>(HUD->GetWidgetFromName(TEXT("Text_Hand2Value")))};
+	if (!TestNotNull(TEXT("First hand score"), OwnScores[0]) || !TestNotNull(TEXT("Second hand score"), OwnScores[1])) return false;
+	TestTrue(TEXT("First hand still displays its point value"), OwnScores[0]->GetText().ToString().Contains(TEXT("17")));
+	TestTrue(TEXT("Second hand still displays its point value"), OwnScores[1]->GetText().ToString().Contains(TEXT("20")));
+	Cards.Reset();
+	CollectCardWidgets(OwnPanels[0], CardClass, Cards);
+	CollectCardWidgets(OwnPanels[1], CardClass, Cards);
+	TestEqual(TEXT("Own split cards remain visible beside results"), Cards.Num(), 4);
+	const TPair<EBlackjackSeatResult, FString> ResultCases[] = {
+		{EBlackjackSeatResult::PlayerBlackjack, TEXT("블랙잭 승리")},
+		{EBlackjackSeatResult::PlayerBust, TEXT("버스트")},
+		{EBlackjackSeatResult::Push, TEXT("무승부")}};
+	for (const auto& ResultCase : ResultCases)
+	{
+		Seats[0].Hands[0].LastResult = ResultCase.Key;
+		Table->OnTableChanged.Broadcast();
+		TestEqual(TEXT("Own result displays the server's settled outcome"), OwnResults[0]->GetText().ToString(), ResultCase.Value);
+	}
+	Seats[0].Hands[0].Cards = {{EBlackjackSuit::Spades, EBlackjackRank::Ace}, {EBlackjackSuit::Hearts, EBlackjackRank::King}};
+	Seats[0].Hands[0].LastResult = EBlackjackSeatResult::None;
+	Table->OnTableChanged.Broadcast();
+	TestTrue(TEXT("Unsettled 21 does not invent a win"), OwnResults[0]->GetText().IsEmpty());
+	Seats[0].Hands.SetNum(1);
+	Table->OnTableChanged.Broadcast();
+	TestTrue(TEXT("Removed split hand clears its result"), OwnResults[1]->GetText().IsEmpty());
+	TestTrue(TEXT("Removed split hand collapses its result"), OwnResults[1]->GetVisibility() == ESlateVisibility::Collapsed);
+	Seats[0].Hands = {First, Second};
+	Seats[0].Hands[0].LastResult = EBlackjackSeatResult::PlayerWin;
+	Seats[0].Hands[1].LastResult = EBlackjackSeatResult::DealerWin;
+	const int32 OwnChildCounts[] = {OwnPanels[0]->GetChildrenCount(), OwnPanels[1]->GetChildrenCount()};
+	for (int32 Repeat = 0; Repeat < 3; ++Repeat) Table->OnTableChanged.Broadcast();
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		TestEqual(TEXT("Repeated results do not accumulate widgets"), OwnPanels[Index]->GetChildrenCount(), OwnChildCounts[Index]);
+		TestTrue(TEXT("Repeated results reuse the label"),
+			HUD->GetWidgetFromName(Index == 0 ? TEXT("BlackjackOwnHand1Result") : TEXT("BlackjackOwnHand2Result")) == OwnResults[Index]);
+	}
+
 	// A separate table snapshot drives the same RepNotify path used on a client.
 	// This checks UI parity without pretending to exercise network transport.
 	ABlackjackTableActor* Replica = World->SpawnActor<ABlackjackTableActor>();
 	Replica->DispatchBeginPlay();
 	const_cast<TArray<FBlackjackSeatState>&>(Replica->GetSeats()) = Seats;
+	Phase->GetUnderlyingProperty()->SetIntPropertyValue(Phase->ContainerPtrToValuePtr<void>(Replica),
+		static_cast<int64>(EBlackjackRoundState::RoundComplete));
 	FindFProperty<FObjectProperty>(HUDClass, TEXT("TableRef"))->SetObjectPropertyValue_InContainer(HUD, Replica);
 	FScriptDelegate RefreshDelegate;
 	RefreshDelegate.BindUFunction(HUD, TEXT("HandleBlackjackTableChanged"));
@@ -216,6 +291,8 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 	Rows = Cast<UScrollBox>(List->GetChildAt(0));
 	TestEqual(TEXT("Replicated snapshot displays all other seats"), Rows->GetChildrenCount(), 3);
 	TestTrue(TEXT("Replicated snapshot displays the split wager total"), HeaderAt(Rows, 0)->GetText().ToString().Contains(TEXT("300")));
+	TestEqual(TEXT("RepNotify refreshes the first own split result"), OwnResults[0]->GetText().ToString(), FString(TEXT("승리")));
+	TestEqual(TEXT("RepNotify refreshes the second own split result"), OwnResults[1]->GetText().ToString(), FString(TEXT("패배")));
 	const_cast<TArray<FBlackjackSeatState>&>(Replica->GetSeats())[3].Occupant = nullptr;
 	Replica->ProcessEvent(RepNotify, nullptr);
 	Rows = Cast<UScrollBox>(List->GetChildAt(0));
@@ -223,16 +300,35 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 	Cards.Reset();
 	CollectCardWidgets(Rows, CardClass, Cards);
 	TestEqual(TEXT("Replicated departure removes the departed player's cards"), Cards.Num(), 4);
+	const_cast<TArray<FBlackjackSeatState>&>(Replica->GetSeats())[0].Occupant = nullptr;
+	Replica->ProcessEvent(RepNotify, nullptr);
+	TestTrue(TEXT("Released local seat clears its first result"), OwnResults[0]->GetText().IsEmpty());
+	TestTrue(TEXT("Released local seat clears its second result"), OwnResults[1]->GetText().IsEmpty());
+	const_cast<TArray<FBlackjackSeatState>&>(Replica->GetSeats())[0].Occupant = Players[0];
+	Replica->ProcessEvent(RepNotify, nullptr);
 	Replica->ResetRound();
 	Rows = Cast<UScrollBox>(List->GetChildAt(0));
 	Cards.Reset();
 	CollectCardWidgets(Rows, CardClass, Cards);
 	TestEqual(TEXT("New round removes all old cards"), Cards.Num(), 0);
 	TestTrue(TEXT("New round resets the displayed wager"), HeaderAt(Rows, 0)->GetText().ToString().Contains(TEXT("0")));
+	for (UTextBlock* OwnResult : OwnResults)
+	{
+		TestTrue(TEXT("New round clears the own settled result"), OwnResult->GetText().IsEmpty());
+		TestTrue(TEXT("New round collapses the own settled result"), OwnResult->GetVisibility() == ESlateVisibility::Collapsed);
+	}
+	const_cast<TArray<FBlackjackSeatState>&>(Replica->GetSeats())[0].Hands = Seats[0].Hands;
+	Replica->ProcessEvent(RepNotify, nullptr);
+	TestFalse(TEXT("Own result is restored before context loss"), OwnResults[0]->GetText().IsEmpty());
 	TestFalse(TEXT("Missing table fails safely"),
 		UBlackjackUIBlueprintLibrary::RefreshOtherPlayers(HUD, nullptr, Players[0], List, Panel));
 	TestEqual(TEXT("Missing table clears old rows"), List->GetChildrenCount(), 0);
 	TestTrue(TEXT("Missing table collapses its panel"), Panel->GetVisibility() == ESlateVisibility::Collapsed);
+	for (UTextBlock* OwnResult : OwnResults)
+	{
+		TestTrue(TEXT("Lost table clears the own settled result"), OwnResult->GetText().IsEmpty());
+		TestTrue(TEXT("Lost table collapses the own settled result"), OwnResult->GetVisibility() == ESlateVisibility::Collapsed);
+	}
 	Controller->UIManager->CloseInteractionUI(HUD);
 	return true;
 }

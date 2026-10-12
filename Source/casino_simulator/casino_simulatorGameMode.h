@@ -30,6 +30,9 @@ public:
 	void StartRaceRound(ARaceManager* RaceManager);
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Race")
     bool bEnableDailyRaceEvent = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Race",
+        meta=(ClampMin="-1.0", Units="s", ToolTip="Seconds after active gameplay begins to start runner entry. Negative values keep the halfway-through-the-day schedule. Zero starts immediately. Values at or beyond the day duration skip the event."))
+    float RaceEventStartDelaySeconds = -1.f;
     // Set explicitly before day activation if the level contains multiple managers.
     UPROPERTY(Transient, BlueprintReadWrite, Category="Casino|Race")
     TObjectPtr<ARaceManager> RaceEventManager;

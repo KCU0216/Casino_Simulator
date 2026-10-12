@@ -150,7 +150,7 @@ bool FRaceEntranceFlowTest::RunTest(const FString& Parameters)
                 Stats.Age >= 55 + Bucket * 10 && Stats.Age <= 64 + Bucket * 10);
             TestTrue(TEXT("Young and old runners have valid positive odds"),
                 FMath::IsFinite(Stats.Odds) && Stats.Odds >= 1.8f);
-            if (Stats.Age < 60) TestEqual(TEXT("Under-60 odds use the floor"), Stats.Odds, 1.8f);
+            if (Stats.Age < 60) TestEqual(TEXT("Youngest age group uses fixed odds"), Stats.Odds, 4.2f);
         }
     }
     for (int32 Index = 1; Index < 6; ++Index)

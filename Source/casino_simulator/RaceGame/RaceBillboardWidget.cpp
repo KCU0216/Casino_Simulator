@@ -1,4 +1,4 @@
-#include "RaceBillboardWidget.h"
+﻿#include "RaceBillboardWidget.h"
 #include "RaceManager.h"
 #include "RaceRunner.h"
 #include "Components/Image.h"

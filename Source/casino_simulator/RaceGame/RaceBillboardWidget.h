@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -6,6 +6,7 @@
 #include "RaceBillboardWidget.generated.h"
 
 class ARaceManager;
+class ARaceRunner;
 
 // Presentation only: the Blueprint owns layout, capture selection, animation and timers.
 UCLASS(Abstract, Blueprintable)
@@ -25,6 +26,9 @@ public:
     // Check references with IsValid and refresh the displayed data here too.
     UFUNCTION(BlueprintImplementableEvent, Category="Race|Billboard")
     void OnRaceDataUpdated();
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Race|Awakening")
+    void BP_ShowAwakenRunner(ARaceRunner* Runner);
 
     void RefreshFromManager(ARaceManager* Manager);
 private:

@@ -10,6 +10,10 @@
 
 class USkeletalMeshComponent;
 class UAnimMontage;
+class UNiagaraSystem;
+class UNiagaraComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 UCLASS()
 class CASINO_SIMULATOR_API ARaceRunner : public AActor
@@ -29,6 +33,9 @@ public:
 	// 서버가 선택한 사진을 UI와 구매 시점의 마권에서 함께 사용한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Runner|Character")
 	TObjectPtr<UTexture2D> RunnerPortrait = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "Race|Awakening")
+    TObjectPtr<UTexture2D> RunnerAwakenImage = nullptr;
 
 	// 이번 판 주행 레시피. 서버가 입장 시작 때 세팅, 리플리케이트.
 	UPROPERTY(ReplicatedUsing = OnRep_RaceScript, BlueprintReadOnly, Category = "Race")
@@ -66,6 +73,11 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Race") void OnAwakenFX();
 	UFUNCTION(BlueprintImplementableEvent, Category = "Race") void OnStumbleFX();
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Race|Awakening")
+    TObjectPtr<UNiagaraSystem> AwakenBurstTemplate;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Race|Awakening")
+    TObjectPtr<UMaterialInterface> AwakenGlowMaterial;
+
 	UFUNCTION(BlueprintCallable, Category = "Race")	void SetRunnerName(const FString& NewName);
 
 protected:
@@ -89,6 +101,13 @@ protected:
 	void TickExiting();
 	void TickTransit(const FVector& From, const FVector& To, double StartServerTime, float Duration);
 	double GetServerTime() const;
+    void PlayAwakenEffect();
+    void ClearAwakenEffect();
+    void TickAwakenEffect(float DeltaSeconds);
+    UPROPERTY(Transient) TObjectPtr<UNiagaraComponent> AwakenBurst;
+    UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> AwakenGlow;
+    UPROPERTY(Transient) TObjectPtr<UMaterialInterface> PreviousOverlayMaterial;
+    float AwakenEffectRemaining = 0.f;
 
 	// 로컬 시뮬 상태 (복제 X — 서버·클라 각자 레시피로 계산)
 	float LocalTime = 0.f;

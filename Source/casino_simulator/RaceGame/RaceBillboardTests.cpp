@@ -85,6 +85,18 @@ bool FRaceBillboardFlowTest::RunTest(const FString& Parameters)
 
     auto* First = World->SpawnActor<ARaceRunner>();
     auto* Second = World->SpawnActor<ARaceRunner>();
+    const auto* AwakenImageProperty = FindFProperty<FObjectPropertyBase>(ARaceRunner::StaticClass(), TEXT("RunnerAwakenImage"));
+    if (!TestNotNull(TEXT("Runner exposes a separate awakening image"), AwakenImageProperty)) return false;
+    TestTrue(TEXT("Awakening image supports Blueprint get and set"),
+        AwakenImageProperty->HasAnyPropertyFlags(CPF_BlueprintVisible)
+        && !AwakenImageProperty->HasAnyPropertyFlags(CPF_BlueprintReadOnly));
+    TestTrue(TEXT("Awakening image is editable and replicated"),
+        AwakenImageProperty->HasAllPropertyFlags(CPF_Edit | CPF_Net));
+    First->RunnerPortrait = NewObject<UTexture2D>(World);
+    First->RunnerAwakenImage = NewObject<UTexture2D>(World);
+    TestTrue(TEXT("Awakening image does not replace the normal portrait"),
+        First->RunnerAwakenImage != First->RunnerPortrait);
+    TestNull(TEXT("Another runner keeps its own awakening image"), Second->RunnerAwakenImage.Get());
     Manager->Runners = { First, Second };
     TArray<UChildActorComponent*> RunnerChildActors;
     First->GetComponents(RunnerChildActors);
@@ -107,6 +119,50 @@ bool FRaceBillboardFlowTest::RunTest(const FString& Parameters)
     Manager->Phase = ERacePhase::Exiting;
     TestNull(TEXT("Live leader tracking stops outside racing"), Manager->GetLeadingRunner());
     TestTrue(TEXT("Final winner remains separately available"), Manager->GetWinner() == First);
+
+    Manager->Phase = ERacePhase::Racing;
+    Manager->NotifyRunnerAwakened(First);
+    TestTrue(TEXT("Manager stores the latest awakened runner"), Manager->AwakenRunner == First);
+    TestEqual(TEXT("Awakening invokes the Blueprint event once"), Replacement->AwakenCount, 1);
+    TestTrue(TEXT("Blueprint event receives the actual runner"), Replacement->LastAwakenRunner.Get() == First);
+    Manager->RefreshBillboard();
+    Manager->OnRep_AwakenRunner();
+    Manager->NotifyRunnerAwakened(First);
+    TestEqual(TEXT("Refreshes and duplicate notifications do not restart presentation"), Replacement->AwakenCount, 1);
+    Manager->NotifyRunnerAwakened(Second);
+    TestEqual(TEXT("A new awakening is delivered immediately without a display queue"), Replacement->AwakenCount, 2);
+    TestTrue(TEXT("New event carries the second runner"), Replacement->LastAwakenRunner.Get() == Second);
+    auto* Outsider = World->SpawnActor<ARaceRunner>();
+    Manager->NotifyRunnerAwakened(Outsider);
+    TestTrue(TEXT("Unregistered runners cannot replace the awakening"), Manager->AwakenRunner == Second);
+
+    auto* ClientManager = World->SpawnActor<ARaceManager>();
+    auto* ClientWidget = CreateWidget<URaceBillboardTestWidget>(World);
+    ClientManager->BillboardWidget->SetWidget(ClientWidget);
+    ClientManager->Phase = ERacePhase::Racing;
+    ClientManager->AwakenRunner = Second;
+    ClientManager->OnRep_AwakenRunner();
+    TestEqual(TEXT("Awaken reference waits for replicated lineup"), ClientWidget->AwakenCount, 0);
+    ClientManager->Runners = { First, Second };
+    ClientManager->OnRep_BillboardData();
+    TestEqual(TEXT("Client replication callback delivers the awakening"), ClientWidget->AwakenCount, 1);
+    TestTrue(TEXT("Client Blueprint receives the same runner"), ClientWidget->LastAwakenRunner.Get() == Second);
+    ClientManager->OnRep_AwakenRunner();
+    TestEqual(TEXT("Client refresh does not repeat the event"), ClientWidget->AwakenCount, 1);
+
+    auto* LateWidget = CreateWidget<URaceBillboardTestWidget>(World);
+    ClientManager->BillboardWidget->SetWidget(LateWidget);
+    ClientManager->RefreshBillboard();
+    TestEqual(TEXT("Late widget receives the latest awakening once"), LateWidget->AwakenCount, 1);
+    ClientManager->RefreshBillboard();
+    TestEqual(TEXT("Late widget does not restart on each tick"), LateWidget->AwakenCount, 1);
+    ClientManager->Phase = ERacePhase::Finished;
+    ClientManager->AwakenRunner = First;
+    ClientManager->OnRep_AwakenRunner();
+    TestEqual(TEXT("Late awakening does not show after racing"), LateWidget->AwakenCount, 1);
+    Manager->Phase = ERacePhase::Finished;
+    Manager->ResetRace();
+    TestNull(TEXT("Reset clears the previous awakened runner"), Manager->AwakenRunner.Get());
     return true;
 }
 
