@@ -1244,3 +1244,116 @@ void Acasino_simulatorPlayerController::ClientBailPaymentFailed_Implementation(
 	}
 
 }
+void Acasino_simulatorPlayerController::ClientOpenBailPayment_Implementation(
+	ABailATM* ATM)
+{
+	if (!IsLocalController()
+		|| !IsCasinoGameplayAllowed(this)
+		|| IsPoliceCinematicActive()
+		|| IsAnyGameplayUIOpen()
+		|| !IsValid(UIManager)
+		|| !IsValid(ATM)
+		|| ATM->GetWorld() != GetWorld())
+	{
+		return;
+	}
+
+	auto* BailPlayerCharacter =
+		Cast<Acasino_simulatorCharacter>(GetPawn());
+
+	if (!IsValid(BailPlayerCharacter)
+		|| !ATM->CanInteract(BailPlayerCharacter))
+	{
+		return;
+	}
+
+	OnBailPaymentRequested(ATM);
+}
+
+int64 Acasino_simulatorPlayerController::CreateBailPaymentRequestId()
+{
+	if (!IsLocalController()
+		|| NextBailPaymentRequestId >= MAX_int64)
+	{
+		return 0;
+	}
+
+	return ++NextBailPaymentRequestId;
+}
+
+void Acasino_simulatorPlayerController::ServerSubmitBailPayment_Implementation(
+	ABailATM* ATM,
+	float RequestedAmount,
+	int32 PaymentDay,
+	int64 RequestId)
+{
+	EBailPaymentResult PaymentResult = EBailPaymentResult::Unavailable;
+
+	float ActualPaidAmount = 0.0f;
+	float RemainingAmount = 0.0f;
+
+	if (HasAuthority()
+		&& RequestId > 0
+		&& RequestId > LastProcessedBailPaymentRequestId)
+	{
+		// 실패한 요청도 처리한 번호로 기록합니다.
+		// 다시 시도할 때는 새로운 번호를 사용합니다.
+		LastProcessedBailPaymentRequestId = RequestId;
+
+		UWorld* BailWorld = GetWorld();
+
+		const auto* BailGameState = BailWorld
+			? BailWorld->GetGameState<ACasinoLoopGameState>()
+			: nullptr;
+
+		auto* BailPlayerCharacter =
+			Cast<Acasino_simulatorCharacter>(GetPawn());
+
+		if (BailGameState
+			&& BailGameState->LoopStatus.Phase == ECasinoLoopPhase::Playing
+			&& BailGameState->LoopStatus.CurrentDay == PaymentDay
+			&& !IsPoliceCinematicActive()
+			&& IsValid(BailPlayerCharacter)
+			&& IsValid(ATM)
+			&& ATM->GetWorld() == BailWorld)
+		{
+			PaymentResult = ATM->SubmitBailPayment(
+				BailPlayerCharacter,
+				RequestedAmount,
+				ActualPaidAmount);
+
+			RemainingAmount = ATM->GetRemainingBailAmount();
+		}
+	}
+
+	// 성공·실패 모두 응답합니다.
+	ClientBailPaymentResult(
+		ATM,
+		PaymentDay,
+		RequestId,
+		PaymentResult,
+		ActualPaidAmount,
+		RemainingAmount);
+}
+
+void Acasino_simulatorPlayerController::ClientBailPaymentResult_Implementation(
+	ABailATM* ATM,
+	int32 PaymentDay,
+	int64 RequestId,
+	EBailPaymentResult Result,
+	float PaidAmount,
+	float RemainingAmount)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	OnBailPaymentResult(
+		ATM,
+		PaymentDay,
+		RequestId,
+		Result,
+		PaidAmount,
+		RemainingAmount);
+}
