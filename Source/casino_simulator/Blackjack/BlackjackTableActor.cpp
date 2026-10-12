@@ -261,9 +261,20 @@ bool ABlackjackTableActor::CanLeaveSeat(Acasino_simulatorCharacter* Player) cons
 	return !IsSeatLockedForCurrentRound(Seats[SeatIndex]);
 }
 
+bool ABlackjackTableActor::CanToggleLeaveAfterRound(Acasino_simulatorCharacter* Player) const
+{
+	if (!IsValid(Player))
+	{
+		return false;
+	}
+
+	const FBlackjackSeatState* Seat = FindSeatForPlayer(Player);
+	return Seat && (Seat->bLeaveAfterRound || IsSeatLockedForCurrentRound(*Seat));
+}
+
 bool ABlackjackTableActor::ToggleLeaveAfterRound(Acasino_simulatorCharacter* Player)
 {
-	if (!HasAuthority() || !Player || CanLeaveSeat(Player))
+	if (!HasAuthority() || !CanToggleLeaveAfterRound(Player))
 	{
 		return false;
 	}

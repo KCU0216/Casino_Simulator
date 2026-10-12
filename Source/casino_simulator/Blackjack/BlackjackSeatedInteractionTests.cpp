@@ -7,9 +7,12 @@
 #include "Blackjack/BlackjackTableActor.h"
 #include "Blackjack/BlackjackTableInteractionActor.h"
 #include "AbilitySystemComponent.h"
+#include "Blueprint/UserWidget.h"
 #include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/Button.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/TextBlock.h"
 #include "Engine/Engine.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
@@ -230,6 +233,9 @@ bool FBlackjackSeatViewLifecycleTest::RunTest(const FString& Parameters)
 		Controllers[Index]->Player = NewObject<ULocalPlayer>(GEngine);
 		Controllers[Index]->Player->PlayerController = Controllers[Index];
 		Controllers[Index]->SetAsLocalPlayerController();
+		// UMG resolves its owner through the world's controller list, normally
+		// populated by PostInitializeComponents in a fully initialized game world.
+		World->AddController(Controllers[Index]);
 		Controllers[Index]->UIScreen = ECasinoUIScreen::Playing;
 		Controllers[Index]->UIManager->UIScreen = ECasinoUIScreen::Playing;
 		// Isolated worlds skip controller PostInitializeComponents; explicitly create
@@ -300,6 +306,111 @@ bool FBlackjackSeatViewLifecycleTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Managed widget cleanup preserves the seat camera"), Controllers[0]->GetViewTarget() == Seats[0]);
 	TestTrue(TEXT("Managed cleanup removes only UI-owned look locks"), Controllers[0]->IsLookInputIgnored());
 	TestFalse(TEXT("Managed widget cleanup cannot expose the seated body"), Players[0]->GetFirstPersonMesh()->IsVisible());
+
+	// Exercise the shipped Blueprint cancel path, not just the manager API. Hiding
+	// its keypad alone previously left the HUD registered and prevented another E.
+	UClass* BettingWidgetClass = LoadClass<UUserWidget>(nullptr,
+		TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackHUD.WBP_BlackjackHUD_C"));
+	if (!TestNotNull(TEXT("Playable betting widget class"), BettingWidgetClass)) { return false; }
+	UUserWidget* BettingWidget = CreateWidget<UUserWidget>(Controllers[0], BettingWidgetClass);
+	if (!TestNotNull(TEXT("Playable betting widget"), BettingWidget)) { return false; }
+	for (const auto& Reference : TArray<TPair<FName, UObject*>>{
+		{TEXT("Player"), Players[0]}, {TEXT("BlackjackComponent"), Component}, {TEXT("TableRef"), Table}})
+	{
+		FObjectProperty* Property = FindFProperty<FObjectProperty>(BettingWidgetClass, Reference.Key);
+		if (!TestNotNull(TEXT("Betting widget context property"), Property)) { return false; }
+		Property->SetObjectPropertyValue_InContainer(BettingWidget, Reference.Value);
+	}
+	UFunction* OpenKeypad = BettingWidget->FindFunction(TEXT("OpenBetKeypad"));
+	UFunction* CancelKeypad = BettingWidget->FindFunction(TEXT("CancelBetKeypad"));
+	UFunction* ConfirmBet = BettingWidget->FindFunction(TEXT("ConfirmBet"));
+	FBoolProperty* PendingProperty = FindFProperty<FBoolProperty>(BettingWidgetClass, TEXT("bActionPending"));
+	if (!TestNotNull(TEXT("Blueprint keypad open function"), OpenKeypad)
+		|| !TestNotNull(TEXT("Blueprint keypad cancel function"), CancelKeypad)
+		|| !TestNotNull(TEXT("Blueprint bet confirmation function"), ConfirmBet)
+		|| !TestNotNull(TEXT("Pending request property"), PendingProperty)) { return false; }
+	if (!TestEqual(TEXT("Keypad open has no parameters"), OpenKeypad->ParmsSize, uint16(0))
+		|| !TestEqual(TEXT("Keypad cancel has no parameters"), CancelKeypad->ParmsSize, uint16(0))
+		|| !TestEqual(TEXT("ConfirmBet has one integer parameter"), ConfirmBet->ParmsSize, uint16(sizeof(int32)))) { return false; }
+	ABlackjackTableInteractionActor* BettingTarget = World->SpawnActor<ABlackjackTableInteractionActor>();
+	if (!TestNotNull(TEXT("Seat betting target"), BettingTarget)) { return false; }
+	BettingTarget->AttachToActor(Table, FAttachmentTransformRules::KeepWorldTransform);
+	BettingTarget->DispatchBeginPlay();
+	const float BalanceBeforeCancel = Players[0]->GetCurrency();
+	for (int32 Attempt = 0; Attempt < 3; ++Attempt)
+	{
+		TestTrue(TEXT("Same betting HUD can reopen while still seated"),
+			Controllers[0]->UIManager->ShowInteractionUI(BettingWidget));
+		BettingWidget->TakeWidget(); // NullRHI has no viewport render to construct it.
+		BettingWidget->ProcessEvent(OpenKeypad, nullptr);
+		TestTrue(TEXT("Open keypad blocks competing gameplay UI"), Controllers[0]->IsInteractionUIOpen());
+		BettingWidget->ProcessEvent(CancelKeypad, nullptr);
+		TestFalse(TEXT("Blueprint cancel clears the managed UI-open flag"), Controllers[0]->IsAnyGameplayUIOpen());
+		TestFalse(TEXT("Blueprint cancel hides the cursor"), Controllers[0]->bShowMouseCursor);
+		TestTrue(TEXT("Blueprint cancel removes the HUD from its parent"), BettingWidget->GetParent() == nullptr);
+		TestEqual(TEXT("Cancelling before submission preserves the balance"), Players[0]->GetCurrency(), BalanceBeforeCancel);
+		TestEqual(TEXT("Cancelling preserves the occupied seat"), Table->GetSeatIndexForPlayer(Players[0]), 0);
+		TestTrue(TEXT("Cancelling preserves the assigned camera"), Controllers[0]->GetViewTarget() == Seats[0]);
+		TestTrue(TEXT("Cancelling preserves the seated look lock"), Controllers[0]->IsLookInputIgnored());
+		TestTrue(TEXT("E can resolve the same betting target after cancel"),
+			Table->GetBettingInteractionTarget(Players[0]) == BettingTarget);
+	}
+	for (int32 Attempt = 0; Attempt < 3; ++Attempt)
+	{
+		TestTrue(TEXT("Betting HUD can reopen after zero confirmation"),
+			Controllers[0]->UIManager->ShowInteractionUI(BettingWidget));
+		BettingWidget->TakeWidget();
+		BettingWidget->ProcessEvent(OpenKeypad, nullptr);
+		int32 ZeroAmount = 0;
+		BettingWidget->ProcessEvent(ConfirmBet, &ZeroAmount);
+		TestFalse(TEXT("Zero OK clears the managed UI-open flag like X"), Controllers[0]->IsAnyGameplayUIOpen());
+		TestFalse(TEXT("Zero OK hides the cursor like X"), Controllers[0]->bShowMouseCursor);
+		TestTrue(TEXT("Zero OK removes the whole HUD including amount and X"), BettingWidget->GetParent() == nullptr);
+		TestFalse(TEXT("Zero OK cannot leave a pending betting request"),
+			PendingProperty->GetPropertyValue_InContainer(BettingWidget));
+		TestEqual(TEXT("Zero OK cannot deduct money"), Players[0]->GetCurrency(), BalanceBeforeCancel);
+		TestEqual(TEXT("Zero OK preserves the occupied seat"), Table->GetSeatIndexForPlayer(Players[0]), 0);
+		TestTrue(TEXT("Zero OK preserves the assigned seat camera"), Controllers[0]->GetViewTarget() == Seats[0]);
+		TestTrue(TEXT("Zero OK preserves the seated look lock"), Controllers[0]->IsLookInputIgnored());
+		TestTrue(TEXT("Zero OK leaves the same E betting target available"),
+			Table->GetBettingInteractionTarget(Players[0]) == BettingTarget);
+	}
+
+	TestTrue(TEXT("Result controls can reopen the same HUD"), Controllers[0]->UIManager->ShowInteractionUI(BettingWidget));
+	UButton* LeaveButton = Cast<UButton>(BettingWidget->GetWidgetFromName(TEXT("LeaveButton")));
+	UTextBlock* LeaveText = Cast<UTextBlock>(BettingWidget->GetWidgetFromName(TEXT("TextBlock_221")));
+	FEnumProperty* RoundProperty = FindFProperty<FEnumProperty>(Table->GetClass(), TEXT("RoundState"));
+	if (!TestNotNull(TEXT("Leave button"), LeaveButton) || !TestNotNull(TEXT("Leave label"), LeaveText)
+		|| !TestNotNull(TEXT("Round state property"), RoundProperty)) { return false; }
+	BettingWidget->ProcessEvent(OpenKeypad, nullptr);
+	int32 PositiveAmount = 100;
+	BettingWidget->ProcessEvent(ConfirmBet, &PositiveAmount);
+	TestEqual(TEXT("Positive OK still commits and deducts the wager"), Players[0]->GetCurrency(), BalanceBeforeCancel - 100.0f);
+	TestFalse(TEXT("Positive OK still blocks a duplicate wager"), Table->CanOpenBetting(Players[0]));
+	TestFalse(TEXT("Positive OK response clears the pending state"),
+		PendingProperty->GetPropertyValue_InContainer(BettingWidget));
+	LeaveButton->OnClicked.Broadcast();
+	TestTrue(TEXT("Blueprint leave button reserves exit"), Component->IsLeaveAfterRoundRequested());
+	TestFalse(TEXT("Reservation response clears the Blueprint pending state"),
+		PendingProperty->GetPropertyValue_InContainer(BettingWidget));
+	TestTrue(TEXT("Reservation can be cancelled without reopening the HUD"), LeaveButton->GetIsEnabled());
+	RoundProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+		RoundProperty->ContainerPtrToValuePtr<void>(Table), static_cast<int64>(EBlackjackRoundState::RoundComplete));
+	Table->OnTableChanged.Broadcast();
+	TestTrue(TEXT("Result screen retains an enabled cancel button"), LeaveButton->GetIsEnabled());
+	LeaveButton->OnClicked.Broadcast();
+	TestFalse(TEXT("Blueprint result button cancels the reservation"), Component->IsLeaveAfterRoundRequested());
+	TestEqual(TEXT("Cancelling on the result screen keeps the seat"), Table->GetSeatIndexForPlayer(Players[0]), 0);
+	TestTrue(TEXT("Completed result offers normal exit"), LeaveButton->GetIsEnabled());
+	TestEqual(TEXT("Completed result uses the normal exit label"), LeaveText->GetText().ToString(), FString(TEXT("\uB098\uAC00\uAE30")));
+	const bool bExitWaitsForAnimation = Component->OnBlackjackSeatExitRequested.IsBound();
+	LeaveButton->OnClicked.Broadcast();
+	TestFalse(TEXT("Normal exit does not wait for a betting response"),
+		PendingProperty->GetPropertyValue_InContainer(BettingWidget));
+	if (!bExitWaitsForAnimation)
+	{
+		TestFalse(TEXT("Normal exit releases the seat without an animation delegate"), Component->IsInBlackjackSeat());
+	}
 
 	Component->CompleteExitBlackjackSeat();
 	TestFalse(TEXT("Completed exit releases the local seat view"), Component->HasLocalSeatView());

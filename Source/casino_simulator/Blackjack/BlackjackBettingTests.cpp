@@ -103,6 +103,9 @@ bool FBlackjackBettingTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Availability rejects unaffordable bet"), Table->CanPlaceBet(Players[0], 100000000));
 	TestFalse(TEXT("Rejected bets do not start countdown"), Table->IsBettingCountdownActive());
 
+	TestFalse(TEXT("Idle seat cannot create leave reservation"), Table->CanToggleLeaveAfterRound(Players[0]));
+	TestFalse(TEXT("Idle leave reservation rejected"), Table->ToggleLeaveAfterRound(Players[0]));
+
 	const float BeforeBet = Players[0]->GetCurrency();
 	TestTrue(TEXT("First bet accepted"), Table->PlaceBet(Players[0], 100));
 	TestFalse(TEXT("Bettor cannot reopen keypad"), Table->CanOpenBetting(Players[0]));
@@ -268,8 +271,26 @@ bool FBlackjackBettingTest::RunTest(const FString& Parameters)
 	PrepareTurn();
 	SplitSeat.Hands.Add(MakeHand({EBlackjackRank::Ten, EBlackjackRank::Ten}));
 	SetDraws({EBlackjackRank::Ten, EBlackjackRank::Ten, EBlackjackRank::Ten, EBlackjackRank::Ace});
+	TestFalse(TEXT("Active bettor cannot leave immediately"), Table->CanLeaveSeat(Players[0]));
+	TestTrue(TEXT("Active bettor can toggle leave reservation"), Table->CanToggleLeaveAfterRound(Players[0]));
+	TestTrue(TEXT("Active bettor reserves leaving"), Table->ToggleLeaveAfterRound(Players[0]));
+	TestTrue(TEXT("Active leave reservation recorded"), Table->IsLeaveAfterRoundRequested(Players[0]));
+	TestTrue(TEXT("Active bettor cancels leave reservation"), Table->ToggleLeaveAfterRound(Players[0]));
+	TestFalse(TEXT("Active leave cancellation recorded"), Table->IsLeaveAfterRoundRequested(Players[0]));
+	TestTrue(TEXT("Reserve leaving before final hand completes"), Table->ToggleLeaveAfterRound(Players[0]));
 	TestTrue(TEXT("Last player hits to 21"), Table->PlayerHit(Players[0]));
 	TestTrue(TEXT("Last hand 21 runs dealer and resolves"), Table->GetRoundState() == EBlackjackRoundState::RoundComplete);
+	TestTrue(TEXT("Completed round permits immediate exit"), Table->CanLeaveSeat(Players[0]));
+	TestTrue(TEXT("Completed reservation remains cancellable"), Table->CanToggleLeaveAfterRound(Players[0]));
+	TestTrue(TEXT("Cancel reservation after round completes"), Table->ToggleLeaveAfterRound(Players[0]));
+	TestFalse(TEXT("Completed leave cancellation recorded"), Table->IsLeaveAfterRoundRequested(Players[0]));
+	TestEqual(TEXT("Cancelled reservation does not release a seat"), Table->ReleaseSeatsLeavingAfterRound(), 0);
+	TestEqual(TEXT("Cancelling completed reservation keeps player seated"), Table->GetSeatIndexForPlayer(Players[0]), 0);
+	TestFalse(TEXT("Completed seat cannot create a fresh reservation"), Table->CanToggleLeaveAfterRound(Players[0]));
+	TestFalse(TEXT("Fresh completed reservation rejected"), Table->ToggleLeaveAfterRound(Players[0]));
+	TestFalse(TEXT("Unseated player cannot toggle leave reservation"), Table->CanToggleLeaveAfterRound(Players[2]));
+	TestFalse(TEXT("Unseated leave reservation rejected"), Table->ToggleLeaveAfterRound(Players[2]));
+	TestFalse(TEXT("Null player cannot toggle leave reservation"), Table->CanToggleLeaveAfterRound(nullptr));
 
 	auto StartInsuranceRound = [&](float FirstBalance, float SecondBalance, EBlackjackRank HoleCard, int32 Bet = 100)
 	{

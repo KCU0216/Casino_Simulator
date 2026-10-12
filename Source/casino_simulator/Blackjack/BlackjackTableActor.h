@@ -83,6 +83,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
 	bool CanLeaveSeat(Acasino_simulatorCharacter* Player) const;
 
+	/** New reservations require a locked seat; existing ones can be cancelled until release. */
+	UFUNCTION(BlueprintPure, Category="Blackjack|Seats")
+	bool CanToggleLeaveAfterRound(Acasino_simulatorCharacter* Player) const;
+
 	UFUNCTION(BlueprintCallable, Category="Blackjack|Seats")
 	bool ToggleLeaveAfterRound(Acasino_simulatorCharacter* Player);
 
