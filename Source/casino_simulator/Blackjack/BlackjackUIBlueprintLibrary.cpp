@@ -110,9 +110,9 @@ namespace
 		return LOCTEXT("OtherPlayerFallback", "플레이어");
 	}
 
-	FText GetHandStatus(ABlackjackTableActor* Table, const FBlackjackHand& Hand, bool bCurrentTurn)
+	FText GetSettledHandResult(EBlackjackSeatResult Result)
 	{
-		switch (Hand.LastResult)
+		switch (Result)
 		{
 		case EBlackjackSeatResult::PlayerWin:
 			return LOCTEXT("HandPlayerWin", "승리");
@@ -127,6 +127,80 @@ namespace
 		case EBlackjackSeatResult::None:
 		default:
 			break;
+		}
+		return FText::GetEmpty();
+	}
+
+	void RefreshOwnHandResults(UUserWidget* HUD, ABlackjackTableActor* Table, AActor* LocalPlayer)
+	{
+		if (!IsValid(HUD) || !IsValid(HUD->WidgetTree))
+		{
+			return;
+		}
+
+		EBlackjackSeatResult Results[2] = {EBlackjackSeatResult::None, EBlackjackSeatResult::None};
+		if (IsValid(Table) && IsValid(LocalPlayer))
+		{
+			for (const FBlackjackSeatState& Seat : Table->GetSeats())
+			{
+				if (Seat.Occupant != LocalPlayer)
+				{
+					continue;
+				}
+				for (int32 HandIndex = 0; HandIndex < UE_ARRAY_COUNT(Results); ++HandIndex)
+				{
+					if (Seat.Hands.IsValidIndex(HandIndex))
+					{
+						Results[HandIndex] = Seat.Hands[HandIndex].LastResult;
+					}
+				}
+				break;
+			}
+		}
+
+		const FName PanelNames[] = {TEXT("Hand1Panel"), TEXT("Hand2Panel")};
+		const FName ScoreNames[] = {TEXT("Text_Hand1Value"), TEXT("Text_Hand2Value")};
+		const FName ResultNames[] = {TEXT("BlackjackOwnHand1Result"), TEXT("BlackjackOwnHand2Result")};
+		for (int32 HandIndex = 0; HandIndex < UE_ARRAY_COUNT(Results); ++HandIndex)
+		{
+			UVerticalBox* HandPanel = Cast<UVerticalBox>(HUD->GetWidgetFromName(PanelNames[HandIndex]));
+			if (!IsValid(HandPanel))
+			{
+				continue;
+			}
+
+			UWidget* ExistingResult = HUD->GetWidgetFromName(ResultNames[HandIndex]);
+			UTextBlock* ResultLabel = Cast<UTextBlock>(ExistingResult);
+			if (ExistingResult && !ResultLabel)
+			{
+				continue;
+			}
+			if (!ResultLabel)
+			{
+				ResultLabel = HUD->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), ResultNames[HandIndex]);
+				UVerticalBoxSlot* Slot = HandPanel->AddChildToVerticalBox(ResultLabel);
+				Slot->SetPadding(FMargin(0.0f, 2.0f, 0.0f, 0.0f));
+				Slot->SetHorizontalAlignment(HAlign_Fill);
+				ResultLabel->SetAutoWrapText(true);
+			}
+			if (UTextBlock* ScoreLabel = Cast<UTextBlock>(HUD->GetWidgetFromName(ScoreNames[HandIndex])))
+			{
+				ResultLabel->SetFont(ScoreLabel->GetFont());
+				ResultLabel->SetColorAndOpacity(ScoreLabel->GetColorAndOpacity());
+			}
+
+			const FText Result = GetSettledHandResult(Results[HandIndex]);
+			ResultLabel->SetText(Result);
+			ResultLabel->SetVisibility(Result.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+		}
+	}
+
+	FText GetHandStatus(ABlackjackTableActor* Table, const FBlackjackHand& Hand, bool bCurrentTurn)
+	{
+		const FText Result = GetSettledHandResult(Hand.LastResult);
+		if (!Result.IsEmpty())
+		{
+			return Result;
 		}
 		if (Hand.Cards.ContainsByPredicate([](const FBlackjackCard& Card) { return !Card.bFaceUp; }))
 		{
@@ -151,6 +225,8 @@ namespace
 bool UBlackjackUIBlueprintLibrary::RefreshOtherPlayers(UUserWidget* BlackjackHUD, ABlackjackTableActor* Table,
 	AActor* LocalPlayer, UVerticalBox* OtherPlayersList, UBorder* OtherPlayersPanel)
 {
+	RefreshOwnHandResults(BlackjackHUD, Table, LocalPlayer);
+
 	// Clear first so a released seat or lost table reference cannot leave stale cards.
 	float PreviousScrollOffset = 0.0f;
 	if (IsValid(OtherPlayersList))
