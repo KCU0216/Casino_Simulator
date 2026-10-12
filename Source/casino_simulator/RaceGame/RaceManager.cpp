@@ -79,6 +79,7 @@ void ARaceManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ARaceManager, Tickets);
 	DOREPLIFETIME(ARaceManager, CurrentRoundNumber);
 	DOREPLIFETIME(ARaceManager, Runners);
+    DOREPLIFETIME(ARaceManager, AwakenRunner);
     DOREPLIFETIME(ARaceManager, BettingStartServerTime);
     DOREPLIFETIME(ARaceManager, BettingDuration);
 }
@@ -163,6 +164,7 @@ void ARaceManager::StartNewRound()
 	
 	for (ARaceRunner* R : Runners) { if (R) R->Destroy(); }
 	Runners.Reset();
+	AwakenRunner = nullptr;
 	WinnerIndex = -1;
 	FinishOrder.Reset();
 	RaceElapsed = 0.f;
@@ -180,6 +182,7 @@ void ARaceManager::StartNewRound()
 	ExitDuration = FMath::Max(0.f, ExitDistance) / FMath::Max(1.f, TransitSpeed);
 
 	FActorSpawnParameters SP;
+	SP.Owner = this;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	// 매 라운드 이름 목록을 섞고, 스폰된 러너에게 순서대로 배정한다.
@@ -330,6 +333,7 @@ void ARaceManager::BeginBetting()
 void ARaceManager::Exiting()
 {
 	if (!HasAuthority() || Phase != ERacePhase::Racing || !bResultBroadcast) return;
+	AwakenRunner = nullptr;
 	ExitStartServerTime = GetServerTime();
 	for (ARaceRunner* Runner : Runners)
 	{
@@ -361,6 +365,7 @@ void ARaceManager::FinishExiting()
 void ARaceManager::ResetRace()
 {
 	if (!HasAuthority() || Phase != ERacePhase::Finished) return;
+	AwakenRunner = nullptr;
 
 	for (ARaceRunner* R : Runners)
 	{
@@ -399,13 +404,41 @@ void ARaceManager::RefreshBillboard()
 {
     if (GetNetMode() == NM_DedicatedServer || !BillboardWidget) return;
     BillboardWidget->InitWidget();
-    if (auto* Widget = GetBillboardWidget()) Widget->RefreshFromManager(this);
+    auto* Widget = GetBillboardWidget();
+    if (!Widget) return;
+    Widget->RefreshFromManager(this);
+    if (Phase != ERacePhase::Racing || !IsValid(AwakenRunner))
+    {
+        LastAwakenWidget.Reset();
+        LastShownAwakenRunner.Reset();
+        return;
+    }
+    // References and Phase may arrive separately; retry until the lineup is ready.
+    if (!Runners.Contains(AwakenRunner.Get())) return;
+    if (LastAwakenWidget.Get() == Widget && LastShownAwakenRunner.Get() == AwakenRunner.Get()) return;
+    LastAwakenWidget = Widget;
+    LastShownAwakenRunner = AwakenRunner;
+    Widget->BP_ShowAwakenRunner(AwakenRunner);
 }
 
 void ARaceManager::OnRep_BillboardData()
 {
     RefreshBillboard();
     if (auto* Widget = GetBillboardWidget()) Widget->OnRaceDataUpdated();
+}
+
+void ARaceManager::NotifyRunnerAwakened(ARaceRunner* Runner)
+{
+    if (!HasAuthority() || Phase != ERacePhase::Racing || !IsValid(Runner)) return;
+    if (!Runners.Contains(Runner) || AwakenRunner == Runner) return;
+    AwakenRunner = Runner;
+    OnRep_AwakenRunner();
+    ForceNetUpdate();
+}
+
+void ARaceManager::OnRep_AwakenRunner()
+{
+    RefreshBillboard();
 }
 
 URaceBillboardWidget* ARaceManager::GetBillboardWidget() const

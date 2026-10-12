@@ -5,6 +5,12 @@
 #include "GameFramework/GameStateBase.h"
 #include "Engine/World.h"
 #include "Engine/Texture2D.h"
+#include "RaceManager.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "UObject/ConstructorHelpers.h"
 
 ARaceRunner::ARaceRunner()
 {
@@ -18,6 +24,12 @@ ARaceRunner::ARaceRunner()
 	Skin = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Skin"));
 	Skin->SetupAttachment(SceneRoot);
     Skin->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    static ConstructorHelpers::FObjectFinder<UNiagaraSystem> BurstAsset(
+        TEXT("/Game/KCU/HorseRacing/FX/NS_RunnerAwakenBurst.NS_RunnerAwakenBurst"));
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> GlowAsset(
+        TEXT("/Game/KCU/HorseRacing/FX/M_RunnerAwakenGlow.M_RunnerAwakenGlow"));
+    AwakenBurstTemplate = BurstAsset.Object;
+    AwakenGlowMaterial = GlowAsset.Object;
 }
 
 void ARaceRunner::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -25,6 +37,7 @@ void ARaceRunner::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ARaceRunner, Stats);
 	DOREPLIFETIME(ARaceRunner, RunnerPortrait);
+    DOREPLIFETIME(ARaceRunner, RunnerAwakenImage);
 	DOREPLIFETIME(ARaceRunner, RaceScript);
 	DOREPLIFETIME(ARaceRunner, bRacing);
 	DOREPLIFETIME(ARaceRunner, bIsEntering);
@@ -104,6 +117,7 @@ void ARaceRunner::ServerSetExiting(bool bNew, double StartServerTime)
 
 void ARaceRunner::ResetVisual()
 {
+	ClearAwakenEffect();
 	LocalTime = 0.f;
 	PosUnits = 0.f;
 	bAwakenedLocal = false;
@@ -171,6 +185,7 @@ void ARaceRunner::OnRep_Stats() { OnStatsUpdated(); }
 void ARaceRunner::Tick(float Dt)
 {
 	Super::Tick(Dt);
+    TickAwakenEffect(Dt);
 	if (!bHasRaceScript) return;
 	if (LocalMovementPhase == ERacePhase::Entering && bIsEntering) TickEntering();
 	else if (LocalMovementPhase == ERacePhase::Racing && bRacing) TickRacing();
@@ -209,6 +224,7 @@ void ARaceRunner::TickRacing()
 	if (!bIsRunning || RaceScript.RaceStartServerTime < 0.0) return;
 	const float Elapsed = FMath::Max(0.f, static_cast<float>(GetServerTime() - RaceScript.RaceStartServerTime));
 	constexpr float Step = 1.f / 120.f;
+    bool bPlayAwakenEffect = false;
 	// Match the manager's fixed-step finish simulation, including late replication.
 	while (LocalTime + Step <= Elapsed && PosUnits < RaceScript.TrackLength)
 	{
@@ -216,7 +232,10 @@ void ARaceRunner::TickRacing()
 		if (RaceScript.bWillAwaken && !bAwakenedLocal && PosUnits >= RaceScript.AwakenAtPos)
 		{
 			bAwakenedLocal = true;
-			OnAwakenFX();
+            if (HasAuthority())
+                if (auto* Manager = Cast<ARaceManager>(GetOwner())) Manager->NotifyRunnerAwakened(this);
+            // Don't replay old visual bursts when catching up after late replication.
+            bPlayAwakenEffect = Elapsed - LocalTime < 0.5f;
 		}
 		// 장애물 (각성 안 했을 때만)
 		if (!bAwakenedLocal && RaceScript.bWillStumble && !bStumbledLocal && PosUnits >= RaceScript.StumbleAtPos)
@@ -239,4 +258,52 @@ void ARaceRunner::TickRacing()
 	}
 
 	SetActorLocation(RaceScript.StartLoc + RaceScript.Dir * PosUnits);
+    if (bPlayAwakenEffect)
+    {
+        PlayAwakenEffect();
+        OnAwakenFX();
+    }
+}
+
+void ARaceRunner::PlayAwakenEffect()
+{
+    if (GetNetMode() == NM_DedicatedServer) return;
+    ClearAwakenEffect();
+    AwakenEffectRemaining = 2.f;
+    if (AwakenBurstTemplate)
+    {
+        AwakenBurst = UNiagaraFunctionLibrary::SpawnSystemAttached(AwakenBurstTemplate,
+            SceneRoot, NAME_None, FVector(0.f, 0.f, 20.f), FRotator::ZeroRotator,
+            FVector(0.6f), EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::None, true, false);
+    }
+    if (Skin && AwakenGlowMaterial)
+    {
+        PreviousOverlayMaterial = Skin->GetOverlayMaterial();
+        AwakenGlow = UMaterialInstanceDynamic::Create(AwakenGlowMaterial, this);
+        Skin->SetOverlayMaterial(AwakenGlow);
+    }
+}
+
+void ARaceRunner::TickAwakenEffect(float DeltaSeconds)
+{
+    if (AwakenEffectRemaining <= 0.f) return;
+    AwakenEffectRemaining = FMath::Max(0.f, AwakenEffectRemaining - DeltaSeconds);
+    if (AwakenGlow)
+    {
+        const float Fade = FMath::Clamp(AwakenEffectRemaining / 0.5f, 0.f, 1.f);
+        const float Pulse = 0.25f + 0.1f * FMath::Sin(AwakenEffectRemaining * 18.f);
+        AwakenGlow->SetScalarParameterValue(TEXT("GlowStrength"), Fade * Pulse);
+    }
+    if (AwakenEffectRemaining <= 0.f) ClearAwakenEffect();
+}
+
+void ARaceRunner::ClearAwakenEffect()
+{
+    if (Skin && AwakenGlow && Skin->GetOverlayMaterial() == AwakenGlow)
+        Skin->SetOverlayMaterial(PreviousOverlayMaterial);
+    if (IsValid(AwakenBurst)) AwakenBurst->DestroyComponent();
+    AwakenBurst = nullptr;
+    AwakenGlow = nullptr;
+    PreviousOverlayMaterial = nullptr;
+    AwakenEffectRemaining = 0.f;
 }

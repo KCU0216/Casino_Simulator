@@ -71,6 +71,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceLineupReady OnLineupReady;
 	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceStarted OnRaceStarted;
 
+    // Latest awakening wins; the widget Blueprint owns its presentation.
+    UPROPERTY(ReplicatedUsing = OnRep_AwakenRunner, BlueprintReadOnly, Category = "Race|Awakening")
+    TObjectPtr<ARaceRunner> AwakenRunner = nullptr;
+    void NotifyRunnerAwakened(ARaceRunner* Runner);
+
 	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceLineupExit OnLineupExit;
 	UPROPERTY(BlueprintAssignable, Category = "Race") FOnRaceFinished OnRaceFinished;
 
@@ -115,10 +120,13 @@ protected:
 	virtual void BeginPlay() override;
     UFUNCTION() void OnRep_Phase();
     UFUNCTION() void OnRep_BillboardData();
+    UFUNCTION() void OnRep_AwakenRunner();
     UFUNCTION() void OnRep_Tickets();
     void RefreshBillboard();
     bool bBillboardPhaseInitialized = false;
     ERacePhase LastBillboardPhase = ERacePhase::Idle;
+    TWeakObjectPtr<URaceBillboardWidget> LastAwakenWidget;
+    TWeakObjectPtr<ARaceRunner> LastShownAwakenRunner;
 
 	// 서버가 스폰한 러너의 순서를 클라이언트 UI에도 전달한다.
 	UPROPERTY(ReplicatedUsing=OnRep_BillboardData, BlueprintReadOnly, Category = "Race") TArray<ARaceRunner*> Runners;

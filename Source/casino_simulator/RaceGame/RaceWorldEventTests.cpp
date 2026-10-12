@@ -34,6 +34,7 @@ bool FRaceWorldEventTest::RunTest(const FString& Parameters)
     Mode->GameState = State;
     Mode->bEnableDailyRaceEvent = true;
     Mode->DayDurationSeconds = 120.f;
+    Mode->RaceEventStartDelaySeconds = -1.f;
     Manager->RunnerClass = ARaceRunner::StaticClass();
     auto* SpawnPoint = World->SpawnActor<ATargetPoint>();
     Manager->RunnerSpawnPoints.Add(SpawnPoint);
@@ -101,6 +102,47 @@ bool FRaceWorldEventTest::RunTest(const FString& Parameters)
     TickTimers(5.1f);
     TestEqual(TEXT("Short day starts one new round"), Manager->CurrentRoundNumber, 3);
 
+    Manager->Phase = ERacePhase::Finished;
+    Mode->RaceEventStartDelaySeconds = 45.f;
+    Mode->ScheduleRaceEvent(120.f);
+    TickTimers(0.f);
+    TestEqual(TEXT("Custom BP start delay replaces the midpoint"),
+        World->GetTimerManager().GetTimerRemaining(Mode->RaceEventTimer), 45.f);
+    TestEqual(TEXT("Announcement follows the custom start by thirty seconds"),
+        World->GetTimerManager().GetTimerRemaining(Mode->RaceAnnouncementTimer), 15.f);
+    TickTimers(14.9f);
+    TestTrue(TEXT("Custom announcement waits until its deadline"),
+        World->GetTimerManager().IsTimerActive(Mode->RaceAnnouncementTimer));
+    TickTimers(0.2f);
+    TestFalse(TEXT("Custom announcement fires before runner entry"),
+        World->GetTimerManager().IsTimerActive(Mode->RaceAnnouncementTimer));
+    TickTimers(29.8f);
+    TestTrue(TEXT("Custom start does not spawn early"), Manager->Phase == ERacePhase::Finished);
+    TickTimers(0.2f);
+    TestTrue(TEXT("Custom deadline starts runner entry"), Manager->Phase == ERacePhase::Entering);
+    TestEqual(TEXT("Custom schedule starts one round"), Manager->CurrentRoundNumber, 4);
+
+    Manager->Phase = ERacePhase::Finished;
+    Mode->RaceEventStartDelaySeconds = 0.f;
+    Mode->ScheduleRaceEvent(120.f);
+    TestTrue(TEXT("Zero delay starts entry immediately"), Manager->Phase == ERacePhase::Entering);
+    TestEqual(TEXT("Immediate schedule starts one round"), Manager->CurrentRoundNumber, 5);
+    TestFalse(TEXT("Immediate start does not leave a timer"),
+        World->GetTimerManager().IsTimerActive(Mode->RaceEventTimer));
+
+    Mode->RaceEventStartDelaySeconds = 120.f;
+    AddExpectedError(TEXT("start delay must be shorter than the day duration"), EAutomationExpectedErrorFlags::Contains, 1);
+    Mode->ScheduleRaceEvent(120.f);
+    TestFalse(TEXT("Start at day end is not scheduled"), Mode->ScheduledRaceManager.IsValid());
+    TestFalse(TEXT("Skipped event does not leave an announcement timer"),
+        World->GetTimerManager().IsTimerActive(Mode->RaceAnnouncementTimer));
+    Mode->RaceEventStartDelaySeconds = 150.f;
+    AddExpectedError(TEXT("start delay must be shorter than the day duration"), EAutomationExpectedErrorFlags::Contains, 1);
+    Mode->ScheduleRaceEvent(120.f);
+    TestFalse(TEXT("Start beyond day end is not scheduled"),
+        World->GetTimerManager().IsTimerActive(Mode->RaceEventTimer));
+
+    Mode->RaceEventStartDelaySeconds = -1.f;
     Mode->ScheduleRaceEvent(60.f);
     TickTimers(0.f);
     Manager->Destroy();

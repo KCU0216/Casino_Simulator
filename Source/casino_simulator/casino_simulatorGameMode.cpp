@@ -47,6 +47,14 @@ void Acasino_simulatorGameMode::ScheduleRaceEvent(float DayDuration)
 {
     CancelRaceEventTimers();
     if (!HasAuthority() || !CanPlayCasino() || !bEnableDailyRaceEvent) return;
+    const float Duration = FMath::Max(1.f, DayDuration);
+    const float StartDelay = RaceEventStartDelaySeconds < 0.f
+        ? Duration * 0.5f : RaceEventStartDelaySeconds;
+    if (StartDelay >= Duration)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Race event: start delay must be shorter than the day duration; skipping this day."));
+        return;
+    }
     ARaceManager* Manager = RaceEventManager;
     if (!IsValid(Manager))
     {
@@ -62,9 +70,13 @@ void Acasino_simulatorGameMode::ScheduleRaceEvent(float DayDuration)
     }
     if (Manager->GetWorld() != GetWorld()) return;
     ScheduledRaceManager = Manager;
-    const float StartDelay = FMath::Max(1.f, DayDuration) * 0.5f;
     const auto* GS = GetGameState<ACasinoLoopGameState>();
     RaceEventStartServerTime = GS->GetServerWorldTimeSeconds() + StartDelay;
+    if (StartDelay == 0.f)
+    {
+        StartScheduledRaceEvent();
+        return;
+    }
     GetWorldTimerManager().SetTimer(RaceEventTimer, this,
         &ThisClass::StartScheduledRaceEvent, StartDelay, false);
     const float AnnouncementDelay = FMath::Max(0.f, StartDelay - 30.f);
