@@ -38,6 +38,9 @@ public:
 
 	friend class UCasinoUIManagerComponent;
 	friend class UBlackjackPlayerComponent;
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FCasinoUILocalPlayerReadinessTest;
+#endif
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Casino|UI")
     TObjectPtr<UCasinoUIManagerComponent> UIManager;
     UFUNCTION(BlueprintPure, Category="Casino|UI")

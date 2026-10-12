@@ -8,6 +8,7 @@
 #include "UI/InventoryWidget.h"
 #include "UI/PauseMenuWidget.h"
 #include "Online/CasinoOnlineSettings.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
@@ -17,7 +18,7 @@ void UCasinoUIManagerComponent::EnsureUIRoot()
 {
     auto* PC = GetCasinoController();
     if (!PC) return;
-    if (!PC->IsLocalController() || bUITravelPending) return;
+    if (!IsLocalUIReady() || bUITravelPending) return;
     if (!UIRoot) UIRoot = CreateWidget<UCasinoUIRoot>(PC);
     PC->UIRoot = UIRoot;
     if (UIRoot && !UIRoot->IsInViewport()) UIRoot->AddToPlayerScreen(100);
@@ -34,8 +35,12 @@ void UCasinoUIManagerComponent::EnsureUIRoot()
 void UCasinoUIManagerComponent::RefreshCasinoUIScreen()
 {
     auto* PC = GetCasinoController();
-    if (!PC) return;
-    if (!PC->IsLocalController() || bUITravelPending) return;
+    if (!IsLocalUIReady())
+    {
+        bLocalUIRefreshPending = true;
+        return;
+    }
+    if (bUITravelPending) return;
     auto* GS = GetWorld()->GetGameState<ACasinoLoopGameState>();
     if (GS != UIObservedGameState)
     {
@@ -139,7 +144,7 @@ bool UCasinoUIManagerComponent::ShowInteractionUI(UUserWidget* Widget)
 {
     auto* PC = GetCasinoController();
     if (!PC) return false;
-    if (!PC->IsLocalController() || bUITravelPending || UIScreen != ECasinoUIScreen::Playing || bClosingWidgets ||
+    if (!IsLocalUIReady() || bUITravelPending || UIScreen != ECasinoUIScreen::Playing || bClosingWidgets ||
         !IsValid(Widget) || Widget->GetOwningPlayer() != PC) return false;
     EnsureUIRoot();
     if (!UIRoot) return false;
@@ -173,7 +178,7 @@ bool UCasinoUIManagerComponent::ShowScreenUI(UUserWidget* Widget, ECasinoUIScree
 {
     auto* PC = GetCasinoController();
     if (!PC) return false;
-    if (!PC->IsLocalController() || bUITravelPending || bClosingWidgets || !IsValid(Widget) || Widget->GetOwningPlayer() != PC || UIScreen != ExpectedScreen || UIScreen == ECasinoUIScreen::Playing) return false;
+    if (!IsLocalUIReady() || bUITravelPending || bClosingWidgets || !IsValid(Widget) || Widget->GetOwningPlayer() != PC || UIScreen != ExpectedScreen || UIScreen == ECasinoUIScreen::Playing) return false;
     if (ActiveScreenWidget != Widget) CloseManagedWidget(ActiveScreenWidget);
     ActiveScreenWidget = Widget;
     PC->ActiveScreenWidget = Widget;
@@ -191,13 +196,18 @@ bool UCasinoUIManagerComponent::ShowScreenUI(UUserWidget* Widget, ECasinoUIScree
 void UCasinoUIManagerComponent::SetCasinoUIScreen(ECasinoUIScreen Screen)
 {
     auto* PC = GetCasinoController();
-    if (!PC) return;
-    if (!PC->IsLocalController() || bUITravelPending) return;
+    if (!IsLocalUIReady())
+    {
+        bLocalUIRefreshPending = true;
+        return;
+    }
+    if (bUITravelPending) return;
     EnsureUIRoot();
     if (PC->MobileControlsWidget) PC->MobileControlsWidget->SetVisibility(Screen == ECasinoUIScreen::Playing
         ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
     if (!UIRoot) return;
     UIRoot->SetHUDVisible(Screen == ECasinoUIScreen::Playing || Screen == ECasinoUIScreen::Payment || Screen == ECasinoUIScreen::DayPassed);
+    bLocalUIRefreshPending = false;
     if (bUIScreenInitialized && UIScreen == Screen) return;
     bUIScreenInitialized = true;
     UIScreen = Screen;
@@ -220,7 +230,7 @@ void UCasinoUIManagerComponent::SetCasinoUIScreen(ECasinoUIScreen Screen)
 void UCasinoUIManagerComponent::ApplyUIScreenInput()
 {
     auto* PC = GetCasinoController();
-    if (!PC) return;
+    if (!IsLocalUIReady() || bUITravelPending) return;
     const bool bPlaying = UIScreen == ECasinoUIScreen::Playing;
     PC->bDailyPaymentControlLocked = !bPlaying && UIScreen != ECasinoUIScreen::MainMenu && UIScreen != ECasinoUIScreen::Lobby;
     if (auto* Character = Cast<Acasino_simulatorCharacter>(PC->GetPawn()))
@@ -247,23 +257,35 @@ Acasino_simulatorPlayerController* UCasinoUIManagerComponent::GetCasinoControlle
 {
     return Cast<Acasino_simulatorPlayerController>(GetOwner());
 }
+bool UCasinoUIManagerComponent::IsLocalUIReady() const
+{
+    const auto* PC = GetCasinoController();
+    if (!IsValid(PC) || !PC->IsLocalController()) return false;
+    // Local authority alone does not guarantee a player that can own widgets.
+    const auto* LocalPlayer = PC->GetLocalPlayer();
+    return IsValid(LocalPlayer) && LocalPlayer->PlayerController == PC;
+}
 void UCasinoUIManagerComponent::UpdateUI()
 {
-    auto* PC = GetCasinoController();
-    if (!PC || !PC->IsLocalController()) return;
+    if (!IsLocalUIReady())
+    {
+        bLocalUIRefreshPending = true;
+        return;
+    }
     if (bUITravelPending)
     {
         if (GetWorld() == UITravelOrigin.Get() || GetWorld()->IsInSeamlessTravel()) return;
         bUITravelPending = false;
     }
     auto* GS = GetWorld()->GetGameState<ACasinoLoopGameState>();
-    if (!bUIScreenInitialized || GS != UIObservedGameState || UIObservedWorld.Get() != GetWorld()) RefreshCasinoUIScreen();
+    // Catch updates missed while the same controller/world had no LocalPlayer.
+    if (bLocalUIRefreshPending || !bUIScreenInitialized || GS != UIObservedGameState || UIObservedWorld.Get() != GetWorld()) RefreshCasinoUIScreen();
     EnsureUIRoot();
 }
 void UCasinoUIManagerComponent::ApplyInteractionInput()
 {
     auto* PC = GetCasinoController();
-    if (!PC || UIScreen != ECasinoUIScreen::Playing || ManagedInteractions.IsEmpty()) return;
+    if (!IsLocalUIReady() || bUITravelPending || UIScreen != ECasinoUIScreen::Playing || ManagedInteractions.IsEmpty()) return;
     PC->SetIsInteractionUIOpen(true);
     PC->bShowMouseCursor = true;
     FInputModeGameAndUI Mode;
@@ -276,7 +298,7 @@ void UCasinoUIManagerComponent::ApplyInteractionInput()
 UUserWidget* UCasinoUIManagerComponent::OpenInteractionUI(TSubclassOf<UUserWidget> WidgetClass)
 {
     auto* PC = GetCasinoController();
-    if (!PC || !PC->IsLocalController() || bUITravelPending || UIScreen != ECasinoUIScreen::Playing || !WidgetClass) return nullptr;
+    if (!IsLocalUIReady() || bUITravelPending || UIScreen != ECasinoUIScreen::Playing || !WidgetClass) return nullptr;
     UUserWidget* Widget = CachedInteractions.FindRef(WidgetClass);
     if (!IsValid(Widget))
     {
@@ -288,7 +310,7 @@ UUserWidget* UCasinoUIManagerComponent::OpenInteractionUI(TSubclassOf<UUserWidge
 void UCasinoUIManagerComponent::ShowWorldEventAnnouncement()
 {
     auto* PC = GetCasinoController();
-    if (!PC || !PC->IsLocalController() || bUITravelPending || UIScreen != ECasinoUIScreen::Playing) return;
+    if (!IsLocalUIReady() || bUITravelPending || UIScreen != ECasinoUIScreen::Playing) return;
     PC->TryInitializePlayerHUD();
     if (IsValid(PC->PlayerHUDWidget)) PC->PlayerHUDWidget->BP_ShowWorldEventAnnouncement();
 }
@@ -320,6 +342,7 @@ void UCasinoUIManagerComponent::ShutdownUI()
     PC->UIRoot = nullptr;
     PC->ActiveScreenWidget = nullptr;
     bUIScreenInitialized = false;
+    bLocalUIRefreshPending = false;
     UIScreen = ECasinoUIScreen::Loading;
     PC->UIScreen = UIScreen;
     if (auto* Character = Cast<Acasino_simulatorCharacter>(PC->GetPawn()))

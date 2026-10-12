@@ -27,6 +27,7 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="Casino|UI") TObjectPtr<UUserWidget> ActiveScreenWidget;
     UPROPERTY(BlueprintReadOnly, Category="Casino|UI") ECasinoUIScreen UIScreen = ECasinoUIScreen::Loading;
     bool IsTravelPending() const { return bUITravelPending; }
+    bool IsLocalUIReady() const;
 
     void UpdateUI();
     void PrepareTravel();
@@ -49,6 +50,7 @@ private:
     UPROPERTY() TObjectPtr<ACasinoLoopGameState> UIObservedGameState;
     bool bClosingWidgets = false;
     bool bUIScreenInitialized = false;
+    bool bLocalUIRefreshPending = false;
     bool bUITravelPending = false;
     TWeakObjectPtr<UWorld> UIObservedWorld;
     TWeakObjectPtr<UWorld> UITravelOrigin;

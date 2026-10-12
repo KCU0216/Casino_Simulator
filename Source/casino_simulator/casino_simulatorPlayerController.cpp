@@ -148,7 +148,7 @@ void Acasino_simulatorPlayerController::OnRep_PlayerState()
 
 void Acasino_simulatorPlayerController::TryInitializePlayerHUD()
 {
-	if (!IsLocalController() || UIManager->IsTravelPending() || PlayerHUDWidget || !PlayerHUDWidgetClass)
+	if (!UIManager->IsLocalUIReady() || UIManager->IsTravelPending() || PlayerHUDWidget || !PlayerHUDWidgetClass)
 	{
 		return;
 	}
@@ -164,6 +164,14 @@ void Acasino_simulatorPlayerController::TryInitializePlayerHUD()
 	if (PlayerHUDWidget)
 	{
 		EnsureUIRoot();
+		if (!UIRoot)
+		{
+			// A widget initialization callback may have started travel or detached
+			// the player; leave HUD initialization retryable when no root is ready.
+			CloseManagedWidget(PlayerHUDWidget);
+			PlayerHUDWidget = nullptr;
+			return;
+		}
 		UIRoot->AddHUD(PlayerHUDWidget);
 		RefreshCasinoUIScreen();
 
