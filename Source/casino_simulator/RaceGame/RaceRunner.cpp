@@ -42,6 +42,14 @@ UTexture2D* ARaceRunner::GetRunnerPortrait() const
 	return RunnerPortrait.Get();
 }
 
+void ARaceRunner::SetRunnerName(const FString& NewName)
+{
+	if (!HasAuthority()) return;
+
+	Stats.Name = NewName;
+	ForceNetUpdate();
+}
+
 void ARaceRunner::ServerSetupScript(const FRunnerRaceScript& S)
 {
 	if (!HasAuthority()) return;

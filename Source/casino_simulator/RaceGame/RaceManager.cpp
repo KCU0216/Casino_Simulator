@@ -18,16 +18,10 @@ static const TCHAR* KRNames[] = {
 
 static float GetRaceOddsForAge(int32 Age)
 {
-    // 150% target return, fitted to the 100,000-race linear-age simulation.
-    static const float Odds[] = {
-        3.8f, 3.9f, 4.0f, 4.1f, 4.1f, 4.4f, 4.4f, 4.6f, 4.7f, 4.9f,
-        6.2f, 6.3f, 6.5f, 6.5f, 6.9f, 7.2f, 7.3f, 7.5f, 7.7f, 7.9f,
-        9.4f, 9.9f, 10.1f, 10.0f, 10.0f, 10.9f, 10.4f, 10.8f, 10.9f, 11.6f,
-        12.0f, 12.0f, 12.9f, 12.6f, 13.4f, 13.2f, 13.9f, 12.4f, 14.1f, 13.0f,
-        13.3f, 13.8f, 15.2f, 14.6f, 15.1f, 15.6f, 15.7f, 16.0f, 16.6f, 17.0f,
-        18.1f, 18.0f, 20.2f, 19.8f, 22.0f, 20.7f, 23.2f, 23.9f, 23.9f, 24.3f
-    };
-    return Odds[FMath::Clamp(Age - 55, 0, UE_ARRAY_COUNT(Odds) - 1)];
+    // 150% target return averaged over each ten-year age group, starting at 55.
+    static const float Odds[] = { 4.2f, 6.9f, 10.4f, 12.9f, 15.2f, 21.1f };
+    const int32 Bucket = FMath::Clamp((Age - 55) / 10, 0, UE_ARRAY_COUNT(Odds) - 1);
+    return Odds[Bucket];
 }
 
 // 레시피로 완주 시각을 결정론적으로 계산 (고정 스텝). 승자 판정용.

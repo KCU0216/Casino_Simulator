@@ -66,6 +66,8 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Race") void OnAwakenFX();
 	UFUNCTION(BlueprintImplementableEvent, Category = "Race") void OnStumbleFX();
 
+	UFUNCTION(BlueprintCallable, Category = "Race")	void SetRunnerName(const FString& NewName);
+
 protected:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRaceEntranceFlowTest;
