@@ -7,6 +7,19 @@
 
 class Acasino_simulatorCharacter;
 
+// 납부 결과를 입력 UI에 전달할 때 사용합니다.
+UENUM(BlueprintType)
+enum class EBailPaymentResult : uint8
+{
+    Success,
+    InsufficientFunds,
+    InvalidAmount,
+    Unavailable
+};
+
+// 금액이나 결제 상태가 바뀌면 열린 UI에 알려줍니다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBailStateChanged);
+
 UCLASS(Blueprintable)
 class CASINO_SIMULATOR_API ABailATM
     : public AWorldInteractableBase
@@ -14,64 +27,103 @@ class CASINO_SIMULATOR_API ABailATM
 {
     GENERATED_BODY()
 
-public :
+public:
     ABailATM();
 
-    // 기존 상호작용 시스템이 호출합니다.
-    // 플레이어가 범위 안에 있고 보석금 결제가 가능한지 판단합니다.
-    virtual bool CanInteract(Acasino_simulatorCharacter* InteractingCharacter) const override;
+    virtual bool CanInteract(
+        Acasino_simulatorCharacter* InteractingCharacter) const override;
 
+    // E키로 금액 입력창을 여는 역할입니다.
+    virtual void Interact(
+        Acasino_simulatorCharacter* InteractingCharacter) override;
 
-    // E 상호작용 요청을 처리합니다.
-    // 서버에서 상호작용한 플레이어의 돈을 검사하고 차감합니다.
-    virtual void Interact(Acasino_simulatorCharacter* InteractingCharacter) override;
+    // 내부·외부 ATM이 함께 사용할 결제 담당 ATM을 반환합니다.
+    UFUNCTION(BlueprintPure, Category = "Police|Bail")
+    ABailATM* GetBailPaymentOwner() const;
 
-    // 체포 완료 시 경찰 BP가 호출합니다.
-    // ATM 결제를 활성화하고 감옥문 닫기 이벤트를 실행합니다.
-    UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Police|Bail")
+    UFUNCTION(BlueprintPure, Category = "Police|Bail")
+    float GetRemainingBailAmount() const;
+
+    // 서버에서 지정 금액을 납부합니다.
+    // OutPaidAmount에는 실제로 차감한 금액을 반환합니다.
+    EBailPaymentResult SubmitBailPayment(
+        Acasino_simulatorCharacter* InteractingCharacter,
+        float RequestedAmount,
+        float& OutPaidAmount);
+
+    UPROPERTY(BlueprintAssignable, Category = "Police|Bail")
+    FOnBailStateChanged OnBailStateChanged;
+
+    // 기존 경찰 BP가 체포 완료 시 호출합니다.
+    UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly,
+        Category = "Police|Bail")
     void ActivateBailPayment();
 
-    // 기존 게임모드가 하루 시작 시 호출합니다.
-    // 결제를 비활성화하고 감옥문을 기본 열림 상태로 돌립니다.
     virtual void BeginCasinoDay_Implementation() override;
-
-    // 기존 게임모드가 하루 종료 시 호출합니다.
-    // 미결제 상태라도 ATM과 감옥문을 초기화합니다.
     virtual void EndCasinoDay_Implementation() override;
 
 protected:
-    // bBailPaymentAvilable을 복제할 변수로 엔진에 등록합니다.
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual void GetLifetimeReplicatedProps(
+        TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    // BP_ATM의 Class Defaults에서 설정할 보석금입니다.
-    // 100은 임시 기본값 입니다.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Police|Bail", meta = (ClampMin = "1.0"))
+    // 기존 BP 설정값을 첫날 보석금으로 사용합니다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "Police|Bail", meta = (ClampMin = "1.0"))
     float BailAmount = 100.0f;
 
-    // 맵에 배치된 실제 BP_Prison_Door를 지정합니다.
-    // BP 이벤트에서 이 문을 대상으로 함수를 호출합니다.
-    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Police|Bail")
+    // 외부 ATM에 내부 ATM을 지정합니다.
+    // 내부 ATM은 비워둡니다.
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
+        Category = "Police|Bail")
+    TObjectPtr<ABailATM> PrimaryBailATM;
+
+    // 둘째 날부터 적용할 전날 채무 비율입니다.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "Police|Bail",
+        meta = (ClampMin = "0.01", ClampMax = "1.0"))
+    float BailDebtRatio = 0.5f;
+
+    // 오늘의 총 보석금입니다.
+    UPROPERTY(ReplicatedUsing = OnRep_BailState, BlueprintReadOnly,
+        Category = "Police|Bail")
+    float CurrentBailAmount = 100.0f;
+
+    // 모든 플레이어가 납부한 금액의 합계입니다.
+    UPROPERTY(ReplicatedUsing = OnRep_BailState, BlueprintReadOnly,
+        Category = "Police|Bail")
+    float PaidBailAmount = 0.0f;
+
+    // 감옥문 참조는 내부 ATM에 지정합니다.
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
+        Category = "Police|Bail")
     TObjectPtr<AActor> PrisonDoor;
 
-    // 기본 false, 체포 후 true, 결제 성공이나 초기화 시 false입니다.
-    // 클라이언트도 이 값을 받아 상호작용 가능 여부를 판단합니다.
-    UPROPERTY(Replicated, BlueprintReadOnly)
+    UPROPERTY(ReplicatedUsing = OnRep_BailState, BlueprintReadOnly,
+        Category = "Police|Bail")
     bool bBailPaymentAvailable = false;
 
-    // 체포 시 감옥문의 CloseDoor를 호출합니다.
     UFUNCTION(BlueprintImplementableEvent, Category = "Police|Bail")
     void OnPrisonLocked();
 
-    // 결제 성공 시 감옥문의 OpenDoor를 호출합니다.
+    // 누적 납부액이 총 보석금을 채웠을 때만 호출합니다.
     UFUNCTION(BlueprintImplementableEvent, Category = "Police|Bail")
     void OnBailPaid();
 
-    // 초기화 시 감옥문의 ResetDoor를 호출합니다.
     UFUNCTION(BlueprintImplementableEvent, Category = "Police|Bail")
     void OnPrisonReset();
 
 private:
-    // 하루 시작과 종료가 함께 사용하는 내부 초기화 함수입니다.
-    // 결제 가능 상태를 끄고 OnPrisonReset을 실행합니다.
+    // 결제 상태와 누적 납부액을 초기화합니다. 환급은 하지 않습니다.
     void ResetPrison();
+
+    UFUNCTION()
+    void OnRep_BailState();
+
+    // 서버의 UI 갱신과 클라이언트 복제를 요청합니다.
+    void NotifyBailStateChanged();
+
+    int32 PreviousDayRequiredPayment = 0;
+
+    // 결제 도중 다시 결제가 실행되는 것을 막습니다.
+    bool bProcessingBailPayment = false;
 };

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Police/BailATM.h"
 #include "GameFramework/PlayerController.h"
 #include "Interaction/WorldInteractable.h"
 #include "casino_loop_gamestate.h"
@@ -101,6 +102,44 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientBailPaymentFailed(ABailATM* ATM);
 
+	UFUNCTION(Client, Reliable)
+	void ClientOpenBailPayment(ABailATM* ATM);
+
+	// BP에서 보석금 입력창을 생성합니다.
+	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Bail")
+	void OnBailPaymentRequested(ABailATM* ATM);
+
+	// 각 납부 요청에 사용할 고유 번호를 만듭니다.
+	UFUNCTION(BlueprintCallable, Category = "Police|Bail")
+	int64 CreateBailPaymentRequestId();
+
+	// 입력한 금액을 서버에 납부 요청합니다.
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Police|Bail")
+	void ServerSubmitBailPayment(
+		ABailATM* ATM,
+		float RequestedAmount,
+		int32 PaymentDay,
+		int64 RequestId);
+
+	// 서버의 처리 결과를 요청한 플레이어에게 전달합니다.
+	UFUNCTION(Client, Reliable)
+	void ClientBailPaymentResult(
+		ABailATM* ATM,
+		int32 PaymentDay,
+		int64 RequestId,
+		EBailPaymentResult Result,
+		float PaidAmount,
+		float RemainingAmount);
+
+	// BP에서 납부 결과를 입력창에 표시합니다.
+	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Bail")
+	void OnBailPaymentResult(
+		ABailATM* ATM,
+		int32 PaymentDay,
+		int64 RequestId,
+		EBailPaymentResult Result,
+		float PaidAmount,
+		float RemainingAmount);
 
 private:
     void RefreshCasinoUIScreen();
@@ -125,6 +164,8 @@ private:
 
 	FTimerHandle BailPromptResetTimerHandle;
 
+	int64 NextBailPaymentRequestId = 0;
+	int64 LastProcessedBailPaymentRequestId = 0;
 	// 점프스퀘어 때문에 일시로 숨긴 취객을 기록
 	TArray<TWeakObjectPtr<AActor>> PoliceArrestHiddenActors;
 
