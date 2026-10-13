@@ -1,15 +1,13 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 //
-// LadderWidget = View.
-//  - 그리기 + 트레이스 연출 + 좌표 헬퍼만 담당. 게임 로직/돈/규칙은 전혀 없음.
-//  - ALadderMachine 을 참조하고 그 dispatcher 를 구독해서 상태를 반영한다.
-//  - Play 시 머신이 넘긴 FLadderPlan 을 받아 그리고, 트레이스가 끝나면 머신에 정산을 요청한다.
+// Presentation only: scripts supply dimensions, timing, and a generated plan.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "LadderMachine.h"   // ALadderMachine, ELadderMode, FLadderPlan
+#include "LadderGenerator.h"
+#include "LadderDisplayState.h"
 #include "LadderWidget.generated.h"
 
 UCLASS()
@@ -18,6 +16,20 @@ class CASINO_SIMULATOR_API ULadderWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(BlueprintReadOnly, Category = "Ladder|State")
+	int32 Rails = 3;
+
+	/** Zero-based rail index used for the selection image. */
+	UPROPERTY(BlueprintReadOnly, Category = "Ladder|State")
+	int32 SelectedRail = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ladder|State")
+	int32 Rows = 12;
+
+	/** Multipliers in rail index order, supplied separately from the play plan. */
+	UPROPERTY(BlueprintReadOnly, Category = "Ladder|State")
+	TArray<int32> Odds;
+
 	// ─────────── 그리기 파라미터 ───────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ladder")
 	float LineThickness = 3.0f;
@@ -57,20 +69,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ladder|Trace")
 	float MarbleSize = 22.0f;
 
-	// ─────────── 머신 연결 ───────────
-	/** 이 뷰가 표시하는 머신. SetMachine 으로 주입. */
-	UPROPERTY(BlueprintReadOnly, Category = "Ladder")
-	ALadderMachine* Machine = nullptr;
-
-	/** 머신 참조를 받아 dispatcher 구독 + 현재 상태 동기화. BP(상호작용/BeginPlay)에서 1회 호출. */
+	/** Configure the display and clear any previous animation. */
 	UFUNCTION(BlueprintCallable, Category = "Ladder")
-	void SetMachine(ALadderMachine* InMachine);
+	void SetLadderState(int32 InRails, int32 InRows, float InTraceDuration);
 
-	/** SetMachine 으로 머신이 연결된 직후 호출됨 — BP에서 머신 dispatcher 바인딩/초기 UI 구성용.
-	 *  (여기서 OnCursorChanged/OnRailCountChanged/OnBetChanged/OnResultsChanged 등을 바인딩하고,
-	 *   마지막에 Machine.BroadcastInitialState() 를 부르면 초기 버튼/텍스트가 채워짐.) */
+	/** Apply all display fields together without restarting an unchanged board. */
+	UFUNCTION(BlueprintCallable, Category = "Ladder")
+	void SetDisplayState(const FLadderDisplayState& State);
+
+	UFUNCTION(BlueprintCallable, Category = "Ladder")
+	void SetOdds(const TArray<int32>& InOdds);
+
+	UFUNCTION(BlueprintCallable, Category = "Ladder")
+	void SetSelectedRail(int32 InSelectedRail);
+
+	/** Read Rails, SelectedRail, and Odds here to refresh presentation widgets. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ladder")
-	void OnMachineAttached();
+	void OnDisplayStateChanged();
+
+	/** Display a supplied plan and restart its trace animation. */
+	UFUNCTION(BlueprintCallable, Category = "Ladder")
+	void PlayPlan(const FLadderPlan& InPlan);
+
+	/** Clear the plan and trace, retaining the configured vertical rails. */
+	UFUNCTION(BlueprintCallable, Category = "Ladder")
+	void ClearBoard();
 
 	// ─────────── 좌표 헬퍼 (BP 버튼/결과칸 배치용, 위젯 로컬 좌표/앵커) ───────────
 	UFUNCTION(BlueprintCallable, Category = "Ladder")
@@ -92,8 +115,6 @@ public:
 	bool IsTracing() const { return bTracing; }
 
 protected:
-	virtual void NativeDestruct() override;
-
 	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
 		const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId,
 		const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
@@ -101,19 +122,10 @@ protected:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
-	// ── 머신 dispatcher 핸들러 ──
-	UFUNCTION() void HandlePlayStarted(FLadderPlan InPlan);
-	UFUNCTION() void HandleBoardCleared();
-	UFUNCTION() void HandleRailCountChanged(int32 NewRails);
-
 	/** 주어진 위젯 크기로 그리기 영역(Origin/DrawSize)과 세로줄 간격(dx) 계산. */
 	bool GetLayoutForSize(const FVector2D& Full, FVector2D& OutOrigin, FVector2D& OutDrawSize, float& OutDx) const;
 
-	// ── 그리기용 미러 상태 (머신에서 동기화) ──
-	int32 Rails = 3;
-	int32 Rows = 12;
-
-	// ── 현재 판 (머신에서 받은 그리기 데이터) ──
+	// Supplied drawing data.
 	FLadderPlan Plan;
 	bool bHasPlan = false;
 

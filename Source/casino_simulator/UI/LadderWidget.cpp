@@ -4,82 +4,59 @@
 #include "Rendering/DrawElements.h"
 #include "Brushes/SlateColorBrush.h"
 
-// ─────────── 머신 연결 ───────────
-
-void ULadderWidget::SetMachine(ALadderMachine* InMachine)
+void ULadderWidget::SetLadderState(int32 InRails, int32 InRows, float InTraceDuration)
 {
-	// 기존 머신 구독 해제
-	if (Machine)
-	{
-		Machine->OnPlayStarted.RemoveDynamic(this, &ULadderWidget::HandlePlayStarted);
-		Machine->OnBoardCleared.RemoveDynamic(this, &ULadderWidget::HandleBoardCleared);
-		Machine->OnRailCountChanged.RemoveDynamic(this, &ULadderWidget::HandleRailCountChanged);
-	}
-
-	Machine = InMachine;
-	if (!Machine)
-	{
-		return;
-	}
-
-	// 그리기에 필요한 dispatcher만 구독 (돈/모드/커서 등 UI 표시용은 BP가 직접 구독).
-	Machine->OnPlayStarted.AddDynamic(this, &ULadderWidget::HandlePlayStarted);
-	Machine->OnBoardCleared.AddDynamic(this, &ULadderWidget::HandleBoardCleared);
-	Machine->OnRailCountChanged.AddDynamic(this, &ULadderWidget::HandleRailCountChanged);
-
-	// 현재 상태 pull (방송 타이밍과 무관하게 즉시 동기화)
-	Rails = Machine->GetRails();
-	Rows  = Machine->GetRows();
-	Plan = FLadderPlan();
-	bHasPlan = false;
-	bTracing = false;
-	TraceProgress = 0.0f;
-
-	// BP에서 머신 dispatcher 바인딩 + 초기 UI 구성할 수 있게 알림.
-	OnMachineAttached();
+	Rails = FMath::Max(InRails, 2);
+	SelectedRail = FMath::Clamp(SelectedRail, 0, Rails - 1);
+	Rows = FMath::Max(InRows, 2);
+	TraceDuration = FMath::IsFinite(InTraceDuration) ? FMath::Max(InTraceDuration, 0.0f) : 0.0f;
+	ClearBoard();
+	OnDisplayStateChanged();
 }
 
-void ULadderWidget::NativeDestruct()
+void ULadderWidget::SetDisplayState(const FLadderDisplayState& State)
 {
-	if (Machine)
+	const int32 NewRails = FMath::Max(State.Rails, 2);
+	const int32 NewRows = FMath::Max(State.Rows, 2);
+	if (Rails != NewRails || Rows != NewRows)
 	{
-		Machine->OnPlayStarted.RemoveDynamic(this, &ULadderWidget::HandlePlayStarted);
-		Machine->OnBoardCleared.RemoveDynamic(this, &ULadderWidget::HandleBoardCleared);
-		Machine->OnRailCountChanged.RemoveDynamic(this, &ULadderWidget::HandleRailCountChanged);
+		ClearBoard();
 	}
-	Super::NativeDestruct();
+	Rails = NewRails;
+	Rows = NewRows;
+	SelectedRail = FMath::Clamp(State.SelectedRail, 0, Rails - 1);
+	Odds = State.Odds;
+	TraceDuration = FMath::IsFinite(State.TraceDuration) ? FMath::Max(State.TraceDuration, 0.0f) : 0.0f;
+	OnDisplayStateChanged();
 }
 
-void ULadderWidget::HandlePlayStarted(FLadderPlan InPlan)
+void ULadderWidget::SetOdds(const TArray<int32>& InOdds)
+{
+	Odds = InOdds;
+	OnDisplayStateChanged();
+}
+
+void ULadderWidget::SetSelectedRail(int32 InSelectedRail)
+{
+	SelectedRail = FMath::Clamp(InSelectedRail, 0, Rails - 1);
+	OnDisplayStateChanged();
+}
+
+void ULadderWidget::PlayPlan(const FLadderPlan& InPlan)
 {
 	Plan = InPlan;
 	bHasPlan = true;
-
-	if (Machine)
-	{
-		Rails = Machine->GetRails();
-		Rows  = Machine->GetRows();
-	}
 
 	TraceProgress = 0.0f;
 	bTracing = true;
 }
 
-void ULadderWidget::HandleBoardCleared()
+void ULadderWidget::ClearBoard()
 {
 	Plan = FLadderPlan();
 	bHasPlan = false;
 	bTracing = false;
 	TraceProgress = 0.0f;
-}
-
-void ULadderWidget::HandleRailCountChanged(int32 NewRails)
-{
-	Rails = NewRails;
-	if (Machine)
-	{
-		Rows = Machine->GetRows();
-	}
 }
 
 // ─────────── 트레이스 진행 ───────────
@@ -93,15 +70,12 @@ void ULadderWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		return;
 	}
 
-	// 트레이스 길이는 머신 값과 공유(서버 정산 타이머와 동기화). 없으면 위젯 기본값.
-	const float Dur = (Machine && Machine->TraceDuration > 0.0f) ? Machine->TraceDuration : TraceDuration;
-	TraceProgress += (Dur > 0.0f) ? (InDeltaTime / Dur) : 1.0f;
+	TraceProgress += (TraceDuration > 0.0f) ? (InDeltaTime / TraceDuration) : 1.0f;
 
 	if (TraceProgress >= 1.0f)
 	{
 		TraceProgress = 1.0f;
 		bTracing = false;
-		// 결과창/정산은 전부 서버가 담당(Multicast_Result). 뷰는 구슬을 바닥에 세워둘 뿐.
 	}
 }
 
@@ -210,11 +184,11 @@ int32 ULadderWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Allott
 	}
 
 	// 가로줄 (실제 + 위장 통합, 같은 색). Plan.DrawRung 이 없으면(판 비움) 건너뜀 → 세로줄만.
-	for (int32 r = 0; r < Plan.DrawRung.Num(); ++r)
+	for (int32 r = 0; r < FMath::Min(Plan.DrawRung.Num(), Rows); ++r)
 	{
 		const float y = RungTop + r * dy;
 		const TArray<bool>& Cells = Plan.DrawRung[r].Cells;
-		for (int32 g = 0; g < Cells.Num(); ++g)
+		for (int32 g = 0; g < FMath::Min(Cells.Num(), Rails - 1); ++g)
 		{
 			if (!Cells[g]) continue;
 			TArray<FVector2D> Pts;
@@ -232,7 +206,7 @@ int32 ULadderWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Allott
 
 		TArray<FVector2D> Poly;
 		Poly.Add(FVector2D(RailX(Plan.PathRails[0]), OriginY));
-		for (int32 k = 0; k < Plan.CrossRows.Num(); ++k)
+		for (int32 k = 0; k < FMath::Min(Plan.CrossRows.Num(), Plan.PathRails.Num() - 1); ++k)
 		{
 			const float cy = RowY(Plan.CrossRows[k]);
 			Poly.Add(FVector2D(RailX(Plan.PathRails[k]),     cy));
