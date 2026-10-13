@@ -3,7 +3,7 @@
 
 
 #include "ThiefCharacter.h"
-
+#include "Engine/World.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -69,6 +69,27 @@ void AThiefCharacter::HandleEnemyHitReaction(AActor* Attacker)
 
     Acasino_simulatorCharacter* AttackingPlayer =
         Cast<Acasino_simulatorCharacter>(Attacker);
+
+    if (IsValid(AttackingPlayer)
+        && AttackingPlayer->IsPlayerControlled())
+    {
+        UWorld* World = GetWorld();
+
+        if (!World)
+        {
+            return;
+        }
+
+        const double CurrentTime = World->GetTimeSeconds();
+
+        if (CurrentTime < NextAllowedHitTime)
+        {
+            return;
+        }
+
+        NextAllowedHitTime =
+            CurrentTime + FMath::Max(0.0f, HitCooldown);
+    }
 
     if (IsValid(AttackingPlayer)
         && AttackingPlayer->IsPlayerControlled()

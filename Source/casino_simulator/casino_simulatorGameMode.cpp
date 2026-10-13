@@ -533,11 +533,32 @@ bool Acasino_simulatorGameMode::StealMoney(
         return false;
     }
 
-    const int32 StealAmount =
-        FMath::RandRange(St_Money_Min / 50, St_Money_Max / 50) * 50;
+    const double AvailableMoney = Player->GetCurrency();
+
+    if (!FMath::IsFinite(AvailableMoney) || AvailableMoney <= 0.0)
+    {
+        return false;
+    }
+
+    if (AvailableMoney < 10.0)
+    {
+        return Thief->TryStealFrom(Player, static_cast<float>(AvailableMoney));
+    }
+
+    if (AvailableMoney / 10.0 >= static_cast<double>(MAX_int64))
+    {
+        return false;
+    }
+
+    // Choose multiples of 10 within 10%-100% of the available balance.
+    const int64 MinStealUnits = FMath::Max<int64>(
+        1, FMath::CeilToInt64(AvailableMoney / 100.0));
+    const int64 MaxStealUnits = FMath::FloorToInt64(AvailableMoney / 10.0);
+    const float StealAmount = static_cast<float>(
+        FMath::RandRange(MinStealUnits, MaxStealUnits) * 10.0);
 
     return Thief->TryStealFrom(
-        Player, static_cast<float>(StealAmount));
+        Player, StealAmount);
 }
 bool Acasino_simulatorGameMode::RestartCasinoRun(APlayerController* Requester)
 {

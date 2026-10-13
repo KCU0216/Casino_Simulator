@@ -54,6 +54,13 @@ protected:
         Category = "Enemy|Thief", meta = (ClampMin = "0.0"))
     float EscapeSpeed = 500.0f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "Enemy|Thief",
+        meta = (ClampMin = "0.0", Units = "s"))
+    float HitCooldown = 1.5f;
+
+    double NextAllowedHitTime = 0.0;
+
 
     UPROPERTY(ReplicatedUsing = OnRep_ThiefState,
         VisibleInstanceOnly, BlueprintReadOnly,
