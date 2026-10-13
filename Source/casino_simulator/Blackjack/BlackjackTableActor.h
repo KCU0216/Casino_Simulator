@@ -172,6 +172,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="Blackjack|Round")
 	EBlackjackRoundState GetRoundState() const { return RoundState; }
 
+	/** Rules remain server-driven while the dealer finishes a cosmetic card gesture. */
+	UFUNCTION(BlueprintPure, Category="Blackjack|Presentation")
+	bool IsDealerPresentationBusy() const { return bDealerPresentationBusy; }
+
+	UFUNCTION(BlueprintPure, Category="Blackjack|Presentation")
+	bool IsDealerShuffleAnimationEnabled() const { return bAnimateDealerShuffle; }
+
 	UFUNCTION(BlueprintPure, Category="Blackjack|Round")
 	const FBlackjackHand& GetDealerHand() const { return DealerHand; }
 
@@ -220,12 +227,12 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
 	FBlackjackCardDealt OnPlayerCardDealt;
 
-	/** Server presentation event for initial deal, hit and double down. Use instead of
+	/** Replicated presentation event for initial deal, hit and double down. Use instead of
 	 * OnPlayerCardDealt when rendering split hands; binding both would duplicate cards. */
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
 	FBlackjackHandCardDealt OnPlayerHandCardDealt;
 
-	/** Server presentation event after splitting and drawing both replacement cards.
+	/** Replicated presentation event after rearranging the original split cards.
 	 * Reconcile existing visuals with SeatState.Hands (do not spawn every card again).
 	 * Clients can reconcile replicated snapshots through the existing OnSeatChanged. */
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
@@ -239,6 +246,17 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
 	FBlackjackRoundCompleted OnRoundCompleted;
+
+	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
+	FBlackjackRoundCompleted OnDealerShuffle;
+
+	/** Abort pending cosmetic work when a round/day is cleared. */
+	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
+	FBlackjackRoundCompleted OnDealerPresentationReset;
+
+	/** Clear table card visuals only when the round/day is actually reset. */
+	UPROPERTY(BlueprintAssignable, Category="Blackjack|Events")
+	FBlackjackRoundCompleted OnDealerTableVisualReset;
 
 protected:
 	virtual void BeginPlay() override;
@@ -279,6 +297,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Rules")
 	bool bDealerStandsOnSoft17 = true;
 
+	/** Opt in on tables that have an animated dealer; native tables retain instant rules. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Presentation")
+	bool bAnimateDealer = false;
+
+	/** Optional shuffle gesture/wait, independent of paced card dealing and random shoe rules. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Presentation")
+	bool bAnimateDealerShuffle = false;
+
+	/** Time from a deal gesture starting until the next gesture/action is allowed. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Presentation", meta=(ClampMin="0.01", Units="s"))
+	float DealerCardIntervalSeconds = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Presentation", meta=(ClampMin="0.01", Units="s"))
+	float DealerShuffleSeconds = 5.0f;
+
 	// Legacy serialized settings retained for BP compatibility. The fixed 15-second rule
 	// no longer uses these duration/extension values.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Blackjack|Betting", meta=(ClampMin="1.0"))
@@ -305,6 +338,9 @@ protected:
 	UPROPERTY(ReplicatedUsing=OnRep_TableState, BlueprintReadOnly, Category="Blackjack|State")
 	int32 ActiveSeatIndex = INDEX_NONE;
 
+	UPROPERTY(ReplicatedUsing=OnRep_TableState, BlueprintReadOnly, Category="Blackjack|Presentation")
+	bool bDealerPresentationBusy = false;
+
 	UPROPERTY(ReplicatedUsing=OnRep_TableState, BlueprintReadOnly, Category="Blackjack|Betting")
 	bool bBettingWindowOpen = false;
 
@@ -330,7 +366,36 @@ private:
 	bool ShouldShuffleBeforeRound() const;
 	FBlackjackCard DrawCard(bool bFaceUp = true);
 	void DealCardToSeat(int32 SeatIndex, bool bFaceUp = true);
+	void DealCardToHand(int32 SeatIndex, int32 HandIndex, bool bFaceUp = true);
 	void DealCardToDealer(bool bFaceUp = true);
+	void FinishInitialDeal();
+	void ContinueTimedDeal();
+	void FinishTimedPlayerDeal();
+	void ContinueTimedDealerTurn();
+	void ScheduleDealerPresentation(void (ABlackjackTableActor::*Callback)(), float DelaySeconds);
+	void CancelDealerPresentation(bool bNotify);
+	void BeginTimedPlayerDeal(int32 SeatIndex);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_PlayerHandCardDealt(int32 SeatIndex, int32 HandIndex, int32 CardIndex, const FBlackjackCard& Card);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_DealerCardDealt(const FBlackjackCard& Card);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_DealerHoleCardRevealed(const FBlackjackCard& Card);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_PlayerHandsSplit(int32 SeatIndex, const FBlackjackSeatState& SeatState);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_DealerShuffle();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_DealerPresentationReset();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_DealerTableVisualReset();
 	void AdvanceTurnAfterSeat(int32 SeatIndex);
 	void RunDealerAndResolve();
 	void ResolveSeats();
@@ -356,6 +421,18 @@ private:
 
 	FBlackjackHand ServerDealerHand;
 	FTimerHandle BettingWindowTimerHandle;
+	FTimerHandle DealerPresentationTimerHandle;
+	struct FPendingDealerCard
+	{
+		int32 SeatIndex = INDEX_NONE;
+		int32 HandIndex = 0;
+		bool bFaceUp = true;
+	};
+	TArray<FPendingDealerCard> PendingDealerCards;
+	int32 PendingDealerCardIndex = 0;
+	int32 PendingPlayerDealSeat = INDEX_NONE;
+	bool bInitialDealPending = false;
+	bool bDealerShufflePending = false;
 	TArray<TWeakObjectPtr<ABlackjackTableInteractionActor>> RegisteredBettingInteractionTargets;
 	TArray<TWeakObjectPtr<ABlackjackSeatInteractionActor>> RegisteredSeatCameraTargets;
 };

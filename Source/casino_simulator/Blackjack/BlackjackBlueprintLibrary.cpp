@@ -24,8 +24,35 @@ bool UBlackjackBlueprintLibrary::FindBlackjackCardVisualData(
 	const FBlackjackCard& Card,
 	FBlackjackCardVisualData& OutVisualData)
 {
+	OutVisualData = FBlackjackCardVisualData();
 	if (!CardVisualDataTable)
 	{
+		return false;
+	}
+
+	// The public dealer hole card contains no rank until reveal. Its back still
+	// needs the selected deck texture, without inventing or exposing a front.
+	if (!Card.bFaceUp && Card.Rank == EBlackjackRank::None)
+	{
+		const FName DeckName = GetBlackjackDeckStyleName(DeckStyle);
+		if (DeckName.IsNone()) return false;
+		const FString Prefix = DeckName.ToString() + TEXT("_");
+		TArray<FName> RowNames = CardVisualDataTable->GetRowNames();
+		RowNames.Sort(FNameLexicalLess());
+		for (const FName Name : RowNames)
+		{
+			if (!Name.ToString().StartsWith(Prefix)) continue;
+			const FBlackjackCardVisualData* BackRow = CardVisualDataTable->FindRow<FBlackjackCardVisualData>(
+				Name, TEXT("FindBlackjackCardBackVisualData"));
+			if (BackRow && BackRow->BackTexture)
+			{
+				OutVisualData.DeckStyle = DeckStyle;
+				OutVisualData.Rank = EBlackjackRank::None;
+				OutVisualData.FrontTexture = nullptr;
+				OutVisualData.BackTexture = BackRow->BackTexture;
+				return true;
+			}
+		}
 		return false;
 	}
 

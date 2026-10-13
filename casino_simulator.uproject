@@ -16,6 +16,7 @@
 		}
 	],
 	"Plugins": [
+        { "Name": "CasinoDealerEditor", "Enabled": true, "TargetAllowList": [ "Editor" ] },
         { "Name": "OnlineSubsystemEOS", "Enabled": true },
         { "Name": "EOSVoiceChat", "Enabled": true },
 		{

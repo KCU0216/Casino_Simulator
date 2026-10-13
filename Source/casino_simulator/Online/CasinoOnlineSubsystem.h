@@ -30,6 +30,8 @@ struct FCasinoRoomInfo
     UPROPERTY(BlueprintReadOnly) FString HostName;
     UPROPERTY(BlueprintReadOnly) int32 Players = 0;
     UPROPERTY(BlueprintReadOnly) int32 Capacity = 0;
+    UPROPERTY(BlueprintReadOnly) bool bPasswordProtected = false;
+    UPROPERTY(BlueprintReadOnly) FString SessionId;
 };
 
 USTRUCT(BlueprintType)
@@ -72,8 +74,12 @@ public:
     // Browser-based Epic login. No passwords or client secrets in BP pins.
     UFUNCTION(BlueprintCallable, Category="Casino|Online") void Login();
     UFUNCTION(BlueprintCallable, Category="Casino|Online") void CreateRoom(const FString& RoomName);
+    UFUNCTION(BlueprintCallable, Category="Casino|Online") void CreateRoomWithOptions(const FString& RoomName, const FString& Password);
     UFUNCTION(BlueprintCallable, Category="Casino|Online") void FindRooms();
     UFUNCTION(BlueprintCallable, Category="Casino|Online") void JoinRoom(int32 SearchIndex);
+    UFUNCTION(BlueprintCallable, Category="Casino|Online") void JoinRoomWithPassword(int32 SearchIndex, const FString& Password);
+    // Dialogs retain this ID instead of a search index that can change during refresh.
+    UFUNCTION(BlueprintCallable, Category="Casino|Online") void JoinRoomByIdWithPassword(const FString& SessionId, const FString& Password);
     UFUNCTION(BlueprintCallable, Category="Casino|Online") void LeaveRoom();
     UFUNCTION(BlueprintCallable, Category="Casino|Online") void StartHostedGame();
     UFUNCTION(BlueprintPure, Category="Casino|Online") bool IsRoomHost() const;
@@ -81,6 +87,9 @@ public:
     UFUNCTION(BlueprintPure, Category="Casino|Lobby") bool CanStartHostedGame() const;
     UFUNCTION(BlueprintPure, Category="Casino|Online") bool IsLoggedIn() const;
     UFUNCTION(BlueprintPure, Category="Casino|Online") FString GetLocalDisplayName() const;
+
+    // Server admission only. The room secret is never exposed to BP/session metadata.
+    bool ValidateRoomJoinOptions(const FString& Options, const FString& JoiningUniqueId);
 
     // Local listening preferences: player IDs come from GetVoiceIdForPlayer/GetVoicePlayers.
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoiceEnabled(bool bEnabled);
@@ -114,6 +123,7 @@ public:
     UFUNCTION(BlueprintPure, Category="Casino|Voice") FString GetVoiceIdForPlayer(APlayerState* Player) const;
 
 private:
+    friend class FCasinoRoomPasswordStateTest;
     IOnlineSubsystem* OSS = nullptr; // Engine-owned, scoped to this PIE/game instance.
     IOnlineIdentityPtr Identity;
     IOnlineSessionPtr Sessions;
@@ -124,6 +134,13 @@ private:
     TSharedPtr<IInputProcessor> VoiceInputProcessor;
     FString PendingLobbyPath;
     FString PendingJoinSessionId;
+    FString PendingJoinPassword;
+    FString PendingJoinNonce;
+    FString PendingJoinProof;
+    FString HostRoomSalt;
+    TArray<uint8> HostPasswordKey;
+    TSet<FString> AcceptedJoinNonces;
+    bool bRoomAdmissionAccepted = false;
     bool bMenuTravelPending = false;
     int32 ExpectedPlayers = 0;
     bool bTalkHeld = false;
@@ -146,6 +163,8 @@ private:
     void UpdateComplete(FName Name, bool bSuccess);
     void StartComplete(FName Name, bool bSuccess);
     void ReturnToMenu();
+    void ClearPendingJoinCredentials();
+    void ClearRoomCredentials();
     void NetworkFailure(UWorld* World, UNetDriver* Driver, ENetworkFailure::Type Type, const FString& Message);
     void TravelFailure(UWorld* World, ETravelFailure::Type Type, const FString& Message);
     void MapLoaded(UWorld* World);

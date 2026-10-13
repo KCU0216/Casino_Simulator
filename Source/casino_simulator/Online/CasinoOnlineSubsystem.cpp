@@ -1,9 +1,11 @@
 #include "Online/CasinoOnlineSubsystem.h"
 #include "Online/CasinoOnlineSettings.h"
 #include "Online/CasinoLobbyGameMode.h"
+#include "Online/CasinoRoomPassword.h"
 #include "casino_simulatorPlayerState.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/PackageName.h"
@@ -33,6 +35,8 @@ namespace CasinoOnline
     const FName ProjectKey(TEXT("CASINO_PROJECT"));
     const FName BuildKey(TEXT("CASINO_BUILD_ID"));
     const FName AdmissionKey(TEXT("CASINO_ADMISSION_OPEN"));
+    const FName PasswordProtectedKey(TEXT("CASINO_PASSWORD_PROTECTED"));
+    const FName RoomSaltKey(TEXT("CASINO_ROOM_SALT"));
     const FString ProjectValue(TEXT("CasinoSimulatorKCU"));
     bool IsAdmissionOpen(const FOnlineSessionSettings& Settings)
     {
@@ -106,6 +110,7 @@ void UCasinoOnlineSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UCasinoOnlineSubsystem::Deinitialize()
 {
+    ClearRoomCredentials();
     if (IVoiceChatUser* Voice = VoiceUser()) Voice->TransmitToNoChannels();
     if (VoiceInputProcessor && FSlateApplication::IsInitialized())
         FSlateApplication::Get().UnregisterInputPreProcessor(VoiceInputProcessor);
@@ -136,6 +141,7 @@ void UCasinoOnlineSubsystem::SetState(ECasinoOnlineState NewState)
 {
     State = NewState;
     bVoiceDirty = true;
+    ApplyVoiceSettings();
     OnChanged.Broadcast();
 }
 
@@ -181,13 +187,32 @@ void UCasinoOnlineSubsystem::LoginComplete(int32 LocalUser, bool bSuccess, const
 
 void UCasinoOnlineSubsystem::CreateRoom(const FString& RoomName)
 {
+    CreateRoomWithOptions(RoomName, FString());
+}
+
+void UCasinoOnlineSubsystem::CreateRoomWithOptions(const FString& RoomName, const FString& Password)
+{
     if (State != ECasinoOnlineState::Ready || !IsLoggedIn()) return;
+    if (!Sessions.IsValid()) return;
+    const FString Title = RoomName.TrimStartAndEnd();
+    if (Title.IsEmpty() || Title.Len() > 48)
+    { Error(TEXT("CreateRoom"), TEXT("Enter a room title of 1 to 48 characters.")); return; }
+    if (Password.Len() > CasinoRoomPassword::MaxPasswordLength)
+    { Error(TEXT("CreateRoom"), TEXT("Room passwords may contain at most 64 characters.")); return; }
     const auto* Config = GetDefault<UCasinoOnlineSettings>();
     PendingLobbyPath = CasinoOnline::MapPath(Config->LobbyMap);
     if (PendingLobbyPath.IsEmpty() || CasinoOnline::MapPath(Config->MenuMap).IsEmpty())
     { Error(TEXT("CreateRoom"), TEXT("Set valid Lobby Map and Menu Map in Casino Online settings.")); return; }
     if (Sessions->GetNamedSession(NAME_GameSession))
     { Error(TEXT("CreateRoom"), TEXT("Leave the existing room first.")); return; }
+    ClearRoomCredentials();
+    if (!Password.IsEmpty())
+    {
+        HostRoomSalt = FGuid::NewGuid().ToString(EGuidFormats::Digits).ToLower();
+        if (!CasinoRoomPassword::DeriveKey(HostRoomSalt, Password, HostPasswordKey))
+        { ClearRoomCredentials(); Error(TEXT("CreateRoom"), TEXT("Could not prepare room password protection.")); return; }
+    }
+    LastError.Reset();
     FOnlineSessionSettings Settings;
     Settings.bIsLANMatch = false;
     Settings.bIsDedicated = false;
@@ -205,8 +230,11 @@ void UCasinoOnlineSubsystem::CreateRoom(const FString& RoomName)
     BuildSetting.Data.SetValue(static_cast<int64>(Config->BuildId));
     Settings.Set(CasinoOnline::BuildKey, BuildSetting);
     Settings.Set(CasinoOnline::AdmissionKey, true, EOnlineDataAdvertisementType::ViaOnlineService);
+    Settings.Set(CasinoOnline::PasswordProtectedKey, !Password.IsEmpty(), EOnlineDataAdvertisementType::ViaOnlineService);
+    if (!HostRoomSalt.IsEmpty())
+        Settings.Set(CasinoOnline::RoomSaltKey, HostRoomSalt, EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(SETTING_HOST_MIGRATION, false, EOnlineDataAdvertisementType::DontAdvertise);
-    Settings.Set(CasinoOnline::RoomKey, RoomName.TrimStartAndEnd().Left(48), EOnlineDataAdvertisementType::ViaOnlineService);
+    Settings.Set(CasinoOnline::RoomKey, Title, EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(CasinoOnline::ProjectKey, CasinoOnline::ProjectValue, EOnlineDataAdvertisementType::ViaOnlineService);
     Settings.Set(SETTING_MAPNAME, PendingLobbyPath, EOnlineDataAdvertisementType::ViaOnlineService);
     UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Creating room. GameBuild=%d Capacity=%d"),
@@ -222,8 +250,9 @@ void UCasinoOnlineSubsystem::CreateComplete(FName Name, bool bSuccess)
     if (Name != NAME_GameSession) return;
     Sessions->ClearOnCreateSessionCompleteDelegate_Handle(CreateHandle);
     UE_LOG(LogTemp, Log, TEXT("CasinoOnline: CreateRoom completed. Success=%d"), bSuccess);
-    if (!bSuccess) { SetState(ECasinoOnlineState::Ready); Error(TEXT("CreateRoom"), TEXT("EOS room creation failed.")); return; }
+    if (!bSuccess) { ClearRoomCredentials(); SetState(ECasinoOnlineState::Ready); Error(TEXT("CreateRoom"), TEXT("EOS room creation failed.")); return; }
     bSessionWasPresent = true;
+    bRoomAdmissionAccepted = true;
     SetState(ECasinoOnlineState::InRoom);
     UGameplayStatics::OpenLevel(this, FName(*PendingLobbyPath), true,
         TEXT("listen?game=/Script/casino_simulator.CasinoLobbyGameMode"));
@@ -310,6 +339,15 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
             }
             FCasinoRoomInfo Room;
             Room.SearchIndex = I;
+            Room.SessionId = Result.GetSessionIdStr();
+            const auto& ResultSettings = Result.Session.SessionSettings;
+            const auto* ProtectionSetting = ResultSettings.Settings.Find(CasinoOnline::PasswordProtectedKey);
+            if (ProtectionSetting && !ResultSettings.Get(CasinoOnline::PasswordProtectedKey, Room.bPasswordProtected)) continue;
+            if (Room.bPasswordProtected)
+            {
+                FString Salt;
+                if (!ResultSettings.Get(CasinoOnline::RoomSaltKey, Salt) || !CasinoRoomPassword::IsHexToken(Salt, 32)) continue;
+            }
             Result.Session.SessionSettings.Get(CasinoOnline::RoomKey, Room.RoomName);
             Room.HostName = Result.Session.OwningUserName;
             Room.Capacity = Result.Session.SessionSettings.NumPublicConnections;
@@ -320,8 +358,7 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
         }
     }
     UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Search visible rooms=%d"), Rooms.Num());
-    const FString SessionId = MoveTemp(PendingJoinSessionId);
-    PendingJoinSessionId.Reset();
+    const FString SessionId = PendingJoinSessionId;
     SetState(ECasinoOnlineState::Ready);
     if (!SessionId.IsEmpty())
     {
@@ -334,6 +371,7 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
             }
         }
         Error(TEXT("JoinRoom"), TEXT("This room has started, is full, or is no longer available. Refresh the room list."));
+        ClearPendingJoinCredentials();
         return;
     }
     if (!bSuccess) Error(TEXT("FindRooms"), TEXT("EOS room search failed."));
@@ -341,20 +379,63 @@ void UCasinoOnlineSubsystem::FindComplete(bool bSuccess)
 
 void UCasinoOnlineSubsystem::JoinRoom(int32 SearchIndex)
 {
+    JoinRoomWithPassword(SearchIndex, FString());
+}
+
+void UCasinoOnlineSubsystem::JoinRoomWithPassword(int32 SearchIndex, const FString& Password)
+{
     if (State != ECasinoOnlineState::Ready || !IsLoggedIn()) return;
     if (!Search || !Search->SearchResults.IsValidIndex(SearchIndex))
+    { ClearPendingJoinCredentials(); Error(TEXT("JoinRoom"), TEXT("Search results expired. Search again.")); return; }
+    JoinRoomByIdWithPassword(Search->SearchResults[SearchIndex].GetSessionIdStr(), Password);
+}
+
+void UCasinoOnlineSubsystem::JoinRoomByIdWithPassword(const FString& SessionId, const FString& Password)
+{
+    if (State != ECasinoOnlineState::Ready || !IsLoggedIn() || !Sessions.IsValid()) return;
+    ClearPendingJoinCredentials();
+    if (SessionId.IsEmpty())
     { Error(TEXT("JoinRoom"), TEXT("Search results expired. Search again.")); return; }
-    if (Sessions->GetNamedSession(NAME_GameSession)) return;
+    if (Password.Len() > CasinoRoomPassword::MaxPasswordLength)
+    { Error(TEXT("JoinRoom"), TEXT("Room passwords may contain at most 64 characters.")); return; }
+    if (Sessions->GetNamedSession(NAME_GameSession))
+    { Error(TEXT("JoinRoom"), TEXT("Leave the existing room first.")); return; }
     // Re-query EOS: the user may be clicking a lobby result captured before the host started.
-    PendingJoinSessionId = Search->SearchResults[SearchIndex].GetSessionIdStr();
+    PendingJoinSessionId = SessionId;
+    PendingJoinPassword = Password;
+    LastError.Reset();
+    bRoomAdmissionAccepted = false;
     FindRooms();
 }
 
 void UCasinoOnlineSubsystem::JoinVerifiedRoom(int32 SearchIndex)
 {
-    if (State != ECasinoOnlineState::Ready || Sessions->GetNamedSession(NAME_GameSession)) return;
+    if (State != ECasinoOnlineState::Ready || !Sessions.IsValid() || Sessions->GetNamedSession(NAME_GameSession)) return;
     if (!Search || !Search->SearchResults.IsValidIndex(SearchIndex) ||
-        !CasinoOnline::IsAdmissionOpen(Search->SearchResults[SearchIndex].Session.SessionSettings)) return;
+        !CasinoOnline::IsAdmissionOpen(Search->SearchResults[SearchIndex].Session.SessionSettings))
+    { ClearPendingJoinCredentials(); Error(TEXT("JoinRoom"), TEXT("This room is no longer available.")); return; }
+    const auto& Result = Search->SearchResults[SearchIndex];
+    if (Result.GetSessionIdStr() != PendingJoinSessionId)
+    { ClearPendingJoinCredentials(); Error(TEXT("JoinRoom"), TEXT("Search results changed. Search again.")); return; }
+    bool bProtected = false;
+    Result.Session.SessionSettings.Get(CasinoOnline::PasswordProtectedKey, bProtected);
+    if (bProtected)
+    {
+        FString Salt;
+        TArray<uint8> Key;
+        const auto LocalId = Identity->GetUniquePlayerId(0);
+        if (!Result.Session.SessionSettings.Get(CasinoOnline::RoomSaltKey, Salt) || !LocalId.IsValid() ||
+            !CasinoRoomPassword::DeriveKey(Salt, PendingJoinPassword, Key))
+        { ClearPendingJoinCredentials(); Error(TEXT("JoinRoom"), TEXT("Enter the room password to join.")); return; }
+        PendingJoinNonce = FGuid::NewGuid().ToString(EGuidFormats::Digits).ToLower();
+        PendingJoinProof = CasinoRoomPassword::MakeProof(Key, Salt, LocalId->ToString(), PendingJoinNonce);
+        FMemory::Memzero(Key.GetData(), Key.Num());
+        if (PendingJoinProof.IsEmpty())
+        { ClearPendingJoinCredentials(); Error(TEXT("JoinRoom"), TEXT("Could not prepare room admission.")); return; }
+    }
+    if (!PendingJoinPassword.IsEmpty()) FMemory::Memzero(PendingJoinPassword.GetCharArray().GetData(), PendingJoinPassword.GetCharArray().Num() * sizeof(TCHAR));
+    PendingJoinPassword.Reset();
+    bRoomAdmissionAccepted = false;
     SetState(ECasinoOnlineState::Joining);
     JoinHandle = Sessions->AddOnJoinSessionCompleteDelegate_Handle(
         FOnJoinSessionCompleteDelegate::CreateUObject(this, &ThisClass::JoinComplete));
@@ -377,8 +458,19 @@ void UCasinoOnlineSubsystem::JoinComplete(FName Name, EOnJoinSessionCompleteResu
         return;
     }
     bSessionWasPresent = true;
-    SetState(ECasinoOnlineState::InRoom);
+    // EOS lobby membership precedes server admission. Stay silent/busy until the
+    // accepted client actually loads the lobby; a rejected client never reaches it.
+    if (!PendingJoinProof.IsEmpty())
+        Address += TEXT("?CasinoRoomNonce=") + PendingJoinNonce + TEXT("?CasinoRoomProof=") + PendingJoinProof;
     PC->ClientTravel(Address, TRAVEL_Absolute);
+}
+
+bool UCasinoOnlineSubsystem::ValidateRoomJoinOptions(const FString& Options, const FString& JoiningUniqueId)
+{
+    if (HostPasswordKey.IsEmpty()) return true;
+    return CasinoRoomPassword::ConsumeProof(HostPasswordKey, HostRoomSalt, JoiningUniqueId,
+        UGameplayStatics::ParseOption(Options, TEXT("CasinoRoomNonce")),
+        UGameplayStatics::ParseOption(Options, TEXT("CasinoRoomProof")), AcceptedJoinNonces);
 }
 
 bool UCasinoOnlineSubsystem::IsRoomHost() const
@@ -454,6 +546,8 @@ void UCasinoOnlineSubsystem::LeaveRoom()
     // Wait for pending create/join/search/login to finish; UI disables Leave while busy.
     if (State == ECasinoOnlineState::LoggingIn || State == ECasinoOnlineState::Creating ||
         State == ECasinoOnlineState::Joining || State == ECasinoOnlineState::Searching || State == ECasinoOnlineState::Starting) return;
+    ClearPendingJoinCredentials();
+    bRoomAdmissionAccepted = false;
     bTalkHeld = false;
     if (IVoiceChatUser* Voice = VoiceUser()) Voice->TransmitToNoChannels();
     SetState(ECasinoOnlineState::Leaving);
@@ -470,6 +564,7 @@ void UCasinoOnlineSubsystem::DestroyComplete(FName Name, bool bSuccess)
     if (!bSuccess)
     {
         // Do not pretend the old EOS room was removed; allow a retry.
+        bRoomAdmissionAccepted = IsRoomHost();
         SetState(ECasinoOnlineState::InRoom);
         Error(TEXT("LeaveRoom"), TEXT("EOS room cleanup failed. Retry Leave Room."));
         return;
@@ -480,7 +575,7 @@ void UCasinoOnlineSubsystem::DestroyComplete(FName Name, bool bSuccess)
 void UCasinoOnlineSubsystem::ReturnToMenu()
 {
     bSessionWasPresent = false; bHadVoiceChannel = false; bVoiceDirty = true;
-    PendingJoinSessionId.Reset();
+    ClearRoomCredentials();
     MutedPlayers.Reset(); Rooms.Reset(); Search.Reset();
     SetState(IsLoggedIn() ? ECasinoOnlineState::Ready : ECasinoOnlineState::Offline);
     const FString Path = CasinoOnline::MapPath(GetDefault<UCasinoOnlineSettings>()->MenuMap);
@@ -488,6 +583,25 @@ void UCasinoOnlineSubsystem::ReturnToMenu()
     // Open the menu from the next ticker iteration, after that fallback is scheduled.
     if (!Path.IsEmpty()) bMenuTravelPending = true;
     else Error(TEXT("Menu"), TEXT("Menu Map is not configured."));
+}
+
+void UCasinoOnlineSubsystem::ClearPendingJoinCredentials()
+{
+    if (!PendingJoinPassword.IsEmpty()) FMemory::Memzero(PendingJoinPassword.GetCharArray().GetData(), PendingJoinPassword.GetCharArray().Num() * sizeof(TCHAR));
+    PendingJoinPassword.Reset();
+    PendingJoinSessionId.Reset();
+    PendingJoinNonce.Reset();
+    PendingJoinProof.Reset();
+}
+
+void UCasinoOnlineSubsystem::ClearRoomCredentials()
+{
+    ClearPendingJoinCredentials();
+    if (!HostPasswordKey.IsEmpty()) FMemory::Memzero(HostPasswordKey.GetData(), HostPasswordKey.Num());
+    HostPasswordKey.Reset();
+    HostRoomSalt.Reset();
+    AcceptedJoinNonces.Reset();
+    bRoomAdmissionAccepted = false;
 }
 
 void UCasinoOnlineSubsystem::NetworkFailure(UWorld* World, UNetDriver* Driver, ENetworkFailure::Type Type, const FString& Message)
@@ -504,7 +618,10 @@ void UCasinoOnlineSubsystem::NetworkFailure(UWorld* World, UNetDriver* Driver, E
         (Type == ENetworkFailure::ConnectionLost || Type == ENetworkFailure::ConnectionTimeout ||
          Type == ENetworkFailure::NetGuidMismatch || Type == ENetworkFailure::NetChecksumMismatch)) return;
     if ( State == ECasinoOnlineState::Leaving || State == ECasinoOnlineState::Ready || State == ECasinoOnlineState::Offline) return;
-    Error(TEXT("Network"), Message);
+    FString SafeMessage = Message;
+    if (!PendingJoinProof.IsEmpty()) SafeMessage.ReplaceInline(*PendingJoinProof, TEXT("[redacted]"));
+    if (!PendingJoinNonce.IsEmpty()) SafeMessage.ReplaceInline(*PendingJoinNonce, TEXT("[redacted]"));
+    Error(TEXT("Network"), SafeMessage);
     ClearOnlineDelegates();
     SetState(ECasinoOnlineState::InRoom);
     LeaveRoom();
@@ -513,7 +630,10 @@ void UCasinoOnlineSubsystem::NetworkFailure(UWorld* World, UNetDriver* Driver, E
 void UCasinoOnlineSubsystem::TravelFailure(UWorld* World, ETravelFailure::Type, const FString& Message)
 {
     if (World != GetWorld() || State == ECasinoOnlineState::Leaving || State == ECasinoOnlineState::Ready || State == ECasinoOnlineState::Offline) return;
-    Error(TEXT("Travel"), Message);
+    FString SafeMessage = Message;
+    if (!PendingJoinProof.IsEmpty()) SafeMessage.ReplaceInline(*PendingJoinProof, TEXT("[redacted]"));
+    if (!PendingJoinNonce.IsEmpty()) SafeMessage.ReplaceInline(*PendingJoinNonce, TEXT("[redacted]"));
+    Error(TEXT("Travel"), SafeMessage);
     ClearOnlineDelegates();
     SetState(ECasinoOnlineState::InRoom);
     LeaveRoom();
@@ -542,6 +662,21 @@ void UCasinoOnlineSubsystem::ApplicationDeactivated()
 void UCasinoOnlineSubsystem::MapLoaded(UWorld* World)
 {
     if (!World || World->GetGameInstance() != GetGameInstance()) return;
+    if (State == ECasinoOnlineState::Joining)
+    {
+        const FString LoadedMap = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
+        const FString LobbyMap = CasinoOnline::MapPath(GetDefault<UCasinoOnlineSettings>()->LobbyMap);
+        if (World->GetNetMode() != NM_Client || LoadedMap != LobbyMap)
+        {
+            Error(TEXT("JoinRoom"), TEXT("Could not enter the room. Please try again."));
+            SetState(ECasinoOnlineState::InRoom);
+            LeaveRoom();
+            return;
+        }
+        bRoomAdmissionAccepted = true;
+        ClearPendingJoinCredentials();
+        SetState(ECasinoOnlineState::InRoom);
+    }
     bTalkHeld = false;
     bVoiceDirty = true;
     ApplyVoiceSettings();
@@ -596,14 +731,15 @@ void UCasinoOnlineSubsystem::ApplyVoiceSettings()
     IVoiceChatUser* Voice = VoiceUser();
     if (!Voice) return;
     const auto* Pref = GetDefault<UCasinoVoicePreferences>();
-    Voice->SetAudioInputDeviceMuted(!Pref->bVoiceEnabled || Pref->bMicrophoneMuted);
-    Voice->SetAudioOutputDeviceMuted(!Pref->bVoiceEnabled);
+    const bool bVoiceAllowed = bRoomAdmissionAccepted &&
+        (State == ECasinoOnlineState::InRoom || State == ECasinoOnlineState::Starting || State == ECasinoOnlineState::InGame);
+    Voice->SetAudioInputDeviceMuted(!bVoiceAllowed || !Pref->bVoiceEnabled || Pref->bMicrophoneMuted);
+    Voice->SetAudioOutputDeviceMuted(!bVoiceAllowed || !Pref->bVoiceEnabled);
     Voice->SetAudioOutputVolume(Pref->OutputVolume);
     Voice->SetAudioInputVolume(GetVoiceInputVolume());
     Voice->SetInputDeviceId(Pref->InputDeviceId);
     for (const FString& Id : MutedPlayers) Voice->SetPlayerMuted(Id, true);
-    if (Pref->bVoiceEnabled && !Pref->bMicrophoneMuted && (!Pref->bPushToTalk || bTalkHeld) &&
-        (State == ECasinoOnlineState::InRoom || State == ECasinoOnlineState::Starting || State == ECasinoOnlineState::InGame))
+    if (bVoiceAllowed && Pref->bVoiceEnabled && !Pref->bMicrophoneMuted && (!Pref->bPushToTalk || bTalkHeld))
         Voice->TransmitToAllChannels();
     else Voice->TransmitToNoChannels();
     bVoiceDirty = false;
@@ -638,7 +774,7 @@ void UCasinoOnlineSubsystem::UpdateVoicePlayerVolumes()
             }
         }
         Voice->SetPlayerVolume(Id, GetVoicePlayerVolume(Id) * Gain);
-        Voice->SetPlayerMuted(Id, !Pref->bVoiceEnabled || MutedPlayers.Contains(Id));
+        Voice->SetPlayerMuted(Id, !bRoomAdmissionAccepted || !Pref->bVoiceEnabled || MutedPlayers.Contains(Id));
     }
 }
 
@@ -752,7 +888,7 @@ TArray<FCasinoVoiceParticipant> UCasinoOnlineSubsystem::GetVoiceParticipants() c
 bool UCasinoOnlineSubsystem::IsMicrophoneMuted() const { return GetDefault<UCasinoVoicePreferences>()->bMicrophoneMuted; }
 bool UCasinoOnlineSubsystem::IsPushToTalkEnabled() const { return GetDefault<UCasinoVoicePreferences>()->bPushToTalk; }
 float UCasinoOnlineSubsystem::GetVoiceOutputVolume() const { return GetDefault<UCasinoVoicePreferences>()->OutputVolume; }
-bool UCasinoOnlineSubsystem::IsVoiceConnected() const { auto* V = VoiceUser(); return V && !V->GetChannels().IsEmpty(); }
+bool UCasinoOnlineSubsystem::IsVoiceConnected() const { auto* V = VoiceUser(); return bRoomAdmissionAccepted && V && !V->GetChannels().IsEmpty(); }
 TArray<FCasinoVoiceDevice> UCasinoOnlineSubsystem::GetVoiceInputDevices() const
 {
     TArray<FCasinoVoiceDevice> Result;

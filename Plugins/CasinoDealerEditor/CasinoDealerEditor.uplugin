@@ -1,0 +1,12 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0",
+  "FriendlyName": "Casino Dealer Asset Tools",
+  "Description": "Editor-only generation and validation of the blackjack dealer assets.",
+  "Category": "Editor",
+  "EnabledByDefault": false,
+  "CanContainContent": false,
+  "Modules": [{ "Name": "CasinoDealerEditor", "Type": "Editor", "LoadingPhase": "Default" }],
+  "Plugins": [{ "Name": "IKRig", "Enabled": true }]
+}

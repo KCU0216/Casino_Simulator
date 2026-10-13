@@ -72,9 +72,11 @@ void ACasinoLobbyGameMode::PreLogin(const FString& Options, const FString& Addre
 {
     Super::PreLogin(Options, Address, UniqueId, ErrorMessage);
     if (!ErrorMessage.IsEmpty()) return;
-    const auto* Online = GetGameInstance()->GetSubsystem<UCasinoOnlineSubsystem>();
+    auto* Online = GetGameInstance()->GetSubsystem<UCasinoOnlineSubsystem>();
     if (!Online || Online->State != ECasinoOnlineState::InRoom)
         ErrorMessage = TEXT("Room is starting or closing.");
     else if (GetNumPlayers() >= GetDefault<UCasinoOnlineSettings>()->MaxPlayers)
         ErrorMessage = TEXT("Room is full.");
+    else if (!Online->ValidateRoomJoinOptions(Options, UniqueId.IsValid() ? UniqueId->ToString() : FString()))
+        ErrorMessage = TEXT("Incorrect room password. Please try again.");
 }
