@@ -36,6 +36,7 @@ void ALadderMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ALadderMachine, Mode);
 	DOREPLIFETIME(ALadderMachine, RailCursor);
 	DOREPLIFETIME(ALadderMachine, DisplayBalance);
+	DOREPLIFETIME(ALadderMachine, LadderState);
 }
 
 void ALadderMachine::BeginPlay()
@@ -72,6 +73,7 @@ void ALadderMachine::OnMachineReleased_Implementation(Acasino_simulatorCharacter
 
 void ALadderMachine::BroadcastInitialState()
 {
+	BroadcastLadderState();
 	OnRailCountChanged.Broadcast(Rails);
 	OnResultsChanged.Broadcast();
 	OnModeChanged.Broadcast(Mode);
@@ -97,6 +99,7 @@ void ALadderMachine::SetRailCount(int32 NewRails)
 	OnRep_RailConfig(); // 호스트 로컬 UI (클라는 리플리케이션으로 각자 OnRep)
 	OnRep_Payouts();
 	OnRep_Cursor();
+	PublishLadderState();
 }
 
 void ALadderMachine::BuildPayouts()
@@ -109,6 +112,7 @@ void ALadderMachine::ShuffleResults()
 	if (!HasAuthority()) return;
 	Payouts = RollPayouts();
 	OnRep_Payouts();
+	PublishLadderState();
 }
 
 TArray<int32> ALadderMachine::RollPayouts()
@@ -173,6 +177,104 @@ void ALadderMachine::ChangeBet(int32 Steps)
 	ClampBet();
 }
 
+bool ALadderMachine::CanUseControls() const
+{
+	const Acasino_simulatorCharacter* User = GetCurrentUser();
+	return HasAuthority() && IsValid(User) && bCanOperate && !bIsPlaying
+		&& GetOwner() == User->GetController() && IsCasinoGameplayAllowed(this);
+}
+
+void ALadderMachine::ClosePreviousResult()
+{
+	if (bResultOpen)
+	{
+		bResultOpen = false;
+		Multicast_ResultClosed();
+	}
+}
+
+void ALadderMachine::SelectRailLeft()
+{
+	if (!HasAuthority()) { Server_SelectRailLeft(); return; }
+	if (!CanUseControls()) return;
+	SetRailCursor(RailCursor - 1);
+}
+
+void ALadderMachine::SelectRailRight()
+{
+	if (!HasAuthority()) { Server_SelectRailRight(); return; }
+	if (!CanUseControls()) return;
+	SetRailCursor(RailCursor + 1);
+}
+
+void ALadderMachine::RailCountLeft()
+{
+	if (!HasAuthority()) { Server_RailCountLeft(); return; }
+	if (!CanUseControls() || Rails <= MinRails) return;
+	ClosePreviousResult();
+	SetRailCount(Rails - 1);
+}
+
+void ALadderMachine::RailCountRight()
+{
+	if (!HasAuthority()) { Server_RailCountRight(); return; }
+	if (!CanUseControls() || Rails >= MaxRails) return;
+	ClosePreviousResult();
+	SetRailCount(Rails + 1);
+}
+
+void ALadderMachine::SetBetAmount(int32 NewAmount)
+{
+	if (!HasAuthority()) { Server_SetBetAmount(NewAmount); return; }
+	if (!CanUseControls()) return;
+	BetAmount = FMath::Clamp(NewAmount, 0, FMath::Max(GetBalance(), 0));
+	OnRep_Bet();
+}
+
+void ALadderMachine::Play()
+{
+	if (!HasAuthority()) { Server_Play(); return; }
+	if (!CanUseControls() || BetAmount <= 0) return;
+	if (GetBalance() < BetAmount)
+	{
+		Client_InsufficientFunds();
+		return;
+	}
+	ClosePreviousResult();
+	ServerStartPlay(RailCursor);
+}
+
+void ALadderMachine::RefreshLadder()
+{
+	if (!HasAuthority()) { Server_RefreshLadder(); return; }
+	if (!CanUseControls()) return;
+	ClosePreviousResult();
+	ClearBoard();
+	ShuffleResults();
+}
+
+void ALadderMachine::CloseResultAndClearBoard()
+{
+	if (!HasAuthority()) { Server_CloseResultAndClearBoard(); return; }
+	if (!CanUseControls() || !bResultOpen) return;
+	ClosePreviousResult();
+	ClearBoard();
+}
+
+void ALadderMachine::Server_CloseResultAndClearBoard_Implementation() { CloseResultAndClearBoard(); }
+void ALadderMachine::Server_SelectRailLeft_Implementation() { SelectRailLeft(); }
+void ALadderMachine::Server_SelectRailRight_Implementation() { SelectRailRight(); }
+void ALadderMachine::Server_RailCountLeft_Implementation() { RailCountLeft(); }
+void ALadderMachine::Server_RailCountRight_Implementation() { RailCountRight(); }
+void ALadderMachine::Server_SetBetAmount_Implementation(int32 NewAmount) { SetBetAmount(NewAmount); }
+void ALadderMachine::Server_Play_Implementation() { Play(); }
+void ALadderMachine::Server_RefreshLadder_Implementation() { RefreshLadder(); }
+
+void ALadderMachine::Client_InsufficientFunds_Implementation()
+{
+	OnInsufficientFunds.Broadcast();
+}
+
 // ─────────── Nav (입력 진입점 — 서버 라우팅) ───────────
 
 void ALadderMachine::SetRailCursor(int32 NewCursor)
@@ -180,6 +282,7 @@ void ALadderMachine::SetRailCursor(int32 NewCursor)
 	if (!HasAuthority()) { Server_SetRailCursor(NewCursor); return; }
 	RailCursor = FMath::Clamp(NewCursor, 0, Rails - 1);
 	OnRep_Cursor();
+	PublishLadderState();
 }
 void ALadderMachine::Server_SetRailCursor_Implementation(int32 NewCursor) { SetRailCursor(NewCursor); }
 
@@ -284,11 +387,14 @@ void ALadderMachine::ServerStartPlay(int32 StartRail)
 	if (bIsPlaying) return;
 
 	// (1) 스테이크 차감 (서버 권위)
-	StakedThisRound = FMath::Min(BetAmount, GetBalance());
-	if (Acasino_simulatorCharacter* User = GetCurrentUser())
+	Acasino_simulatorCharacter* User = GetCurrentUser();
+	if (!IsValid(User) || BetAmount <= 0 || GetBalance() < BetAmount) return;
+	if (!User->TrySpendCurrency(static_cast<float>(BetAmount)))
 	{
-		User->TrySpendCurrency(static_cast<float>(StakedThisRound));
+		Client_InsufficientFunds();
+		return;
 	}
+	StakedThisRound = BetAmount;
 	RefreshDisplayBalance();   // 스테이크 차감 반영
 
 	// (2) 결과 확정 (서버 RNG)
@@ -363,6 +469,27 @@ void ALadderMachine::Multicast_ResultClosed_Implementation()
 }
 
 // ─────────── OnRep (config 동기화) ───────────
+
+void ALadderMachine::PublishLadderState()
+{
+	if (!HasAuthority()) return;
+	LadderState.Rails = Rails;
+	LadderState.Rows = Rows;
+	LadderState.SelectedRail = RailCursor;
+	LadderState.Odds = Payouts;
+	LadderState.TraceDuration = TraceDuration;
+	BroadcastLadderState();
+}
+
+void ALadderMachine::BroadcastLadderState()
+{
+	OnLadderStateChanged.Broadcast(LadderState);
+}
+
+void ALadderMachine::OnRep_LadderState()
+{
+	BroadcastLadderState();
+}
 
 void ALadderMachine::OnRep_RailConfig()
 {

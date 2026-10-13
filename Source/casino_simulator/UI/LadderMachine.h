@@ -11,6 +11,7 @@
 
 #include "CoreMinimal.h"
 #include "LadderGenerator.h"   // FLadderPlan / FLadderRungRow / ULadderGenerator
+#include "LadderDisplayState.h"
 #include "Machine/SeatedMachineBase.h"
 #include "Interaction/CasinoDayParticipant.h"
 #include "LadderMachine.generated.h"
@@ -43,6 +44,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLadderIntEvent, int32, Value);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLadderSimpleEvent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLadderModeEvent, ELadderMode, NewMode);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLadderPlayEvent, FLadderPlan, Plan);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLadderStateEvent, FLadderDisplayState, State);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FLadderResultEvent, bool, bWin, int32, DestRail, int32, Multiplier, int32, Winnings);
 
 UCLASS()
@@ -119,6 +121,7 @@ public:
 	FLadderPlan CurrentPlan;
 
 	// ─────────── Dispatchers (뷰가 구독) ───────────
+	UPROPERTY(BlueprintAssignable, Category = "Ladder|Events") FLadderStateEvent OnLadderStateChanged;
 	UPROPERTY(BlueprintAssignable, Category = "Ladder|Events") FLadderIntEvent    OnBalanceChanged;
 	UPROPERTY(BlueprintAssignable, Category = "Ladder|Events") FLadderIntEvent    OnBetChanged;
 	UPROPERTY(BlueprintAssignable, Category = "Ladder|Events") FLadderIntEvent    OnRailCountChanged;
@@ -141,6 +144,16 @@ public:
 	// ─────────── Money ops ───────────
 	UFUNCTION(BlueprintCallable, Category = "Ladder|Money") void ChangeBet(int32 Steps);
 	UFUNCTION(BlueprintCallable, Category = "Ladder|Money") void ClampBet();
+	UFUNCTION(BlueprintCallable, Category = "Ladder|Controls") void SetBetAmount(int32 NewAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "Ladder|Controls") void SelectRailLeft();
+	UFUNCTION(BlueprintCallable, Category = "Ladder|Controls") void SelectRailRight();
+	UFUNCTION(BlueprintCallable, Category = "Ladder|Controls") void RailCountLeft();
+	UFUNCTION(BlueprintCallable, Category = "Ladder|Controls") void RailCountRight();
+	UFUNCTION(BlueprintCallable, Category = "Ladder|Controls") void Play();
+	UFUNCTION(BlueprintCallable, Category = "Ladder|Controls") void RefreshLadder();
+	/** Dismiss the settled result and clear its drawing without changing the wager or selection. */
+	UFUNCTION(BlueprintCallable, Category = "Ladder|Controls") void CloseResultAndClearBoard();
 
 	/** 현재 잔액 = CurrentUser 의 Currency (정수 반올림). 사용자 없으면 0. */
 	UFUNCTION(BlueprintPure, Category = "Ladder|Money") int32 GetBalance() const;
@@ -154,6 +167,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ladder|Nav") void ResetRound();
 
 	UFUNCTION(BlueprintCallable, Category = "Ladder") void BroadcastInitialState();
+
+	/** Send the current display state locally without clearing the board. */
+	UFUNCTION(BlueprintCallable, Category = "Ladder")
+	void BroadcastLadderState();
+
+	UFUNCTION(BlueprintPure, Category = "Ladder")
+	FLadderDisplayState GetLadderState() const { return LadderState; }
 
 	UFUNCTION(BlueprintPure, Category = "Ladder") int32 GetRails() const { return Rails; }
 	UFUNCTION(BlueprintPure, Category = "Ladder") int32 GetRows()  const { return Rows; }
@@ -172,6 +192,15 @@ protected:
 	UFUNCTION(Server, Reliable) void Server_NavSelect();
 	UFUNCTION(Server, Reliable) void Server_SetRailCursor(int32 NewCursor);
 	UFUNCTION(Server, Reliable) void Server_ResetRound();
+	UFUNCTION(Server, Reliable) void Server_SelectRailLeft();
+	UFUNCTION(Server, Reliable) void Server_SelectRailRight();
+	UFUNCTION(Server, Reliable) void Server_RailCountLeft();
+	UFUNCTION(Server, Reliable) void Server_RailCountRight();
+	UFUNCTION(Server, Reliable) void Server_SetBetAmount(int32 NewAmount);
+	UFUNCTION(Server, Reliable) void Server_Play();
+	UFUNCTION(Server, Reliable) void Server_RefreshLadder();
+	UFUNCTION(Server, Reliable) void Server_CloseResultAndClearBoard();
+	UFUNCTION(Client, Reliable) void Client_InsufficientFunds();
 
 	// ── Multicast RPC (일회성 이벤트를 전 클라로) ──
 	UFUNCTION(NetMulticast, Reliable) void Multicast_BoardCleared();
@@ -186,8 +215,16 @@ protected:
 	UFUNCTION() void OnRep_Mode();
 	UFUNCTION() void OnRep_Cursor();
 	UFUNCTION() void OnRep_DisplayBalance();
+	UFUNCTION() void OnRep_LadderState();
 
 private:
+	UPROPERTY(ReplicatedUsing = OnRep_LadderState)
+	FLadderDisplayState LadderState;
+
+	void PublishLadderState();
+	bool CanUseControls() const;
+	void ClosePreviousResult();
+
 	void BuildPayouts();
 	TArray<int32> RollPayouts();
 	void ClearBoard();               // authority
