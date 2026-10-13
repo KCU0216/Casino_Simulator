@@ -249,6 +249,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment|Pickaxe")
 	float GetPickaxeMiningMontagePlayRate() const;
 
+	/** Ends held mining on this machine before a forced day-end transition. */
+	void StopMiningForDayEnd();
+
 // Currency
 public:
 

@@ -968,6 +968,8 @@ void Acasino_simulatorPlayerController::ClientDailyPaymentResult_Implementation(
 void Acasino_simulatorPlayerController::ClientPrepareDailyPayment_Implementation(FRotator Facing)
 {
     bDailyPaymentControlLocked = true;
+    if (auto* MiningCharacter = Cast<Acasino_simulatorCharacter>(GetPawn()))
+        MiningCharacter->StopMiningForDayEnd();
     ClearInteractionWidgets();
     SetCasinoUIScreen(ECasinoUIScreen::Payment);
     OnCloseGameplayUIForPayment();

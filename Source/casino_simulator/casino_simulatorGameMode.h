@@ -107,6 +107,7 @@ protected:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FCasinoPaymentCompletionTest;
+    friend class FCasinoMiningDayEndTest;
     friend class FCasinoAdaptivePaymentTest;
     friend class FRaceWorldEventTest;
 #endif

@@ -358,6 +358,7 @@ void Acasino_simulatorGameMode::BeginPaymentPhase()
     {
         auto* User = Cast<Acasino_simulatorCharacter>(It->Get()->GetPawn());
         if (!User) continue;
+        User->StopMiningForDayEnd();
         UObject* Target = User->GetCurrentInteractionTarget().GetObject();
         if (auto* NPC = Cast<ANPC_Base>(Target)) NPC->ReleaseInteraction(User);
         else if (auto* Machine = Cast<ASeatedMachineBase>(Target))

@@ -932,6 +932,24 @@ void Acasino_simulatorCharacter::MiningInputCompleted()
 	}
 }
 
+void Acasino_simulatorCharacter::StopMiningForDayEnd()
+{
+	if (!AbilitySystemComponent) return;
+
+	// Release the owning client's cached press through the normal GAS input path.
+	MiningInputCompleted();
+
+	// A remote player's server ASC has no local press-cache entry. End its mining
+	// spec explicitly as well; do not cancel equipment or unrelated abilities.
+	FScopedAbilityListLock AbilityListLock(*AbilitySystemComponent);
+	for (FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (!Spec.GetDynamicSpecSourceTags().HasTagExact(TAG_Input_Mining)) continue;
+		Spec.InputPressed = false;
+		if (Spec.IsActive()) AbilitySystemComponent->CancelAbilityHandle(Spec.Handle);
+	}
+}
+
 void Acasino_simulatorCharacter::DoAim(float Yaw, float Pitch)
 {
 	if (GetController())

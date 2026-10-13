@@ -283,7 +283,6 @@ void ARaceManager::StartRace()
 void ARaceManager::Tick(float Dt)
 {
 	Super::Tick(Dt);
-    RefreshBillboard(); // Also initializes a widget created or replaced after BeginPlay.
 	if (!HasAuthority()) return;
 	if (Phase == ERacePhase::Entering)
 	{
