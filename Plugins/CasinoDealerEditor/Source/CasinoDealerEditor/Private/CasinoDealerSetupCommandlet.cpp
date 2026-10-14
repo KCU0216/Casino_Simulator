@@ -154,6 +154,39 @@ int32 UCasinoDealerSetupCommandlet::Main(const FString& Params)
         UE_LOG(LogCasinoDealerSetup, Display, TEXT("Menu layout update completed."));
         return 0;
     }
+    if (Mode.Equals(TEXT("DayLoopUI"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoDayLoopLayouts(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Day loop UI update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Day loop UI update completed; original logic preserved."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("LadderUI"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoLadderControls(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Ladder controls update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Ladder controls updated; bet layout and original logic preserved."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("KeypadPlacement"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoPaymentKeypadLayout(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Keypad placement restore failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Shared keypad original placement restored."));
+        return 0;
+    }
     if (Mode.Equals(TEXT("SettingsUI"), ESearchCase::IgnoreCase))
     {
         FString Error;

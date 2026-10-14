@@ -94,6 +94,7 @@ void UCasinoCalculatorWidget::NativePreConstruct()
 {
 	Super::NativePreConstruct();
 	ApplyCasinoKeypadStyle(this);
+	ApplyCasinoPaymentKeypadLayout(this);
 }
 
 void UCasinoCalculatorWidget::NativeConstruct()

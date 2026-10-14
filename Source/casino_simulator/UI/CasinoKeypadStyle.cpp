@@ -2,6 +2,10 @@
 
 #include "Blueprint/UserWidget.h"
 #include "Components/Button.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/GridPanel.h"
+#include "Components/GridSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 
 namespace CasinoKeypadStyle
@@ -53,4 +57,24 @@ void ApplyCasinoKeypadStyle(UUserWidget* Keypad)
 		CasinoKeypadStyle::StyleButton(Cast<UButton>(Keypad->GetWidgetFromName(FName(*FString::Printf(TEXT("Button_%d"), Digit)))));
 	for (const TCHAR* Name : { TEXT("Button_Delete"), TEXT("Button_Backspace"), TEXT("Button_OK"), TEXT("Button_BG") })
 		CasinoKeypadStyle::StyleButton(Cast<UButton>(Keypad->GetWidgetFromName(FName(Name))));
+}
+
+void ApplyCasinoPaymentKeypadLayout(UUserWidget* Keypad)
+{
+	if (!IsValid(Keypad) || !Keypad->GetParent()
+		|| Keypad->GetParent()->GetFName() != TEXT("CasinoPaymentKeypadBounds")) return;
+	UGridPanel* Grid = Cast<UGridPanel>(Keypad->GetWidgetFromName(TEXT("GridPanel_35")));
+	UCanvasPanelSlot* Slot = Grid ? Cast<UCanvasPanelSlot>(Grid->Slot) : nullptr;
+	if (!Slot) return;
+	Slot->SetAnchors(FAnchors(.5f, .5f));
+	Slot->SetOffsets(FMargin(0.f, 0.f, 560.f, 320.f));
+	Slot->SetAlignment(FVector2D(.5f, .5f));
+	for (int32 Index = 0; Index < 4; ++Index)
+	{ Grid->SetColumnFill(Index, 1.f); Grid->SetRowFill(Index, 1.f); }
+	for (UWidget* Cell : Grid->GetAllChildren())
+	{
+		if (USizeBox* Size = Cast<USizeBox>(Cell))
+		{ Size->SetWidthOverride(130.f); Size->SetHeightOverride(72.f); }
+		if (UGridSlot* CellSlot = Cast<UGridSlot>(Cell->Slot)) CellSlot->SetPadding(FMargin(4.f));
+	}
 }
