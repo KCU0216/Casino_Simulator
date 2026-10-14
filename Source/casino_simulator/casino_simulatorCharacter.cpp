@@ -1014,6 +1014,18 @@ void Acasino_simulatorCharacter::ServerClaimRaceWinnings_Implementation(ARaceMan
 	}
 }
 
+int32 Acasino_simulatorCharacter::GetMiningPowerUpgradeLevel() const
+{
+	const Acasino_simulatorPlayerState* State = GetPlayerState<Acasino_simulatorPlayerState>();
+	return IsValid(State) ? State->GetMiningPowerUpgradeLevel() : 0;
+}
+
+int32 Acasino_simulatorCharacter::GetMiningSpeedUpgradeLevel() const
+{
+	const Acasino_simulatorPlayerState* State = GetPlayerState<Acasino_simulatorPlayerState>();
+	return IsValid(State) ? State->GetMiningSpeedUpgradeLevel() : 0;
+}
+
 void Acasino_simulatorCharacter::ServerBuyMiningShopUpgrade_Implementation(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType)
 {
 	if (MiningShopComponent)

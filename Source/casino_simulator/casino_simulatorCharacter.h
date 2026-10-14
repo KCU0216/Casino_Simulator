@@ -282,6 +282,12 @@ public:
 
 // Mining
 public:
+	UFUNCTION(BlueprintPure, Category = "Mining|Upgrade")
+	int32 GetMiningPowerUpgradeLevel() const;
+
+	UFUNCTION(BlueprintPure, Category = "Mining|Upgrade")
+	int32 GetMiningSpeedUpgradeLevel() const;
+
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Mining|Shop")
 	void ServerBuyMiningShopUpgrade(UMiningShopComponent* MiningShopComponent, EMiningShopUpgradeType UpgradeType);
 
