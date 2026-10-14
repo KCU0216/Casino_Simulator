@@ -8,6 +8,8 @@
 #include "CasinoRoomWidgetMigration.h"
 #include "CasinoBlackjackUILayoutMigration.h"
 #include "CasinoShopUILayoutMigration.h"
+#include "CasinoCalculatorMigration.h"
+#include "CasinoSlotKeypadMigration.h"
 #include "BlackjackCardSoundSetup.h"
 #include "Engine/Blueprint.h"
 #include "Engine/SimpleConstructionScript.h"
@@ -205,6 +207,28 @@ int32 UCasinoDealerSetupCommandlet::Main(const FString& Params)
             return 1;
         }
         UE_LOG(LogCasinoDealerSetup, Display, TEXT("Shop UI update completed."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("SlotKeypad"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoSlotKeypad(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Slot keypad update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Slot keypad update completed; betting and lever actions preserved."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("CalculatorKeyboard"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoCalculatorKeyboard(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Calculator keyboard update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Calculator keyboard update completed."));
         return 0;
     }
     if (Mode.Equals(TEXT("CardSound"), ESearchCase::IgnoreCase))

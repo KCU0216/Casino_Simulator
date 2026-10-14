@@ -128,9 +128,12 @@ bool InitializeItem(UUserWidget* Widget, UCasinoShopComponent* Shop, const FCasi
 bool Populate(UUserWidget* Main, UCasinoShopComponent* Shop, ECasinoShopItemCategory Category, bool Empty, bool LongText, FString& Error)
 {
     UGridPanel* Grid = Find<UGridPanel>(Main, TEXT("GridPanel_ItemGrid"));
-    FByteProperty* Current = FindFProperty<FByteProperty>(Main->GetClass(), TEXT("CurrentCategory"));
-    if (!Grid || !Current) { Error = TEXT("Store preview grid/category contract differs."); return false; }
-    Current->SetPropertyValue_InContainer(Main, static_cast<uint8>(Category));
+    FProperty* Current = FindFProperty<FProperty>(Main->GetClass(), TEXT("CurrentCategory"));
+    FEnumProperty* Enum = CastField<FEnumProperty>(Current);
+    FNumericProperty* Numeric = Enum ? Enum->GetUnderlyingProperty() : CastField<FNumericProperty>(Current);
+    if (!Grid || !Current || !Numeric || !Numeric->IsInteger())
+    { Error = TEXT("Store preview grid/category contract differs."); return false; }
+    Numeric->SetIntPropertyValue(Current->ContainerPtrToValuePtr<void>(Main), static_cast<uint64>(Category));
     // Invoke only the inspected color-only routine, preserving the actual
     // selected category colors rather than depicting fabricated runtime states.
     UFunction* UpdateTabs = Main->FindFunction(TEXT("UpdateTabVisuals"));

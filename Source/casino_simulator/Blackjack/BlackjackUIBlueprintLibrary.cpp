@@ -6,11 +6,16 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
+#include "Components/BorderSlot.h"
 #include "Components/Button.h"
 #include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/SizeBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -82,6 +87,17 @@ namespace
 	{
 		const FName Name = MakeUniqueObjectName(Tree, TWidget::StaticClass(), FName(*BaseName));
 		return Tree->ConstructWidget<TWidget>(TWidget::StaticClass(), Name);
+	}
+
+	void ArrangeCardStrip(UHorizontalBox* Cards)
+	{
+		if (!IsValid(Cards)) return;
+		const int32 Count = Cards->GetChildrenCount();
+		// Keep the rank/suit edge readable on long hands instead of shrinking
+		// seven independent cards to half the usual height in a split column.
+		for (int32 Index = 0; Index < Count; ++Index)
+			if (UHorizontalBoxSlot* Slot = Cast<UHorizontalBoxSlot>(Cards->GetChildAt(Index)->Slot))
+				Slot->SetPadding(FMargin(0.f, 0.f, Count > 3 && Index + 1 < Count ? -44.f : 0.f, 0.f));
 	}
 
 	UTextBlock* AddText(UWidgetTree* Tree, UVerticalBox* Parent, const FString& Name,
@@ -226,48 +242,18 @@ namespace
 void UBlackjackUIBlueprintLibrary::PrepareBetKeypadAppearance(UUserWidget* BlackjackHUD)
 {
 	if (!IsValid(BlackjackHUD)) return;
-	UUserWidget* Keypad = Cast<UUserWidget>(BlackjackHUD->GetWidgetFromName(TEXT("WBP_Calculate")));
-	if (!IsValid(Keypad) || !IsValid(Keypad->WidgetTree)) return;
-	const FLinearColor Navy(.023f, .032f, .049f, 1.f);
-	const FLinearColor Gold(.76f, .49f, .15f, 1.f);
-	const FLinearColor Ivory(.91f, .86f, .75f, 1.f);
-	Keypad->WidgetTree->ForEachWidget([&](UWidget* Widget)
+	// The existing score format graphs include a trailing CRLF. Removing only
+	// surrounding whitespace avoids reserving an empty second line above cards.
+	const FName ScoreNames[] = {TEXT("DealerInfoText"), TEXT("MyHandInfoText"),
+		TEXT("Text_Hand1Value"), TEXT("Text_Hand2Value")};
+	for (const FName& Name : ScoreNames)
 	{
-		UButton* Button = Cast<UButton>(Widget);
-		if (!Button) return;
-		FButtonStyle Style = Button->GetStyle();
-		if (Button->GetFName() == TEXT("Button_BG"))
-		{
-			// This invisible button retains its original click-to-dismiss behavior.
-			if (Style.Normal.DrawAs == ESlateBrushDrawType::NoDrawType) return;
-			Style.Normal.DrawAs = Style.Hovered.DrawAs = Style.Pressed.DrawAs = Style.Disabled.DrawAs = ESlateBrushDrawType::NoDrawType;
-			Button->SetStyle(Style);
-			return;
-		}
-		const bool Primary = Button->GetFName() == TEXT("Button_OK");
-		const FLinearColor Normal = Primary ? Gold : Navy;
-		if (Style.Normal.TintColor.GetSpecifiedColor().Equals(Normal)) return;
-		const auto ApplyBrush = [&](FSlateBrush& Brush, const FLinearColor& Color)
-		{
-			Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
-			Brush.TintColor = FSlateColor(Color);
-			Brush.OutlineSettings = FSlateBrushOutlineSettings(8.f, FSlateColor(FLinearColor(.76f, .49f, .15f, .45f)), 1.f);
-		};
-		ApplyBrush(Style.Normal, Normal);
-		ApplyBrush(Style.Hovered, Primary ? FLinearColor(.94f, .67f, .29f) : FLinearColor(.05f, .065f, .095f));
-		ApplyBrush(Style.Pressed, Primary ? FLinearColor(.58f, .33f, .075f) : FLinearColor(.035f, .043f, .06f));
-		ApplyBrush(Style.Disabled, Navy);
-		Style.NormalForeground = Style.HoveredForeground = Style.PressedForeground = FSlateColor(Primary ? FLinearColor(.007f, .011f, .019f) : Ivory);
-		Style.DisabledForeground = FSlateColor(FLinearColor(.39f, .46f, .55f));
-		Style.NormalPadding = Style.PressedPadding = FMargin(10.f);
-		Button->SetStyle(Style);
-		Button->SetBackgroundColor(FLinearColor::White);
-		if (UTextBlock* Text = Cast<UTextBlock>(Button->GetContent()))
-		{
-			FSlateFontInfo Font = Text->GetFont(); Font.Size = Primary ? 22.f : 28.f;
-			Text->SetFont(Font); Text->SetColorAndOpacity(FSlateColor::UseForeground());
-		}
-	});
+		if (UTextBlock* Label = Cast<UTextBlock>(BlackjackHUD->GetWidgetFromName(Name)))
+			Label->SetText(FText::TrimPrecedingAndTrailing(Label->GetText()));
+	}
+	const FName CardRows[] = {TEXT("DealerCardPanel"), TEXT("Hand1Cards"), TEXT("Hand2Cards")};
+	for (const FName& Name : CardRows)
+		ArrangeCardStrip(Cast<UHorizontalBox>(BlackjackHUD->GetWidgetFromName(Name)));
 }
 
 bool UBlackjackUIBlueprintLibrary::RefreshOtherPlayers(UUserWidget* BlackjackHUD, ABlackjackTableActor* Table,
@@ -339,8 +325,24 @@ bool UBlackjackUIBlueprintLibrary::RefreshOtherPlayers(UUserWidget* BlackjackHUD
 	for (const FBlackjackSeatState& Seat : OtherSeats)
 	{
 		const FString SeatName = FString::Printf(TEXT("BlackjackOtherSeat_%d"), Seat.SeatIndex);
+		const bool bSeatTurn = Table->IsPlayerTurn(Cast<Acasino_simulatorCharacter>(Seat.Occupant));
+		UBorder* SeatFrame = ConstructNamedWidget<UBorder>(Tree, SeatName + TEXT("_Frame"));
+		FSlateBrush FrameBrush;
+		FrameBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
+		FrameBrush.TintColor = FSlateColor(bLightBackground
+			? FLinearColor(.94f, .94f, .92f, .95f) : FLinearColor(.027f, .039f, .059f, .92f));
+		FrameBrush.OutlineSettings = FSlateBrushOutlineSettings(8.f,
+			FSlateColor(bSeatTurn ? ActiveColor : FLinearColor(.12f, .16f, .22f, .6f)), 1.f);
+		SeatFrame->SetBrush(FrameBrush);
+		SeatFrame->SetPadding(FMargin(12.f, 10.f));
+		SeatFrame->SetHorizontalAlignment(HAlign_Fill);
+		SeatFrame->SetVerticalAlignment(VAlign_Top);
+		SeatFrame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		UVerticalBox* SeatRow = ConstructNamedWidget<UVerticalBox>(Tree, SeatName);
-		SeatList->AddChild(SeatRow);
+		SeatFrame->SetContent(SeatRow);
+		UScrollBoxSlot* SeatSlot = CastChecked<UScrollBoxSlot>(SeatList->AddChild(SeatFrame));
+		SeatSlot->SetHorizontalAlignment(HAlign_Fill);
+		SeatSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
 
 		int64 TotalBet = FMath::Max(0, Seat.BetAmount);
 		if (!Seat.Hands.IsEmpty())
@@ -351,19 +353,27 @@ bool UBlackjackUIBlueprintLibrary::RefreshOtherPlayers(UUserWidget* BlackjackHUD
 				TotalBet += FMath::Max(0, Hand.BetAmount);
 			}
 		}
-		FText Header = FText::Format(LOCTEXT("OtherSeatHeader", "{Seat}번 자리 · {Player} · 베팅 {Bet}원"),
+		const FText Header = FText::Format(LOCTEXT("OtherSeatPlayerHeader", "{Seat}번 자리 · {Player}"),
 			FFormatNamedArguments{
 				{TEXT("Seat"), FText::AsNumber(Seat.SeatIndex + 1)},
-				{TEXT("Player"), GetOccupantName(Seat)},
-				{TEXT("Bet"), FText::AsNumber(TotalBet)}});
+				{TEXT("Player"), GetOccupantName(Seat)}});
+		UTextBlock* SeatHeader = AddText(Tree, SeatRow, SeatName + TEXT("_Header"), Header, 16, TextColor);
+		FSlateFontInfo HeaderFont = SeatHeader->GetFont();
+		HeaderFont.TypefaceFontName = TEXT("Bold");
+		SeatHeader->SetFont(HeaderFont);
+		SeatHeader->SetAutoWrapText(false);
+		SeatHeader->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis);
+		SeatHeader->SetToolTipText(Header);
+		FText Wager = FText::Format(LOCTEXT("OtherSeatWager", "총 베팅 {Bet}원"),
+			FFormatNamedArguments{{TEXT("Bet"), FText::AsNumber(TotalBet)}});
 		if (Seat.InsuranceBetAmount > 0)
 		{
-			Header = FText::Format(LOCTEXT("OtherSeatInsurance", "{Header} · 보험 {Insurance}원"),
-				FFormatNamedArguments{{TEXT("Header"), Header}, {TEXT("Insurance"), FText::AsNumber(Seat.InsuranceBetAmount)}});
+			Wager = FText::Format(LOCTEXT("OtherSeatWagerInsurance", "{Wager} · 보험 {Insurance}원"),
+				FFormatNamedArguments{{TEXT("Wager"), Wager}, {TEXT("Insurance"), FText::AsNumber(Seat.InsuranceBetAmount)}});
 		}
-		UTextBlock* SeatHeader = AddText(Tree, SeatRow, SeatName + TEXT("_Header"), Header, 16, TextColor);
-		if (UVerticalBoxSlot* HeaderSlot = Cast<UVerticalBoxSlot>(SeatHeader->Slot))
-			HeaderSlot->SetPadding(FMargin(0.f, 8.f, 0.f, 6.f));
+		UTextBlock* WagerLabel = AddText(Tree, SeatRow, SeatName + TEXT("_Wager"), Wager, 13,
+			bLightBackground ? TextColor : FLinearColor(.64f, .69f, .76f));
+		CastChecked<UVerticalBoxSlot>(WagerLabel->Slot)->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
 
 		if (Seat.Hands.IsEmpty())
 		{
@@ -372,7 +382,6 @@ bool UBlackjackUIBlueprintLibrary::RefreshOtherPlayers(UUserWidget* BlackjackHUD
 			continue;
 		}
 
-		const bool bSeatTurn = Table->IsPlayerTurn(Cast<Acasino_simulatorCharacter>(Seat.Occupant));
 		for (int32 HandIndex = 0; HandIndex < Seat.Hands.Num(); ++HandIndex)
 		{
 			const FBlackjackHand& Hand = Seat.Hands[HandIndex];
@@ -381,7 +390,7 @@ bool UBlackjackUIBlueprintLibrary::RefreshOtherPlayers(UUserWidget* BlackjackHUD
 			UVerticalBox* HandRow = ConstructNamedWidget<UVerticalBox>(Tree, HandName);
 			UVerticalBoxSlot* HandSlot = SeatRow->AddChildToVerticalBox(HandRow);
 			HandSlot->SetHorizontalAlignment(HAlign_Fill);
-			HandSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+			HandSlot->SetPadding(FMargin(0.f, 0.f, 0.f, HandIndex + 1 < Seat.Hands.Num() ? 10.f : 0.f));
 
 			const bool bHasHiddenCard = Hand.Cards.ContainsByPredicate([](const FBlackjackCard& Card) { return !Card.bFaceUp; });
 			const FText Value = bHasHiddenCard ? LOCTEXT("HandHiddenValue", "미공개")
@@ -391,24 +400,34 @@ bool UBlackjackUIBlueprintLibrary::RefreshOtherPlayers(UUserWidget* BlackjackHUD
 			{
 				Status = FText::Format(LOCTEXT("HandDoubledStatus", "{0} · 더블"), Status);
 			}
-			const FText HandText = FText::Format(LOCTEXT("OtherSeatHand", "{Hand}번 핸드 · {Value} · 베팅 {Bet}원 · {Status}"),
+			const FText HandText = FText::Format(LOCTEXT("OtherSeatHandSummary", "{Hand}번 핸드 · {Value} · {Status}"),
 				FFormatNamedArguments{
 					{TEXT("Hand"), FText::AsNumber(HandIndex + 1)}, {TEXT("Value"), Value},
-					{TEXT("Bet"), FText::AsNumber(FMath::Max(0, Hand.BetAmount))}, {TEXT("Status"), Status}});
+					{TEXT("Status"), Status}});
 			AddText(Tree, HandRow, HandName + TEXT("_Info"), HandText, 14,
 				bCurrentTurn ? ActiveColor : TextColor);
+			if (Seat.Hands.Num() > 1)
+				AddText(Tree, HandRow, HandName + TEXT("_Wager"),
+					FText::Format(LOCTEXT("OtherSeatHandWager", "핸드 베팅 {0}원"),
+						FText::AsNumber(FMath::Max(0, Hand.BetAmount))), 12,
+					bLightBackground ? TextColor : FLinearColor(.64f, .69f, .76f));
 
 			USizeBox* CardSize = ConstructNamedWidget<USizeBox>(Tree, HandName + TEXT("_CardSize"));
-			CardSize->SetHeightOverride(80.0f);
+			CardSize->SetHeightOverride(72.f);
 			UVerticalBoxSlot* CardSlot = HandRow->AddChildToVerticalBox(CardSize);
 			CardSlot->SetHorizontalAlignment(HAlign_Fill);
 			UScaleBox* CardScale = ConstructNamedWidget<UScaleBox>(Tree, HandName + TEXT("_CardScale"));
 			CardScale->SetStretch(EStretch::ScaleToFit);
 			CardScale->SetStretchDirection(EStretchDirection::DownOnly);
 			CardSize->AddChild(CardScale);
+			if (USizeBoxSlot* Slot = Cast<USizeBoxSlot>(CardScale->Slot))
+			{ Slot->SetHorizontalAlignment(HAlign_Fill); Slot->SetVerticalAlignment(VAlign_Fill); }
 			UHorizontalBox* CardPanel = ConstructNamedWidget<UHorizontalBox>(Tree, HandName + TEXT("_Cards"));
 			CardScale->AddChild(CardPanel);
+			if (UScaleBoxSlot* Slot = Cast<UScaleBoxSlot>(CardPanel->Slot))
+			{ Slot->SetHorizontalAlignment(HAlign_Left); Slot->SetVerticalAlignment(VAlign_Top); }
 			Renderer.Render(BlackjackHUD, Hand, CardPanel);
+			ArrangeCardStrip(CardPanel);
 		}
 	}
 

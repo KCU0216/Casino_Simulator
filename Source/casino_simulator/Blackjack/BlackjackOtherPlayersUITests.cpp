@@ -45,8 +45,16 @@ void CollectCardWidgets(UWidget* Widget, UClass* CardClass, TArray<UUserWidget*>
 
 UTextBlock* HeaderAt(UScrollBox* Rows, int32 Index)
 {
-	UVerticalBox* Row = Rows ? Cast<UVerticalBox>(Rows->GetChildAt(Index)) : nullptr;
+	UBorder* Frame = Rows ? Cast<UBorder>(Rows->GetChildAt(Index)) : nullptr;
+	UVerticalBox* Row = Frame ? Cast<UVerticalBox>(Frame->GetContent()) : nullptr;
 	return Row ? Cast<UTextBlock>(Row->GetChildAt(0)) : nullptr;
+}
+
+UTextBlock* WagerAt(UScrollBox* Rows, int32 Index)
+{
+	UBorder* Frame = Rows ? Cast<UBorder>(Rows->GetChildAt(Index)) : nullptr;
+	UVerticalBox* Row = Frame ? Cast<UVerticalBox>(Frame->GetContent()) : nullptr;
+	return Row ? Cast<UTextBlock>(Row->GetChildAt(1)) : nullptr;
 }
 }
 
@@ -129,7 +137,8 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Initial refresh shows every occupied other seat"), Rows->GetChildrenCount(), 3);
 	if (!TestNotNull(TEXT("First seat header"), HeaderAt(Rows, 0))) return false;
 	TestTrue(TEXT("Other seats are ordered and show remote player names"), HeaderAt(Rows, 0)->GetText().ToString().Contains(TEXT("Alice")));
-	TestTrue(TEXT("Unbet occupied seat displays zero"), HeaderAt(Rows, 1)->GetText().ToString().Contains(TEXT("0")));
+	if (!TestNotNull(TEXT("Seat wager label"), WagerAt(Rows, 1))) return false;
+	TestTrue(TEXT("Unbet occupied seat displays zero"), WagerAt(Rows, 1)->GetText().ToString().Contains(TEXT("0")));
 
 	TArray<FBlackjackSeatState>& Seats = const_cast<TArray<FBlackjackSeatState>&>(Table->GetSeats());
 	FBlackjackHand First;
@@ -159,9 +168,9 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 	Table->OnTableChanged.Broadcast(); // Use the actual Blueprint's bound update path.
 	Rows = Cast<UScrollBox>(List->GetChildAt(0));
 	if (!TestNotNull(TEXT("Updated rows"), Rows)) return false;
-	TestTrue(TEXT("Split and double total is 300 rather than original 100"), HeaderAt(Rows, 0)->GetText().ToString().Contains(TEXT("300")));
-	TestTrue(TEXT("Insurance is listed separately"), HeaderAt(Rows, 0)->GetText().ToString().Contains(TEXT("50")));
-	TestTrue(TEXT("Third other seat retains its own wager"), HeaderAt(Rows, 2)->GetText().ToString().Contains(TEXT("400")));
+	TestTrue(TEXT("Split and double total is 300 rather than original 100"), WagerAt(Rows, 0)->GetText().ToString().Contains(TEXT("300")));
+	TestTrue(TEXT("Insurance is listed separately"), WagerAt(Rows, 0)->GetText().ToString().Contains(TEXT("50")));
+	TestTrue(TEXT("Third other seat retains its own wager"), WagerAt(Rows, 2)->GetText().ToString().Contains(TEXT("400")));
 	TArray<UUserWidget*> Cards;
 	CollectCardWidgets(Rows, CardClass, Cards);
 	TestEqual(TEXT("Both split hands and the other player's hand are rendered"), Cards.Num(), 6);
@@ -238,6 +247,9 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 		Cast<UTextBlock>(HUD->GetWidgetFromName(TEXT("Text_Hand1Value"))),
 		Cast<UTextBlock>(HUD->GetWidgetFromName(TEXT("Text_Hand2Value")))};
 	if (!TestNotNull(TEXT("First hand score"), OwnScores[0]) || !TestNotNull(TEXT("Second hand score"), OwnScores[1])) return false;
+	TestFalse(TEXT("First hand score does not reserve a trailing empty line"), OwnScores[0]->GetText().ToString().EndsWith(TEXT("\n")));
+	if (UTextBlock* DealerScore = Cast<UTextBlock>(HUD->GetWidgetFromName(TEXT("DealerInfoText"))))
+		TestFalse(TEXT("Dealer score does not reserve a trailing empty line"), DealerScore->GetText().ToString().EndsWith(TEXT("\n")));
 	TestTrue(TEXT("First hand still displays its point value"), OwnScores[0]->GetText().ToString().Contains(TEXT("17")));
 	TestTrue(TEXT("Second hand still displays its point value"), OwnScores[1]->GetText().ToString().Contains(TEXT("20")));
 	Cards.Reset();
@@ -290,7 +302,7 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 	Replica->ProcessEvent(RepNotify, nullptr);
 	Rows = Cast<UScrollBox>(List->GetChildAt(0));
 	TestEqual(TEXT("Replicated snapshot displays all other seats"), Rows->GetChildrenCount(), 3);
-	TestTrue(TEXT("Replicated snapshot displays the split wager total"), HeaderAt(Rows, 0)->GetText().ToString().Contains(TEXT("300")));
+	TestTrue(TEXT("Replicated snapshot displays the split wager total"), WagerAt(Rows, 0)->GetText().ToString().Contains(TEXT("300")));
 	TestEqual(TEXT("RepNotify refreshes the first own split result"), OwnResults[0]->GetText().ToString(), FString(TEXT("승리")));
 	TestEqual(TEXT("RepNotify refreshes the second own split result"), OwnResults[1]->GetText().ToString(), FString(TEXT("패배")));
 	const_cast<TArray<FBlackjackSeatState>&>(Replica->GetSeats())[3].Occupant = nullptr;
@@ -311,7 +323,7 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 	Cards.Reset();
 	CollectCardWidgets(Rows, CardClass, Cards);
 	TestEqual(TEXT("New round removes all old cards"), Cards.Num(), 0);
-	TestTrue(TEXT("New round resets the displayed wager"), HeaderAt(Rows, 0)->GetText().ToString().Contains(TEXT("0")));
+	TestTrue(TEXT("New round resets the displayed wager"), WagerAt(Rows, 0)->GetText().ToString().Contains(TEXT("0")));
 	for (UTextBlock* OwnResult : OwnResults)
 	{
 		TestTrue(TEXT("New round clears the own settled result"), OwnResult->GetText().IsEmpty());

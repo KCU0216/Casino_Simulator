@@ -4,6 +4,7 @@
 #include "Blackjack/BlackjackBlueprintLibrary.h"
 #include "Blackjack/BlackjackUIBlueprintLibrary.h"
 #include "Blackjack/BlackjackTypes.h"
+#include "UI/CasinoKeypadStyle.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -12,8 +13,11 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/SizeBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -33,6 +37,7 @@
 #include "RenderDeferredCleanup.h"
 #include "RenderingThread.h"
 #include "Slate/WidgetRenderer.h"
+#include "TextureCompiler.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 
@@ -41,6 +46,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogCasinoBlackjackPreview, Log, All);
 namespace CasinoBlackjackPreview
 {
 IConsoleCommand* PreviewCommand = nullptr;
+IConsoleCommand* KeypadPreviewCommand = nullptr;
 const TCHAR* HUDPath = TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackHUD.WBP_BlackjackHUD_C");
 const TCHAR* CardPath = TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackCardUI.WBP_BlackjackCardUI_C");
 
@@ -93,8 +99,9 @@ bool Cards(UHorizontalBox* Parent, const TArray<FBlackjackCard>& CardsToShow, FS
 {
     if (!Parent) { Error = TEXT("Blackjack preview card row missing."); return false; }
     Parent->ClearChildren();
-    for (const FBlackjackCard& Card : CardsToShow)
+    for (int32 CardIndex = 0; CardIndex < CardsToShow.Num(); ++CardIndex)
     {
+        const FBlackjackCard& Card = CardsToShow[CardIndex];
         UUserWidget* Widget = Create(CardPath, Error);
         if (!Widget) return false;
         UImage* Image = Find<UImage>(Widget, TEXT("Image_Card"));
@@ -116,7 +123,8 @@ bool Cards(UHorizontalBox* Parent, const TArray<FBlackjackCard>& CardsToShow, FS
         Image->SetBrushFromTexture(Texture, false);
         UHorizontalBoxSlot* Slot = Parent->AddChildToHorizontalBox(Widget);
         Slot->SetVerticalAlignment(VAlign_Top);
-        Slot->SetPadding(FMargin()); // Same padding as the existing RenderCards graph.
+        // Match the presentation helper's compact fan after RenderCards.
+        Slot->SetPadding(FMargin(0.f, 0.f, CardsToShow.Num() > 3 && CardIndex + 1 < CardsToShow.Num() ? -44.f : 0.f, 0.f));
     }
     return true;
 }
@@ -130,11 +138,11 @@ UTextBlock* AddText(UWidgetTree* Tree, UVerticalBox* Parent, const FString& Name
     Label->SetAutoWrapText(true);
     UVerticalBoxSlot* Slot = Parent->AddChildToVerticalBox(Label);
     Slot->SetHorizontalAlignment(HAlign_Fill);
-    Slot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+    Slot->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
     return Label;
 }
 
-bool OtherSeats(UUserWidget* HUD, bool Stress, FString& Error)
+bool OtherSeats(UUserWidget* HUD, bool Stress, bool Settled, FString& Error)
 {
     UVerticalBox* List = Find<UVerticalBox>(HUD, TEXT("OtherPlayersList"));
     UBorder* Panel = Find<UBorder>(HUD, TEXT("OtherPlayersPanel"));
@@ -153,28 +161,53 @@ bool OtherSeats(UUserWidget* HUD, bool Stress, FString& Error)
     for (int32 Index = 0; Index < 3; ++Index)
     {
         const FString Prefix = FString::Printf(TEXT("PreviewSeat%d"), Index);
+        const bool Active = Index == 0 && !Settled;
+        UBorder* Frame = HUD->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), FName(*(Prefix + TEXT("Frame"))));
+        Frame->SetBrush(CasinoWidgetStyle::Brush(FLinearColor(.027f, .039f, .059f, .92f), 8.f,
+            Active ? FLinearColor(.94f, .67f, .29f) : FLinearColor(.12f, .16f, .22f, .6f)));
+        Frame->SetPadding(FMargin(12.f, 10.f));
+        Frame->SetHorizontalAlignment(HAlign_Fill); Frame->SetVerticalAlignment(VAlign_Top);
+        Frame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
         UVerticalBox* Row = HUD->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), FName(*Prefix));
-        Scroll->AddChild(Row);
-        AddText(HUD->WidgetTree, Row, Prefix + TEXT("Header"),
-            FString::Printf(TEXT("%d번 자리 · %s · 베팅 %s원"), Index + 2,
-                Index == 0 && Stress ? TEXT("아주 긴 플레이어 이름 테스트") : Index == 0 ? TEXT("플레이어 2") : Index == 1 ? TEXT("CASINO KING") : TEXT("플레이어 4"),
-                Stress ? TEXT("100,000,000") : TEXT("5,000")), 16, CasinoWidgetStyle::Ivory);
+        Frame->SetContent(Row);
+        UScrollBoxSlot* FrameSlot = CastChecked<UScrollBoxSlot>(Scroll->AddChild(Frame));
+        FrameSlot->SetHorizontalAlignment(HAlign_Fill); FrameSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+        UTextBlock* Header = AddText(HUD->WidgetTree, Row, Prefix + TEXT("Header"),
+            FString::Printf(TEXT("%d번 자리 · %s"), Index + 2,
+                Index == 0 && Stress ? TEXT("아주 긴 플레이어 이름 테스트") : Index == 0 ? TEXT("플레이어 2") : Index == 1 ? TEXT("CASINO KING") : TEXT("플레이어 4")), 16, CasinoWidgetStyle::Ivory);
+        Header->SetAutoWrapText(false);
+        Header->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis);
+        Header->SetToolTipText(Header->GetText());
+        UTextBlock* Wager = AddText(HUD->WidgetTree, Row, Prefix + TEXT("Wager"),
+            Stress && Index == 0 ? TEXT("총 베팅 100,000,000원 · 보험 5,000,000원") : TEXT("총 베팅 5,000원"),
+            13, FLinearColor(.64f, .69f, .76f));
+        CastChecked<UVerticalBoxSlot>(Wager->Slot)->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
         for (int32 Hand = 0; Hand < (Stress && Index == 0 ? 2 : 1); ++Hand)
         {
             const FString HandPrefix = Prefix + FString::Printf(TEXT("Hand%d"), Hand);
-            AddText(HUD->WidgetTree, Row, HandPrefix + TEXT("Info"),
-                FString::Printf(TEXT("%d번 핸드 · %s · 베팅 5,000원 · %s"), Hand + 1,
-                    Index == 2 ? TEXT("미공개") : TEXT("18점"), Index == 0 && Hand == 0 ? TEXT("현재 차례") : TEXT("대기")),
-                14, Index == 0 ? CasinoWidgetStyle::Gold : CasinoWidgetStyle::Ivory);
+            UVerticalBox* HandRow = HUD->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), FName(*HandPrefix));
+            UVerticalBoxSlot* HandSlot = Row->AddChildToVerticalBox(HandRow);
+            HandSlot->SetHorizontalAlignment(HAlign_Fill);
+            HandSlot->SetPadding(FMargin(0.f, 0.f, 0.f, Stress && Index == 0 && Hand == 0 ? 10.f : 0.f));
+            AddText(HUD->WidgetTree, HandRow, HandPrefix + TEXT("Info"),
+                FString::Printf(TEXT("%d번 핸드 · %s · %s"), Hand + 1,
+                    Index == 2 ? TEXT("미공개") : TEXT("18점"), Settled ? TEXT("승리") : Active && Hand == 0 ? TEXT("현재 차례") : TEXT("대기")),
+                14, Active && Hand == 0 ? FLinearColor(.94f, .67f, .29f) : CasinoWidgetStyle::Ivory);
+            if (Stress && Index == 0) AddText(HUD->WidgetTree, HandRow, HandPrefix + TEXT("Wager"),
+                TEXT("핸드 베팅 50,000,000원"), 12, FLinearColor(.64f, .69f, .76f));
             USizeBox* Size = HUD->WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), FName(*(HandPrefix + TEXT("Size"))));
-            Size->SetHeightOverride(80.f);
-            UVerticalBoxSlot* SizeSlot = Row->AddChildToVerticalBox(Size);
-            SizeSlot->SetHorizontalAlignment(HAlign_Fill); SizeSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+            Size->SetHeightOverride(72.f);
+            UVerticalBoxSlot* SizeSlot = HandRow->AddChildToVerticalBox(Size);
+            SizeSlot->SetHorizontalAlignment(HAlign_Fill);
             UScaleBox* Scale = HUD->WidgetTree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass(), FName(*(HandPrefix + TEXT("Scale"))));
             Scale->SetStretch(EStretch::ScaleToFit); Scale->SetStretchDirection(EStretchDirection::DownOnly);
             Size->SetContent(Scale);
+            if (USizeBoxSlot* Slot = Cast<USizeBoxSlot>(Scale->Slot))
+            { Slot->SetHorizontalAlignment(HAlign_Fill); Slot->SetVerticalAlignment(VAlign_Fill); }
             UHorizontalBox* CardRow = HUD->WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), FName(*(HandPrefix + TEXT("Cards"))));
             Scale->SetContent(CardRow);
+            if (UScaleBoxSlot* Slot = Cast<UScaleBoxSlot>(CardRow->Slot))
+            { Slot->SetHorizontalAlignment(HAlign_Left); Slot->SetVerticalAlignment(VAlign_Top); }
             TArray<FBlackjackCard> Sample = {
                 {EBlackjackSuit::Spades, EBlackjackRank::Ten}, {EBlackjackSuit::Hearts, EBlackjackRank::Eight, Index != 2}};
             if (Stress && Index == 0) Sample = {
@@ -191,8 +224,9 @@ bool OtherSeats(UUserWidget* HUD, bool Stress, FString& Error)
 bool Sample(UUserWidget* HUD, const FString& Variant, FString& Error)
 {
     UBlackjackUIBlueprintLibrary::PrepareBetKeypadAppearance(HUD);
-    const bool Split = Variant == TEXT("Split") || Variant == TEXT("LongHands");
-    const bool Stress = Variant == TEXT("LongHands");
+    const bool Settled = Variant == TEXT("Settled") || Variant == TEXT("LongHands");
+    const bool Split = Variant == TEXT("Split") || Variant == TEXT("LongHands") || Variant == TEXT("Settled");
+    const bool Stress = Variant == TEXT("LongHands") || Variant == TEXT("SingleLongHand");
     const bool Insurance = Variant == TEXT("Insurance");
     const bool Betting = Variant == TEXT("Betting");
     const TCHAR* Required[] = { TEXT("BlackjackInfoOverlay"), TEXT("Hand2Panel"), TEXT("BetKeypadLayer"),
@@ -208,8 +242,8 @@ bool Sample(UUserWidget* HUD, const FString& Variant, FString& Error)
         const FString Name = FString::Printf(TEXT("BlackjackOwnHand%dResult"), Index);
         UTextBlock* Result = Find<UTextBlock>(HUD, *Name);
         if (!Result) { Error = TEXT("Blackjack preview own result missing."); return false; }
-        Result->SetText(Stress ? FText::FromString(Index == 1 ? TEXT("버스트") : TEXT("승리")) : FText::GetEmpty());
-        Result->SetVisibility(Stress ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        Result->SetText(Settled ? FText::FromString(Index == 1 ? TEXT("블랙잭 승리") : TEXT("패배")) : FText::GetEmpty());
+        Result->SetVisibility(Settled ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
     }
     const TCHAR* Actions[] = { TEXT("HitButton"), TEXT("StandButton"), TEXT("DoubleDownButton"), TEXT("SplitButton"),
         TEXT("InsuranceButton"), TEXT("SkipInsuranceButton"), TEXT("LeaveButton") };
@@ -219,16 +253,18 @@ bool Sample(UUserWidget* HUD, const FString& Variant, FString& Error)
         if (!Button) { Error = TEXT("Blackjack preview action missing: ") + FString(Actions[Index]); return false; }
         const bool Visible = Stress || Index == 6 || (Insurance ? Index == 4 || Index == 5 : Index < 3 || Index == 3 && Split);
         Button->SetVisibility(Visible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-        Button->SetIsEnabled(!Stress && (!Insurance || Index >= 4));
+        Button->SetIsEnabled(!Settled && (!Insurance || Index >= 4));
     }
     if (Betting)
     {
         Find<UWidget>(HUD, TEXT("OtherPlayersPanel"))->SetVisibility(ESlateVisibility::Collapsed);
         return Text(HUD, TEXT("TextBlock_55"), TEXT("베팅 금액 : 10,000원"), Error);
     }
-    if (!Text(HUD, TEXT("DealerInfoText"), Insurance ? TEXT("딜러 · A / 미공개") : TEXT("딜러 · 공개 카드 10"), Error)
+    // Use the actual graph's CRLF suffix; the runtime presentation helper must
+    // normalize it before measuring labels and arranging the card strips.
+    if (!Text(HUD, TEXT("DealerInfoText"), Insurance ? TEXT("딜러 · A / 미공개\r\n") : TEXT("딜러 · 공개 합계: 10\r\n"), Error)
         || !Text(HUD, TEXT("MyHandInfoText"), Insurance ? TEXT("내 카드 · 보험 선택") : Split ? TEXT("내 카드 · 스플릿 핸드") : TEXT("내 카드 · 내 차례"), Error)
-        || !Text(HUD, TEXT("Text_Hand1Value"), Stress ? TEXT("핸드 1 · 합계: 24") : Split ? TEXT("핸드 1 · 합계: 18") : TEXT("핸드 1 · 합계: 17"), Error)
+        || !Text(HUD, TEXT("Text_Hand1Value"), Stress ? TEXT("핸드 1 · 합계: 24\r\n") : Split ? TEXT("핸드 1 · 합계: 18\r\n") : TEXT("핸드 1 · 합계: 17\r\n"), Error)
         || !Text(HUD, TEXT("Text_Hand2Value"), TEXT("핸드 2 · 합계: 21"), Error)) return false;
     if (!Cards(Find<UHorizontalBox>(HUD, TEXT("DealerCardPanel")), {
         {EBlackjackSuit::Hearts, Insurance ? EBlackjackRank::Ace : EBlackjackRank::Ten},
@@ -243,7 +279,115 @@ bool Sample(UUserWidget* HUD, const FString& Variant, FString& Error)
     if (Split && !Cards(Find<UHorizontalBox>(HUD, TEXT("Hand2Cards")), {
         {EBlackjackSuit::Clubs, EBlackjackRank::Eight}, {EBlackjackSuit::Diamonds, EBlackjackRank::Three},
         {EBlackjackSuit::Hearts, EBlackjackRank::King}}, Error)) return false;
-    return OtherSeats(HUD, Stress, Error);
+    UBlackjackUIBlueprintLibrary::PrepareBetKeypadAppearance(HUD);
+    return OtherSeats(HUD, Stress, Settled, Error);
+}
+
+bool CheckCardGeometry(UUserWidget* HUD, FString& Error)
+{
+    const auto Contains = [](const FSlateRect& Outer, const FSlateRect& Inner)
+    {
+        constexpr float Tolerance = 1.5f;
+        return Inner.Left >= Outer.Left - Tolerance && Inner.Top >= Outer.Top - Tolerance
+            && Inner.Right <= Outer.Right + Tolerance && Inner.Bottom <= Outer.Bottom + Tolerance;
+    };
+    UBorder* Info = Find<UBorder>(HUD, TEXT("BlackjackInfoPanel"));
+    // FWidgetRenderer paints its virtual window without a normal Slate tick.
+    // Paint-space geometry records this draw; tick-space geometry is still empty.
+    const FSlateRect PanelBounds = Info->GetPaintSpaceGeometry().GetRenderBoundingRect();
+    const TCHAR* Rows[] = {TEXT("DealerCardPanel"), TEXT("Hand1Cards"), TEXT("Hand2Cards")};
+    const TCHAR* Areas[] = {TEXT("CasinoBlackjackDealerCardSize"), TEXT("CasinoBlackjackHand1CardSize"), TEXT("CasinoBlackjackHand2CardSize")};
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(Rows); ++Index)
+    {
+        if (Index == 2 && Find<UWidget>(HUD, TEXT("Hand2Panel"))->GetVisibility() == ESlateVisibility::Collapsed) continue;
+        UHorizontalBox* CardsPanel = Find<UHorizontalBox>(HUD, Rows[Index]);
+        UWidget* Area = Find<UWidget>(HUD, Areas[Index]);
+        if (!CardsPanel || !Area || CardsPanel->GetChildrenCount() == 0)
+        { Error = TEXT("Blackjack card geometry check lacks a populated row."); return false; }
+        const FSlateRect AreaBounds = Area->GetPaintSpaceGeometry().GetRenderBoundingRect();
+        if (AreaBounds.GetSize().Y < 1.f || !Contains(PanelBounds, AreaBounds))
+        {
+            Error = FString::Printf(TEXT("Blackjack %s area [%.1f,%.1f,%.1f,%.1f] exceeds panel [%.1f,%.1f,%.1f,%.1f]."),
+                Areas[Index], AreaBounds.Left, AreaBounds.Top, AreaBounds.Right, AreaBounds.Bottom,
+                PanelBounds.Left, PanelBounds.Top, PanelBounds.Right, PanelBounds.Bottom);
+            return false;
+        }
+        for (UWidget* Card : CardsPanel->GetAllChildren())
+        {
+            const FSlateRect CardBounds = Card->GetPaintSpaceGeometry().GetRenderBoundingRect();
+            if (CardBounds.GetSize().Y < 1.f || !Contains(AreaBounds, CardBounds))
+            {
+                Error = FString::Printf(TEXT("Blackjack %s card [%.1f,%.1f,%.1f,%.1f] exceeds strip [%.1f,%.1f,%.1f,%.1f]."),
+                    Rows[Index], CardBounds.Left, CardBounds.Top, CardBounds.Right, CardBounds.Bottom,
+                    AreaBounds.Left, AreaBounds.Top, AreaBounds.Right, AreaBounds.Bottom);
+                return false;
+            }
+        }
+    }
+    const TCHAR* Labels[] = {TEXT("DealerInfoText"), TEXT("MyHandInfoText"), TEXT("Text_Hand1Value"),
+        TEXT("Text_Hand2Value"), TEXT("BlackjackOwnHand1Result"), TEXT("BlackjackOwnHand2Result")};
+    for (const TCHAR* Name : Labels)
+    {
+        UWidget* Label = Find<UWidget>(HUD, Name);
+        if (!Label || Label->GetVisibility() == ESlateVisibility::Collapsed) continue;
+        if (FString(Name).Contains(TEXT("2")) && Find<UWidget>(HUD, TEXT("Hand2Panel"))->GetVisibility() == ESlateVisibility::Collapsed) continue;
+        if (!Contains(PanelBounds, Label->GetPaintSpaceGeometry().GetRenderBoundingRect()))
+        { Error = FString::Printf(TEXT("Blackjack %s label exceeds its info panel."), Name); return false; }
+    }
+    return true;
+}
+
+void MatchDesignerState(UUserWidget* Widget)
+{
+    // Design mode prevents gameplay construction but deliberately forces every
+    // UMG control visible/enabled. Mirror this snapshot through the designer's
+    // visibility property while keeping the safety of design mode.
+    const auto Hidden = [](UWidget* Child)
+    {
+        const ESlateVisibility Visibility = Child->GetVisibility();
+        Child->bHiddenInDesigner = Visibility == ESlateVisibility::Collapsed || Visibility == ESlateVisibility::Hidden;
+    };
+    Hidden(Widget);
+    if (!Widget->WidgetTree) return;
+    Widget->WidgetTree->ForEachWidget([&](UWidget* Child)
+    {
+        Hidden(Child);
+        if (UUserWidget* Nested = Cast<UUserWidget>(Child)) MatchDesignerState(Nested);
+    });
+}
+
+void FinishPreviewResources(UUserWidget* Widget)
+{
+    TArray<UTexture*> Textures;
+    const auto Gather = [&](auto&& Self, UUserWidget* UserWidget) -> void
+    {
+        if (!UserWidget->WidgetTree) return;
+        UserWidget->WidgetTree->ForEachWidget([&](UWidget* Child)
+        {
+            if (UImage* Image = Cast<UImage>(Child))
+                if (UTexture* Texture = Cast<UTexture>(Image->GetBrush().GetResourceObject())) Textures.AddUnique(Texture);
+            if (UUserWidget* Nested = Cast<UUserWidget>(Child)) Self(Self, Nested);
+        });
+    };
+    Gather(Gather, Widget);
+    FTextureCompilingManager::Get().FinishCompilation(Textures);
+    for (UTexture* Texture : Textures)
+    {
+        Texture->SetForceMipLevelsToBeResident(30.f);
+        Texture->WaitForStreaming();
+    }
+    FlushRenderingCommands();
+}
+
+void MatchSlateEnabledState(UUserWidget* Widget)
+{
+    if (TSharedPtr<SWidget> SlateWidget = Widget->GetCachedWidget()) SlateWidget->SetEnabled(Widget->GetIsEnabled());
+    if (!Widget->WidgetTree) return;
+    Widget->WidgetTree->ForEachWidget([](UWidget* Child)
+    {
+        if (TSharedPtr<SWidget> SlateWidget = Child->GetCachedWidget()) SlateWidget->SetEnabled(Child->GetIsEnabled());
+        if (UUserWidget* Nested = Cast<UUserWidget>(Child)) MatchSlateEnabledState(Nested);
+    });
 }
 
 bool Render(FWidgetRenderer& Renderer, UUserWidget* HUD, const FIntPoint& Size, const FString& Filename, FString& Error, bool CheckCenter)
@@ -253,7 +397,13 @@ bool Render(FWidgetRenderer& Renderer, UUserWidget* HUD, const FIntPoint& Size, 
     if (!Target.IsValid()) { Error = TEXT("Blackjack preview render target could not be created."); return false; }
     Target->InitCustomFormat(Size.X, Size.Y, PF_FloatRGBA, true);
     Target->UpdateResourceImmediate(true);
-    Renderer.DrawWidget(Target.Get(), HUD->TakeWidget(), DPI, FVector2D(Size), 0.f, false);
+    MatchDesignerState(HUD);
+    FinishPreviewResources(HUD);
+    // UMG keeps weak Slate references. Retain the root after DrawWidget's
+    // temporary virtual window is destroyed so its painted geometry survives.
+    const TSharedRef<SWidget> SlateRoot = HUD->TakeWidget();
+    MatchSlateEnabledState(HUD);
+    Renderer.DrawWidget(Target.Get(), SlateRoot, DPI, FVector2D(Size), 0.f, false);
     FlushRenderingCommands();
     FImage Pixels;
     if (!FImageUtils::GetRenderTargetImage(Target.Get(), Pixels))
@@ -276,6 +426,8 @@ bool Render(FWidgetRenderer& Renderer, UUserWidget* HUD, const FIntPoint& Size, 
     { Error = TEXT("Blackjack preview unexpectedly rendered empty."); return false; }
     if (!FImageUtils::SaveImageByExtension(*Filename, Encoded))
     { Error = TEXT("Blackjack preview image could not save: ") + Filename; return false; }
+    // Preserve the PNG even when geometry fails so the failing state is reviewable.
+    if (CheckCenter && !CheckCardGeometry(HUD, Error)) return false;
     HUD->ReleaseSlateResources(true);
     return true;
 }
@@ -292,7 +444,8 @@ bool RenderCasinoBlackjackPreviews(FString& OutError)
     FWidgetRenderer* Renderer = new FWidgetRenderer(false, true);
     ON_SCOPE_EXIT { FlushRenderingCommands(); BeginCleanup(Renderer); };
     const FIntPoint Sizes[] = { FIntPoint(1920, 1080), FIntPoint(2560, 1080), FIntPoint(1440, 1080), FIntPoint(1280, 720) };
-    const TCHAR* Variants[] = { TEXT("Playing"), TEXT("Split"), TEXT("Insurance"), TEXT("LongHands"), TEXT("Betting") };
+    const TCHAR* Variants[] = { TEXT("Playing"), TEXT("Split"), TEXT("Insurance"), TEXT("LongHands"),
+        TEXT("SingleLongHand"), TEXT("Settled"), TEXT("Betting") };
     for (const FIntPoint& Size : Sizes)
     {
         for (const TCHAR* Variant : Variants)
@@ -306,7 +459,42 @@ bool RenderCasinoBlackjackPreviews(FString& OutError)
                 FString(Variant) != TEXT("Betting"))) return false;
         }
     }
-    UE_LOG(LogCasinoBlackjackPreview, Display, TEXT("Saved 20 blackjack UI previews in %s"), *Directory);
+    UE_LOG(LogCasinoBlackjackPreview, Display, TEXT("Saved 28 blackjack UI previews with bounded card/result geometry in %s"), *Directory);
+    return true;
+}
+
+bool RenderCasinoKeypadPreviews(FString& OutError)
+{
+    OutError.Reset();
+    if (IsRunningCommandlet() || !FSlateApplication::IsInitialized() || !GDynamicRHI)
+    { OutError = TEXT("Keypad previews require an editor rendering device."); return false; }
+    const FString Directory = FPaths::ProjectSavedDir() / TEXT("CasinoDealerSetup/KeypadPreviews");
+    if (!IFileManager::Get().MakeDirectory(*Directory, true))
+    { OutError = TEXT("Could not create keypad preview directory."); return false; }
+    FWidgetRenderer* Renderer = new FWidgetRenderer(false, true);
+    ON_SCOPE_EXIT { FlushRenderingCommands(); BeginCleanup(Renderer); };
+    const TCHAR* Paths[] = {TEXT("/Game/1_BluePrint/Widget/WBP_Calculate.WBP_Calculate_C"),
+        TEXT("/Game/LJH/UI/WBP_SlotMachineControl.WBP_SlotMachineControl_C")};
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(Paths); ++Index)
+    {
+        for (const FIntPoint& Size : {FIntPoint(1920, 1080), FIntPoint(1280, 720)})
+        {
+            TStrongObjectPtr<UUserWidget> Widget(CasinoBlackjackPreview::Create(Paths[Index], OutError));
+            if (!Widget.IsValid()) return false;
+            if (UWidget* Grid = Widget->GetWidgetFromName(TEXT("SlotKeypadGrid")))
+                Grid->SetVisibility(ESlateVisibility::Visible);
+            ApplyCasinoKeypadStyle(Widget.Get());
+            Widget->WidgetTree->ForEachWidget([](UWidget* Child)
+            {
+                Child->bHiddenInDesigner = Child->GetVisibility() == ESlateVisibility::Collapsed
+                    || Child->GetVisibility() == ESlateVisibility::Hidden;
+            });
+            const FString Filename = Directory / FString::Printf(TEXT("%s_%dx%d.png"),
+                Index == 0 ? TEXT("Shared") : TEXT("Slot"), Size.X, Size.Y);
+            if (!CasinoBlackjackPreview::Render(*Renderer, Widget.Get(), Size, Filename, OutError, false)) return false;
+        }
+    }
+    UE_LOG(LogCasinoBlackjackPreview, Display, TEXT("Saved 4 shared/slot keypad previews; no game actions executed."));
     return true;
 }
 
@@ -319,6 +507,13 @@ void RegisterCasinoBlackjackPreviewCommands()
             FString Error;
             if (!RenderCasinoBlackjackPreviews(Error)) UE_LOG(LogCasinoBlackjackPreview, Error, TEXT("%s"), *Error);
         }));
+    CasinoBlackjackPreview::KeypadPreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(
+        TEXT("CasinoKeypad.RenderPreviews"), TEXT("Render shared/slot keypads in design mode without betting or spinning."),
+        FConsoleCommandDelegate::CreateLambda([]
+        {
+            FString Error;
+            if (!RenderCasinoKeypadPreviews(Error)) UE_LOG(LogCasinoBlackjackPreview, Error, TEXT("%s"), *Error);
+        }));
 }
 
 void UnregisterCasinoBlackjackPreviewCommands()
@@ -326,4 +521,7 @@ void UnregisterCasinoBlackjackPreviewCommands()
     if (CasinoBlackjackPreview::PreviewCommand)
         IConsoleManager::Get().UnregisterConsoleObject(CasinoBlackjackPreview::PreviewCommand);
     CasinoBlackjackPreview::PreviewCommand = nullptr;
+    if (CasinoBlackjackPreview::KeypadPreviewCommand)
+        IConsoleManager::Get().UnregisterConsoleObject(CasinoBlackjackPreview::KeypadPreviewCommand);
+    CasinoBlackjackPreview::KeypadPreviewCommand = nullptr;
 }

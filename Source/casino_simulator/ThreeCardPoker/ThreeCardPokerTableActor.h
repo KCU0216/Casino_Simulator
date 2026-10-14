@@ -282,6 +282,9 @@ private:
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_ThreeCardPokerInteractionEnded(Acasino_simulatorCharacter* Player);
 
+	/** Plays the card-deal SFX through UCasinoSoundSubsystem (local machine only; no-op on a dedicated server). */
+	void PlayDealCardSound() const;
+
 	void StartRound();
 	void DealNextRoundCard();
 	void ClearDealingTimer();
