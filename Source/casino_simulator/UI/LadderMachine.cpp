@@ -45,6 +45,10 @@ void ALadderMachine::BeginPlay()
 	if (HasAuthority())
 	{
 		SetRailCount(Rails);   // 서버가 초기 판 세팅 → 클라로 리플리케이트
+		InitialRails = Rails;
+		InitialRows = Rows;
+		InitialPayouts = Payouts;
+		bInitialStateCaptured = true;
 	}
 }
 
@@ -65,6 +69,7 @@ void ALadderMachine::OnMachineReleased_Implementation(Acasino_simulatorCharacter
 	Super::OnMachineReleased_Implementation(ReleasingCharacter);
 	if (HasAuthority())
 	{
+		ResetMachineToInitialState();
 		SetOwner(nullptr);
 		DisplayBalance = 0;   // 자리 비면 0 → 복제
 		OnRep_DisplayBalance();
@@ -376,6 +381,28 @@ void ALadderMachine::ResetRound()
 	if (bWasResultOpen) { Multicast_ResultClosed(); }
 }
 void ALadderMachine::Server_ResetRound_Implementation() { ResetRound(); }
+
+void ALadderMachine::ResetMachineToInitialState()
+{
+	if (!HasAuthority() || !bInitialStateCaptured) return;
+
+	GetWorldTimerManager().ClearTimer(RevealTimerHandle);
+	PendingWinnings = 0;
+	StakedThisRound = 0;
+	ClosePreviousResult();
+	ClearBoard();
+
+	Rails = InitialRails;
+	Rows = InitialRows;
+	Payouts = InitialPayouts;
+	RailCursor = 0;
+	Mode = ELadderMode::RailSelect;
+	OnRep_RailConfig();
+	OnRep_Payouts();
+	OnRep_Mode();
+	PublishLadderState();
+	ForceNetUpdate();
+}
 
 // ─────────── Play / Settle (authority) ───────────
 

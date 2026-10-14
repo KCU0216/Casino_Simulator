@@ -165,6 +165,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ladder|Nav") void NavRight();
 	UFUNCTION(BlueprintCallable, Category = "Ladder|Nav") void NavSelect();
 	UFUNCTION(BlueprintCallable, Category = "Ladder|Nav") void ResetRound();
+	/** Restore the startup board settings without changing the wager. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ladder|State")
+	void ResetMachineToInitialState();
 
 	UFUNCTION(BlueprintCallable, Category = "Ladder") void BroadcastInitialState();
 
@@ -232,6 +235,11 @@ private:
 	void ServerReveal();                     // authority, 타이머 콜백
 
 	void RefreshDisplayBalance();    // authority 전용: DisplayBalance = 서버 잔액 → 복제
+
+	int32 InitialRails = 3;
+	int32 InitialRows = 12;
+	TArray<int32> InitialPayouts;
+	bool bInitialStateCaptured = false;
 
 	int32 StakedThisRound = 0;
 	int32 PendingWinnings = 0;
