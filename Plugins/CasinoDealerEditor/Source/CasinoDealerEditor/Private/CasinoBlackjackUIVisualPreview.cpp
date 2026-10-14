@@ -47,6 +47,7 @@ namespace CasinoBlackjackPreview
 {
 IConsoleCommand* PreviewCommand = nullptr;
 IConsoleCommand* KeypadPreviewCommand = nullptr;
+IConsoleCommand* GameStylePreviewCommand = nullptr;
 const TCHAR* HUDPath = TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackHUD.WBP_BlackjackHUD_C");
 const TCHAR* CardPath = TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackCardUI.WBP_BlackjackCardUI_C");
 
@@ -500,6 +501,34 @@ bool RenderCasinoKeypadPreviews(FString& OutError)
 
 void RegisterCasinoBlackjackPreviewCommands()
 {
+    CasinoBlackjackPreview::GameStylePreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(
+        TEXT("CasinoGameStyle.RenderPreviews"), TEXT("Render ladder, odd/even and poker designer previews without executing game actions."),
+        FConsoleCommandDelegate::CreateLambda([]
+        {
+            const FString Directory = FPaths::ProjectSavedDir() / TEXT("CasinoDealerSetup/GameStylePreviews");
+            IFileManager::Get().MakeDirectory(*Directory, true);
+            FWidgetRenderer* Renderer = new FWidgetRenderer(false, true);
+            ON_SCOPE_EXIT { FlushRenderingCommands(); BeginCleanup(Renderer); };
+            for (const TCHAR* Path : {
+                TEXT("/Game/KCU/LadderMachine/Widget/WBP_LadderControlWidget.WBP_LadderControlWidget_C"),
+                TEXT("/Game/KCU/LadderMachine/Widget/WBP_MachineScreen.WBP_MachineScreen_C"),
+                TEXT("/Game/1_BluePrint/Widget/WBP_DiceBetting.WBP_DiceBetting_C"),
+                TEXT("/Game/1_BluePrint/Widget/WBP_ThreeCardPokerBetting.WBP_ThreeCardPokerBetting_C")})
+            {
+                for (const FIntPoint Size : {FIntPoint(1920, 1080), FIntPoint(1280, 720)})
+                {
+                    FString Error;
+                    TStrongObjectPtr<UUserWidget> Widget(CasinoBlackjackPreview::Create(Path, Error));
+                    if (!Widget.IsValid()) { UE_LOG(LogCasinoBlackjackPreview, Error, TEXT("%s"), *Error); return; }
+                    if (UWidget* Keypad = Widget->GetWidgetFromName(TEXT("WBP_Calculate"))) Keypad->SetVisibility(ESlateVisibility::Hidden);
+                    if (UWidget* Blocker = Widget->GetWidgetFromName(TEXT("결과창닫기버튼"))) Blocker->SetVisibility(ESlateVisibility::Hidden);
+                    const FString Filename = Directory / FString::Printf(TEXT("%s_%dx%d.png"), *Widget->GetClass()->GetName(), Size.X, Size.Y);
+                    if (!CasinoBlackjackPreview::Render(*Renderer, Widget.Get(), Size, Filename, Error, false))
+                    { UE_LOG(LogCasinoBlackjackPreview, Error, TEXT("%s"), *Error); return; }
+                }
+            }
+            UE_LOG(LogCasinoBlackjackPreview, Display, TEXT("Saved 8 game style designer previews to %s"), *Directory);
+        }));
     CasinoBlackjackPreview::PreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(
         TEXT("CasinoBlackjack.RenderPreviews"), TEXT("Render designer-only blackjack HUD/card previews; no gameplay actions run."),
         FConsoleCommandDelegate::CreateLambda([]
@@ -518,6 +547,9 @@ void RegisterCasinoBlackjackPreviewCommands()
 
 void UnregisterCasinoBlackjackPreviewCommands()
 {
+    if (CasinoBlackjackPreview::GameStylePreviewCommand)
+        IConsoleManager::Get().UnregisterConsoleObject(CasinoBlackjackPreview::GameStylePreviewCommand);
+    CasinoBlackjackPreview::GameStylePreviewCommand = nullptr;
     if (CasinoBlackjackPreview::PreviewCommand)
         IConsoleManager::Get().UnregisterConsoleObject(CasinoBlackjackPreview::PreviewCommand);
     CasinoBlackjackPreview::PreviewCommand = nullptr;

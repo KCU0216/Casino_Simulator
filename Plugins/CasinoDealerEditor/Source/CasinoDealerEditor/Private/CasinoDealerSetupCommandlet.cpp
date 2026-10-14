@@ -10,6 +10,7 @@
 #include "CasinoShopUILayoutMigration.h"
 #include "CasinoCalculatorMigration.h"
 #include "CasinoSlotKeypadMigration.h"
+#include "CasinoGameStyleMigration.h"
 #include "BlackjackCardSoundSetup.h"
 #include "Engine/Blueprint.h"
 #include "Engine/SimpleConstructionScript.h"
@@ -123,6 +124,16 @@ int32 UCasinoDealerSetupCommandlet::Main(const FString& Params)
 {
     FString Mode = TEXT("Inspect");
     FParse::Value(*Params, TEXT("Mode="), Mode);
+    if (Mode.Equals(TEXT("GameStyle"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoGameStyles(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Game style update failed: %s"), *Error);
+            return 1;
+        }
+        return 0;
+    }
     if (Mode.Equals(TEXT("Preview"), ESearchCase::IgnoreCase))
     {
         FString Error;

@@ -175,6 +175,11 @@ bool InspectCasinoMenuWidgets(FString& OutError)
         TEXT("/Game/Blackjack/WBP/WBP_DayPassed.WBP_DayPassed"),
         TEXT("/Game/Blackjack/WBP/WBP_Result.WBP_Result"),
         TEXT("/Game/KCU/LadderMachine/Widget/WBP_LadderControlWidget.WBP_LadderControlWidget"),
+        TEXT("/Game/KCU/LadderMachine/Widget/WBP_MachineScreen.WBP_MachineScreen"),
+        TEXT("/Game/KCU/LadderMachine/Widget/WBP_LadderWidget.WBP_LadderWidget"),
+        TEXT("/Game/KCU/LadderMachine/Widget/WBP_RailButton.WBP_RailButton"),
+        TEXT("/Game/KCU/LadderMachine/Widget/WBP_ResultWidget.WBP_ResultWidget"),
+        TEXT("/Game/KCU/LadderMachine/Widget/WBP_ResultSlot.WBP_ResultSlot"),
         TEXT("/Game/KCU/HorseRacing/WBP_RaceBettingWidget.WBP_RaceBettingWidget")
     };
     for (const TCHAR* Path : Paths)
