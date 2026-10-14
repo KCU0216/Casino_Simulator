@@ -164,7 +164,15 @@ bool InspectCasinoMenuWidgets(FString& OutError)
         TEXT("/Game/Store/UI/WBP_StoreMain.WBP_StoreMain"),
         TEXT("/Game/Store/UI/WBP_StoreItemCard.WBP_StoreItemCard"),
         TEXT("/Game/Store/UI/WBP_StoreItemEntry.WBP_StoreItemEntry"),
-        TEXT("/Game/1_BluePrint/Widget/WBP_Calculate.WBP_Calculate")
+        TEXT("/Game/1_BluePrint/Widget/WBP_Calculate.WBP_Calculate"),
+        TEXT("/Game/LJH/UI/WBP_BailPayment.WBP_BailPayment"),
+        TEXT("/Game/LJH/UI/WBP_SlotMachineControl.WBP_SlotMachineControl"),
+        TEXT("/Game/1_BluePrint/Widget/WBP_Trade.WBP_Trade"),
+        TEXT("/Game/1_BluePrint/Widget/WBP_ThreeCardPokerBetting.WBP_ThreeCardPokerBetting"),
+        TEXT("/Game/1_BluePrint/Widget/WBP_DiceBetting.WBP_DiceBetting"),
+        TEXT("/Game/Blackjack/WBP/WBP_DailyPayment.WBP_DailyPayment"),
+        TEXT("/Game/KCU/LadderMachine/Widget/WBP_LadderControlWidget.WBP_LadderControlWidget"),
+        TEXT("/Game/KCU/HorseRacing/WBP_RaceBettingWidget.WBP_RaceBettingWidget")
     };
     for (const TCHAR* Path : Paths)
     {

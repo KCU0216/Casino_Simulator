@@ -48,7 +48,7 @@ USizeBox* BoundCards(UWidgetBlueprint* Blueprint, UHorizontalBox* Cards, const T
     UContentWidget* Parent = Scale;
     Parent->SetContent(Cards);
     if (UScaleBoxSlot* Slot = Cast<UScaleBoxSlot>(Cards->Slot))
-    { Slot->SetHorizontalAlignment(HAlign_Left); Slot->SetVerticalAlignment(VAlign_Center); }
+    { Slot->SetHorizontalAlignment(HAlign_Left); Slot->SetVerticalAlignment(VAlign_Top); }
     Scale->RemoveFromParent();
     Size->SetContent(Scale);
     if (USizeBoxSlot* Slot = Cast<USizeBoxSlot>(Scale->Slot))
@@ -75,6 +75,14 @@ bool StyleHUD(UWidgetBlueprint* Blueprint, FString& Error)
     Info->SetBrush(Brush(FLinearColor(.016f, .024f, .039f, .86f), 14.f, FLinearColor(.76f, .49f, .15f, .5f)));
     Info->SetBrushColor(FLinearColor::White);
     Info->SetPadding(FMargin(22.f, 20.f));
+    Info->SetHorizontalAlignment(HAlign_Fill);
+    Info->SetVerticalAlignment(VAlign_Fill);
+    if (UBorderSlot* Slot = Cast<UBorderSlot>(Rows->Slot))
+    {
+        Slot->SetPadding(FMargin(22.f, 20.f));
+        Slot->SetHorizontalAlignment(HAlign_Fill);
+        Slot->SetVerticalAlignment(VAlign_Fill);
+    }
     if (UOverlaySlot* Slot = Cast<UOverlaySlot>(Info->Slot))
     { Slot->SetHorizontalAlignment(HAlign_Fill); Slot->SetVerticalAlignment(VAlign_Fill); }
 
@@ -98,15 +106,19 @@ bool StyleHUD(UWidgetBlueprint* Blueprint, FString& Error)
     if (!DealerText || !OwnText) { Error = TEXT("Blackjack score labels are missing."); return false; }
     TextStyle(DealerText, 21.f, Ivory); TextStyle(OwnText, 21.f, Ivory);
     USizeBox* DealerSize = BoundCards(Blueprint, DealerCards, TEXT("CasinoBlackjackDealerCardSize"),
-        TEXT("CasinoBlackjackDealerCardScale"), 128.f);
+        TEXT("CasinoBlackjackDealerCardScale"), 104.f);
     Rows->ClearChildren();
     AddRow(Rows, Title);
-    AddRow(Rows, RuleText, FMargin(0.f, 2.f, 0.f, 18.f));
-    AddRow(Rows, DealerText, FMargin(0.f, 0.f, 0.f, 8.f));
-    AddRow(Rows, DealerSize, FMargin(0.f, 0.f, 0.f, 16.f));
-    AddRow(Rows, RuleHeight, FMargin(0.f, 0.f, 0.f, 16.f));
-    AddRow(Rows, OwnText, FMargin(0.f, 0.f, 0.f, 10.f));
-    AddRow(Rows, OwnHands);
+    AddRow(Rows, RuleText, FMargin(0.f, 2.f, 0.f, 12.f));
+    AddRow(Rows, DealerText, FMargin(0.f, 0.f, 0.f, 6.f));
+    AddRow(Rows, DealerSize, FMargin(0.f, 0.f, 0.f, 12.f));
+    AddRow(Rows, RuleHeight, FMargin(0.f, 0.f, 0.f, 12.f));
+    AddRow(Rows, OwnText, FMargin(0.f, 0.f, 0.f, 8.f));
+    // Allocate the remaining interior height to the hands. Card scaling uses
+    // this actual allocation, including when settled result labels are visible.
+    UVerticalBoxSlot* HandsSlot = AddRow(Rows, OwnHands);
+    HandsSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+    HandsSlot->SetVerticalAlignment(VAlign_Fill);
 
     for (int32 Index = 1; Index <= 2; ++Index)
     {
@@ -122,17 +134,23 @@ bool StyleHUD(UWidgetBlueprint* Blueprint, FString& Error)
         if (UHorizontalBoxSlot* Slot = Cast<UHorizontalBoxSlot>(Hand->Slot))
         {
             Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-            Slot->SetHorizontalAlignment(HAlign_Fill); Slot->SetVerticalAlignment(VAlign_Top);
-            Slot->SetPadding(FMargin(Index == 2 ? 12.f : 0.f, 0.f, Index == 1 ? 12.f : 0.f, 0.f));
+            Slot->SetHorizontalAlignment(HAlign_Fill); Slot->SetVerticalAlignment(VAlign_Fill);
+            Slot->SetPadding(FMargin(Index == 2 ? 8.f : 0.f, 0.f, Index == 1 ? 8.f : 0.f, 0.f));
         }
-        if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Score->Slot)) Slot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
         const FString SizeName = FString::Printf(TEXT("CasinoBlackjackHand%dCardSize"), Index);
         const FString ScaleName = FString::Printf(TEXT("CasinoBlackjackHand%dCardScale"), Index);
         USizeBox* Size = BoundCards(Blueprint, Cards, *SizeName, *ScaleName, 128.f);
-        AddRow(Hand, Size);
         const FString ResultName = FString::Printf(TEXT("BlackjackOwnHand%dResult"), Index);
-        if (UTextBlock* Result = Find<UTextBlock>(Blueprint, *ResultName))
-        { TextStyle(Result, 18.f, Ivory); Result->SetAutoWrapText(true); }
+        UTextBlock* Result = Find<UTextBlock>(Blueprint, *ResultName);
+        if (!Result) { Error = TEXT("Blackjack settled-hand result label is missing."); return false; }
+        TextStyle(Result, 18.f, Ivory);
+        Result->SetAutoWrapText(true);
+        Hand->ClearChildren();
+        AddRow(Hand, Score, FMargin(0.f, 0.f, 0.f, 6.f));
+        UVerticalBoxSlot* CardsSlot = AddRow(Hand, Size);
+        CardsSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+        CardsSlot->SetVerticalAlignment(VAlign_Fill);
+        AddRow(Hand, Result, FMargin(0.f, 6.f, 0.f, 0.f));
     }
 
     // Each action keeps its original visibility/enabled state and click binding.
@@ -167,16 +185,19 @@ bool StyleHUD(UWidgetBlueprint* Blueprint, FString& Error)
     Place(Canvas, Others, FAnchors(.975f, .5f), FMargin(-382.f, -254.f, 382.f, 508.f));
     Others->SetBrush(Brush(FLinearColor(.016f, .024f, .039f, .86f), 14.f, FLinearColor(.76f, .49f, .15f, .35f)));
     Others->SetBrushColor(FLinearColor::White);
-    Others->SetPadding(FMargin(20.f));
+    Others->SetPadding(FMargin(16.f, 20.f));
+    Others->SetHorizontalAlignment(HAlign_Fill);
+    Others->SetVerticalAlignment(VAlign_Fill);
     UVerticalBox* OtherBody = Decoration<UVerticalBox>(Blueprint, TEXT("CasinoBlackjackOtherBody"));
     UTextBlock* OtherTitle = Decoration<UTextBlock>(Blueprint, TEXT("CasinoBlackjackOtherTitle"));
-    OtherTitle->SetText(FText::FromString(TEXT("함께 플레이 중")));
+    OtherTitle->SetText(FText::FromString(TEXT("다른 플레이어")));
     OtherTitle->SetVisibility(ESlateVisibility::HitTestInvisible);
     TextStyle(OtherTitle, 20.f, Gold);
     OtherBody->ClearChildren();
-    AddRow(OtherBody, OtherTitle, FMargin(0.f, 0.f, 0.f, 16.f));
+    AddRow(OtherBody, OtherTitle, FMargin(0.f, 0.f, 0.f, 12.f));
     UVerticalBoxSlot* OtherSlot = AddRow(OtherBody, OtherList);
     OtherSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+    OtherSlot->SetVerticalAlignment(VAlign_Fill);
     OtherBody->RemoveFromParent(); Others->SetContent(OtherBody);
 
     // The shared keypad is anchored at bottom-right. Its HUD-owned amount and
