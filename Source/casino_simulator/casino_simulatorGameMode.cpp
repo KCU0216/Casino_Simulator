@@ -211,11 +211,10 @@ void Acasino_simulatorGameMode::StartDayLoop()
     BeginCasinoDay(FMath::Max(1, StartDay));
 }
 
-int32 Acasino_simulatorGameMode::CalculateRequiredPayment(int32 Day) const
+double Acasino_simulatorGameMode::CalculateTeamCurrency() const
 {
-    if (Day <= 1) return FMath::Max(1, DefaultDailyPayment);
-
     double TeamCurrency = 0.0;
+    if (!GetWorld()) return TeamCurrency;
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
     {
         const auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get());
@@ -225,14 +224,28 @@ int32 Acasino_simulatorGameMode::CalculateRequiredPayment(int32 Day) const
         const float Currency = Player->GetCurrency();
         if (FMath::IsFinite(Currency) && Currency > 0.0f) TeamCurrency += Currency;
     }
-    if (TeamCurrency <= 0.0) return 1;
+    return TeamCurrency;
+}
+
+int32 Acasino_simulatorGameMode::CalculateRequiredPayment(int32 Day) const
+{
+    if (Day <= 1) return FMath::Max(1, DefaultDailyPayment);
+
+    const bool bHasPreviousPayment = PreviousPaymentDay == Day - 1;
+    const double TeamCurrency = bHasPreviousPayment
+        ? PreviousDayRemainingCurrency : CalculateTeamCurrency();
+    const int32 PreviousRequired = bHasPreviousPayment
+        ? PreviousDayRequiredPayment : FMath::Max(1, DefaultDailyPayment);
     const double Base = FMath::IsFinite(DailyPaymentBaseMultiplier)
         ? FMath::Max(0.0, DailyPaymentBaseMultiplier) : 1.5;
     const double Increase = FMath::IsFinite(DailyPaymentMultiplierIncreasePerDay)
         ? FMath::Max(0.0, DailyPaymentMultiplierIncreasePerDay) : 0.0;
     const double Multiplier = Base + FMath::Max(0, Day - 2) * Increase;
-    // Snapshot once at day start. Integer payments round up without overflowing the UI total.
-    double Target = FMath::Clamp(TeamCurrency * Multiplier, 1.0, static_cast<double>(MAX_int32));
+    // A depleted wallet must not reset tomorrow's difficulty. Use the required bill,
+    // not the collected amount, so voluntary overpayment does not raise the floor.
+    // Integer payments round up without overflowing the replicated UI total.
+    double Target = FMath::Clamp(FMath::Max(TeamCurrency, static_cast<double>(PreviousRequired))
+        * Multiplier, 1.0, static_cast<double>(MAX_int32));
     const double Rounded = FMath::RoundToDouble(Target);
     // Decimal multipliers must not add a won solely due to floating-point roundoff.
     if (FMath::IsNearlyEqual(Target, Rounded, 1.e-6)) Target = Rounded;
@@ -243,6 +256,12 @@ void Acasino_simulatorGameMode::BeginCasinoDay(int32 Day)
 {
     auto* GS = GetGameState<ACasinoLoopGameState>();
     if (!GS) return;
+    if (Day <= 1)
+    {
+        PreviousPaymentDay = 0;
+        PreviousDayRequiredPayment = 0;
+        PreviousDayRemainingCurrency = 0.0;
+    }
     FCasinoLoopStatus Status;
     PaymentParticipants.Reset();
     for (APlayerState* BasePS : GS->PlayerArray)
@@ -446,6 +465,14 @@ void Acasino_simulatorGameMode::FinishPaymentPhase()
     Status.PaymentEndServerTime = 0.0;
     Status.Phase = Status.CollectedPayment < Status.RequiredPayment ? ECasinoLoopPhase::GameOver
         : (Status.CurrentDay >= Status.FinalDay ? ECasinoLoopPhase::Cleared : ECasinoLoopPhase::DayPassed);
+    if (Status.Phase == ECasinoLoopPhase::DayPassed)
+    {
+        // Freeze the balance after everyone pays (or the deadline). Later spending,
+        // disconnects, and result-screen arrivals cannot rewrite tomorrow's bill.
+        PreviousPaymentDay = Status.CurrentDay;
+        PreviousDayRequiredPayment = Status.RequiredPayment;
+        PreviousDayRemainingCurrency = CalculateTeamCurrency();
+    }
     GS->SetLoopStatus(Status);
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
         if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))

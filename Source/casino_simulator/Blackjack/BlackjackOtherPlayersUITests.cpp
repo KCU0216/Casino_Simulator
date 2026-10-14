@@ -9,6 +9,8 @@
 #include "AbilitySystemComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/Border.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
@@ -41,6 +43,23 @@ void CollectCardWidgets(UWidget* Widget, UClass* CardClass, TArray<UUserWidget*>
 	{
 		for (UWidget* Child : Panel->GetAllChildren()) CollectCardWidgets(Child, CardClass, OutCards);
 	}
+}
+
+bool TestSeparatedCardSlots(FAutomationTestBase& Test, UWidget* Root, UClass* CardClass)
+{
+	TArray<UUserWidget*> Cards;
+	CollectCardWidgets(Root, CardClass, Cards);
+	bool bValid = true;
+	for (UUserWidget* Card : Cards)
+	{
+		const UHorizontalBoxSlot* Slot = Cast<UHorizontalBoxSlot>(Card->Slot);
+		bValid &= Test.TestNotNull(TEXT("Rendered card belongs to a horizontal strip"), Slot);
+		if (!Slot) continue;
+		const FMargin Padding = Slot->GetPadding();
+		bValid &= Test.TestTrue(TEXT("Card strip never covers adjacent card faces with negative spacing"),
+			Padding.Left >= 0.f && Padding.Top >= 0.f && Padding.Right >= 0.f && Padding.Bottom >= 0.f);
+	}
+	return bValid;
 }
 
 UTextBlock* HeaderAt(UScrollBox* Rows, int32 Index)
@@ -256,6 +275,9 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 	CollectCardWidgets(OwnPanels[0], CardClass, Cards);
 	CollectCardWidgets(OwnPanels[1], CardClass, Cards);
 	TestEqual(TEXT("Own split cards remain visible beside results"), Cards.Num(), 4);
+	TestSeparatedCardSlots(*this, OwnPanels[0], CardClass);
+	TestSeparatedCardSlots(*this, OwnPanels[1], CardClass);
+	TestSeparatedCardSlots(*this, Rows, CardClass);
 	const TPair<EBlackjackSeatResult, FString> ResultCases[] = {
 		{EBlackjackSeatResult::PlayerBlackjack, TEXT("블랙잭 승리")},
 		{EBlackjackSeatResult::PlayerBust, TEXT("버스트")},
@@ -285,6 +307,46 @@ bool FBlackjackOtherPlayersUITest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Repeated results reuse the label"),
 			HUD->GetWidgetFromName(Index == 0 ? TEXT("BlackjackOwnHand1Result") : TEXT("BlackjackOwnHand2Result")) == OwnResults[Index]);
 	}
+
+	// The old fan began overlapping at four cards. Exercise that threshold and
+	// seven-card split/remote hands through the shipped Blueprint refresh path.
+	const TArray<FBlackjackHand> SavedOwnHands = Seats[0].Hands;
+	const TArray<FBlackjackHand> SavedOtherHands = Seats[1].Hands;
+	const TArray<FBlackjackHand> SavedHiddenHands = Seats[3].Hands;
+	const FBlackjackHand SavedDealerHand = Table->GetDealerHand();
+	FBlackjackHand FourCards = First;
+	FourCards.Cards = {{EBlackjackSuit::Clubs, EBlackjackRank::Two}, {EBlackjackSuit::Diamonds, EBlackjackRank::Three},
+		{EBlackjackSuit::Spades, EBlackjackRank::Ace}, {EBlackjackSuit::Hearts, EBlackjackRank::Four}};
+	FBlackjackHand SevenCards = Second;
+	SevenCards.Cards = FourCards.Cards;
+	SevenCards.Cards.Append({{EBlackjackSuit::Clubs, EBlackjackRank::Two},
+		{EBlackjackSuit::Diamonds, EBlackjackRank::Five}, {EBlackjackSuit::Hearts, EBlackjackRank::Two}});
+	Seats[0].Hands = {FourCards, SevenCards};
+	Seats[1].Hands = {FourCards, SevenCards};
+	Seats[3].Hands = {SevenCards};
+	Seats[3].Hands[0].Cards[0].bFaceUp = false;
+	const_cast<FBlackjackHand&>(Table->GetDealerHand()) = SevenCards;
+	Table->OnTableChanged.Broadcast();
+	Rows = Cast<UScrollBox>(List->GetChildAt(0));
+	Cards.Reset();
+	CollectCardWidgets(OwnPanels[0], CardClass, Cards);
+	CollectCardWidgets(OwnPanels[1], CardClass, Cards);
+	TestEqual(TEXT("Long split hands preserve all eleven own card faces"), Cards.Num(), 11);
+	TestSeparatedCardSlots(*this, OwnPanels[0], CardClass);
+	TestSeparatedCardSlots(*this, OwnPanels[1], CardClass);
+	Cards.Reset();
+	CollectCardWidgets(Rows, CardClass, Cards);
+	TestEqual(TEXT("Long remote hands preserve all eighteen cards including the hidden card"), Cards.Num(), 18);
+	TestSeparatedCardSlots(*this, Rows, CardClass);
+	UHorizontalBox* DealerCards = Cast<UHorizontalBox>(HUD->GetWidgetFromName(TEXT("DealerCardPanel")));
+	if (!TestNotNull(TEXT("Dealer card strip"), DealerCards)) return false;
+	TestEqual(TEXT("Dealer's seven-card hand remains fully rendered"), DealerCards->GetChildrenCount(), 7);
+	TestSeparatedCardSlots(*this, DealerCards, CardClass);
+	Seats[0].Hands = SavedOwnHands;
+	Seats[1].Hands = SavedOtherHands;
+	Seats[3].Hands = SavedHiddenHands;
+	const_cast<FBlackjackHand&>(Table->GetDealerHand()) = SavedDealerHand;
+	Table->OnTableChanged.Broadcast();
 
 	// A separate table snapshot drives the same RepNotify path used on a client.
 	// This checks UI parity without pretending to exercise network transport.

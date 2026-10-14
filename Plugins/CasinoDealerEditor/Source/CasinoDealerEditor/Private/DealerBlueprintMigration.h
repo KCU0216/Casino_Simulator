@@ -4,3 +4,4 @@
 
 bool MigrateBlackjackDealerBlueprints(FString& OutError);
 bool ExtendBlackjackDealerPresentation(FString& OutError);
+bool MigrateBlackjackDealerLocalLifetime(FString& OutError);

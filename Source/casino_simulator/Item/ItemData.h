@@ -29,7 +29,7 @@ struct CASINO_SIMULATOR_API FItemData : public FTableRowBase
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
-	int UniqueID;
+	int32 UniqueID = 0;
 
 	/** Display name shown in inventory/interaction UI */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Item")

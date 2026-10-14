@@ -12,6 +12,7 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
+#include "Components/PanelWidget.h"
 #include "Components/ScaleBox.h"
 #include "Components/ScaleBoxSlot.h"
 #include "Components/ScrollBox.h"
@@ -123,8 +124,8 @@ bool Cards(UHorizontalBox* Parent, const TArray<FBlackjackCard>& CardsToShow, FS
         Image->SetBrushFromTexture(Texture, false);
         UHorizontalBoxSlot* Slot = Parent->AddChildToHorizontalBox(Widget);
         Slot->SetVerticalAlignment(VAlign_Top);
-        // Match the presentation helper's compact fan after RenderCards.
-        Slot->SetPadding(FMargin(0.f, 0.f, CardsToShow.Num() > 3 && CardIndex + 1 < CardsToShow.Num() ? -44.f : 0.f, 0.f));
+        // Match the presentation helper's separated cards after RenderCards.
+        Slot->SetPadding(FMargin(0.f, 0.f, CardIndex + 1 < CardsToShow.Num() ? 4.f : 0.f, 0.f));
     }
     return true;
 }
@@ -283,6 +284,37 @@ bool Sample(UUserWidget* HUD, const FString& Variant, FString& Error)
     return OtherSeats(HUD, Stress, Settled, Error);
 }
 
+bool CheckCardSeparation(UHorizontalBox* Row, FString& Error)
+{
+    TOptional<FSlateRect> Previous;
+    for (UWidget* Card : Row->GetAllChildren())
+    {
+        const UHorizontalBoxSlot* Slot = Cast<UHorizontalBoxSlot>(Card->Slot);
+        if (!Slot || Slot->GetPadding().Left < 0.f || Slot->GetPadding().Right < 0.f)
+        { Error = TEXT("Blackjack card strip has overlapping slot spacing: ") + Row->GetName(); return false; }
+        const FSlateRect Bounds = Card->GetPaintSpaceGeometry().GetRenderBoundingRect();
+        // ScrollBox may cull remote rows outside its viewport before painting.
+        if (Bounds.GetSize().X < 1.f || Bounds.GetSize().Y < 1.f) continue;
+        if (Previous.IsSet() && Bounds.Left < Previous.GetValue().Right - .25f)
+        {
+            Error = FString::Printf(TEXT("Blackjack %s adjacent cards overlap: previous right %.2f, next left %.2f."),
+                *Row->GetName(), Previous.GetValue().Right, Bounds.Left);
+            return false;
+        }
+        Previous = Bounds;
+    }
+    return true;
+}
+
+bool CheckRemoteCardSeparation(UWidget* Root, FString& Error)
+{
+    if (UHorizontalBox* Row = Cast<UHorizontalBox>(Root)) return CheckCardSeparation(Row, Error);
+    if (UPanelWidget* Panel = Cast<UPanelWidget>(Root))
+        for (UWidget* Child : Panel->GetAllChildren())
+            if (!CheckRemoteCardSeparation(Child, Error)) return false;
+    return true;
+}
+
 bool CheckCardGeometry(UUserWidget* HUD, FString& Error)
 {
     const auto Contains = [](const FSlateRect& Outer, const FSlateRect& Inner)
@@ -304,6 +336,7 @@ bool CheckCardGeometry(UUserWidget* HUD, FString& Error)
         UWidget* Area = Find<UWidget>(HUD, Areas[Index]);
         if (!CardsPanel || !Area || CardsPanel->GetChildrenCount() == 0)
         { Error = TEXT("Blackjack card geometry check lacks a populated row."); return false; }
+        if (!CheckCardSeparation(CardsPanel, Error)) return false;
         const FSlateRect AreaBounds = Area->GetPaintSpaceGeometry().GetRenderBoundingRect();
         if (AreaBounds.GetSize().Y < 1.f || !Contains(PanelBounds, AreaBounds))
         {
@@ -324,6 +357,7 @@ bool CheckCardGeometry(UUserWidget* HUD, FString& Error)
             }
         }
     }
+    if (!CheckRemoteCardSeparation(Find<UVerticalBox>(HUD, TEXT("OtherPlayersList")), Error)) return false;
     const TCHAR* Labels[] = {TEXT("DealerInfoText"), TEXT("MyHandInfoText"), TEXT("Text_Hand1Value"),
         TEXT("Text_Hand2Value"), TEXT("BlackjackOwnHand1Result"), TEXT("BlackjackOwnHand2Result")};
     for (const TCHAR* Name : Labels)
@@ -459,7 +493,7 @@ bool RenderCasinoBlackjackPreviews(FString& OutError)
                 FString(Variant) != TEXT("Betting"))) return false;
         }
     }
-    UE_LOG(LogCasinoBlackjackPreview, Display, TEXT("Saved 28 blackjack UI previews with bounded card/result geometry in %s"), *Directory);
+    UE_LOG(LogCasinoBlackjackPreview, Display, TEXT("Saved 28 blackjack UI previews with bounded, non-overlapping card/result geometry in %s"), *Directory);
     return true;
 }
 

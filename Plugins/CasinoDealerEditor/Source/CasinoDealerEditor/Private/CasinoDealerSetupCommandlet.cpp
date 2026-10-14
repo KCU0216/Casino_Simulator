@@ -264,6 +264,17 @@ int32 UCasinoDealerSetupCommandlet::Main(const FString& Params)
         UE_LOG(LogCasinoDealerSetup, Display, TEXT("Calculator keyboard update completed."));
         return 0;
     }
+    if (Mode.Equals(TEXT("DealerLocalLifetime"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateBlackjackDealerLocalLifetime(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Dealer local lifetime update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Dealer local lifetime update completed."));
+        return 0;
+    }
     if (Mode.Equals(TEXT("CardSound"), ESearchCase::IgnoreCase))
     {
         FString Error;

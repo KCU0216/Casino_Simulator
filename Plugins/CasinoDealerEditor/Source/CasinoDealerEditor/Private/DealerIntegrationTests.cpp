@@ -10,6 +10,7 @@
 #include "Blackjack/BlackjackDealerVisual.h"
 #include "Blackjack/BlackjackTableActor.h"
 #include "Components/SceneComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TimelineComponent.h"
@@ -373,6 +374,99 @@ bool FBlackjackDealerAssetIntegrationTest::RunTest(const FString& Parameters)
 	Table->OnDealerPresentationReset.Broadcast();
 	AdvanceVisuals(Dealer->ShuffleMontage->GetPlayLength() + 0.5f);
 	TestTrue(TEXT("Cancelled shuffle cannot show props later"), Dealer->ShuffleLeftDeck->bHiddenInGame && Dealer->ShuffleRightDeckBack->bHiddenInGame);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlackjackDealerClientLifetimeTest,
+	"Casino.Blackjack.DealerClientLifetime",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBlackjackDealerClientLifetimeTest::RunTest(const FString& Parameters)
+{
+	UBlueprint* TableBP = LoadObject<UBlueprint>(nullptr,
+		TEXT("/Game/Blackjack/BluePrint/BP_BlackjackTable.BP_BlackjackTable"));
+	if (!TestNotNull(TEXT("Production table Blueprint"), TableBP)
+		|| !TestNotNull(TEXT("Production table class"), TableBP->GeneratedClass.Get())) return false;
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
+	ON_SCOPE_EXIT { World->DestroyWorld(false); GEngine->DestroyWorldContext(World); };
+	TGuardValue<uint64> FrameCounterGuard(GFrameCounter, GFrameCounter);
+	TGuardValue<bool> ScriptExecutionGuard(GAllowActorScriptExecutionInEditor, true);
+
+	// Deferred BP construction lets us set the simulated role before the production
+	// SCS child component is created. No dealer actor-channel packet is supplied.
+	for (bool bClientTable : {false, true})
+	{
+		for (int32 Reentry = 0; Reentry < 2; ++Reentry)
+		{
+			FActorSpawnParameters Spawn;
+			Spawn.bDeferConstruction = bClientTable;
+			Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			const FTransform TableTransform(FRotator(0, 30, 0), FVector(400 + Reentry * 500, bClientTable ? 500 : 0, 0));
+			ABlackjackTableActor* Table = World->SpawnActor<ABlackjackTableActor>(TableBP->GeneratedClass,
+				TableTransform.GetLocation(), TableTransform.Rotator(), Spawn);
+			if (!TestNotNull(TEXT("Production table spawned"), Table)) return false;
+			if (bClientTable)
+			{
+				TArray<UChildActorComponent*> BeforeConstruction;
+				Table->GetComponents(BeforeConstruction);
+				TestEqual(TEXT("Client role is assigned before any SCS child component exists"), BeforeConstruction.Num(), 0);
+				Table->SetRole(ROLE_SimulatedProxy);
+				Table->FinishSpawning(TableTransform);
+			}
+			TestEqual(TEXT("Table uses requested authority role"), Table->HasAuthority(), !bClientTable);
+			TArray<UChildActorComponent*> Children;
+			Table->GetComponents(Children);
+			UChildActorComponent* DealerChild = nullptr;
+			for (UChildActorComponent* Child : Children)
+			{
+				if (Child->GetChildActorClass()
+					&& Child->GetChildActorClass()->IsChildOf(ABlackjackDealerVisual::StaticClass())) DealerChild = Child;
+			}
+			if (!TestNotNull(TEXT("Production dealer child component"), DealerChild)) return false;
+			ABlackjackDealerVisual* Dealer = Cast<ABlackjackDealerVisual>(DealerChild->GetChildActor());
+			if (!TestNotNull(TEXT("Dealer exists before table BeginPlay, including remote role"), Dealer)) return false;
+			TestFalse(TEXT("Dealer has no independent replicated actor channel"), Dealer->GetIsReplicated());
+			TestTrue(TEXT("Dealer belongs to its table without relying on network owner"), Dealer->GetParentActor() == Table);
+			TestTrue(TEXT("Dealer root is attached to production child component"), Dealer->GetRootComponent()->GetAttachParent() == DealerChild);
+			TestTrue(TEXT("Dealer starts at child component world location"), Dealer->GetActorLocation().Equals(DealerChild->GetComponentLocation(), 0.01f));
+			Table->DispatchBeginPlay();
+			if (!Dealer->HasActorBegunPlay()) Dealer->DispatchBeginPlay();
+			TestTrue(TEXT("Table's actual BeginPlay caches the local dealer"), ObjectValue(Table, TEXT("DealerActor")) == Dealer);
+			TestTrue(TEXT("Dealer bound shuffle event through its parent table"), Table->OnDealerShuffle.IsBound());
+			Dealer->Mesh->InitAnim(true);
+			const int32 DealerHandCount = Table->GetDealerHand().Cards.Num();
+			const EBlackjackRoundState RoundBefore = Table->GetRoundState();
+			FIntProperty* ActiveSeat = FindFProperty<FIntProperty>(Table->GetClass(), TEXT("ActiveSeatIndex"));
+			if (!TestNotNull(TEXT("Active seat state property"), ActiveSeat)) return false;
+			const int32 ActiveBefore = ActiveSeat->GetPropertyValue_InContainer(Table);
+			Table->OnDealerCardDealt.Broadcast(INDEX_NONE, FBlackjackCard(EBlackjackSuit::Hearts, EBlackjackRank::Ace, true));
+			TArray<AActor*> Cards = VisualCards(Table);
+			if (!TestEqual(TEXT("One multicast presentation creates exactly one local card"), Cards.Num(), 1)) return false;
+			UFunction* NotifyRelease = Dealer->FindFunction(TEXT("ReleaseCardFromDealer"));
+			if (!TestNotNull(TEXT("Dealer notify release function"), NotifyRelease)) return false;
+			Dealer->ProcessEvent(NotifyRelease, nullptr);
+			Dealer->ProcessEvent(NotifyRelease, nullptr);
+			for (int32 Frame = 0; Frame < 150; ++Frame)
+			{
+				++GFrameCounter;
+				World->Tick(LEVELTICK_All, 1.0f / 60.0f);
+			}
+			TestEqual(TEXT("Notify and fallback do not duplicate card actors"), VisualCards(Table).Num(), 1);
+			TestEqual(TEXT("Cosmetic notify does not deal a rules card"), Table->GetDealerHand().Cards.Num(), DealerHandCount);
+			TestTrue(TEXT("Cosmetic notify cannot advance the round"), Table->GetRoundState() == RoundBefore);
+			TestEqual(TEXT("Cosmetic notify cannot advance active seat"), ActiveSeat->GetPropertyValue_InContainer(Table), ActiveBefore);
+			Table->SetActorLocation(Table->GetActorLocation() + FVector(50, 70, 0));
+			TestTrue(TEXT("Dealer follows table attachment without movement packets"), Dealer->GetActorLocation().Equals(DealerChild->GetComponentLocation(), 0.01f));
+			Table->OnDealerTableVisualReset.Broadcast();
+			TestTrue(TEXT("Round visual cleanup preserves dealer"), IsValid(Dealer));
+			TestFalse(TEXT("Round visual cleanup preserves visible actor"), Dealer->IsHidden());
+			TestTrue(TEXT("Dealer mesh remains visible"), Dealer->Mesh->IsVisible() && !Dealer->Mesh->bHiddenInGame);
+			TestEqual(TEXT("Round visual cleanup removes cards only"), VisualCards(Table).Num(), 0);
+			Table->Destroy(true);
+			TestTrue(TEXT("Table removal also removes its dealer"), Dealer->IsActorBeingDestroyed() || !IsValid(Dealer));
+		}
+	}
 	return true;
 }
 
