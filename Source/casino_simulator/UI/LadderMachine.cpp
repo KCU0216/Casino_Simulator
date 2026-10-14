@@ -1,4 +1,4 @@
-// LadderMachine.cpp  (서버 권위 버전)
+﻿// LadderMachine.cpp  (서버 권위 버전)
 
 #include "LadderMachine.h"
 #include "casino_simulatorCharacter.h"   // GetCurrency / TrySpendCurrency / AddCurrency
@@ -17,7 +17,7 @@ ALadderMachine::ALadderMachine()
 	{
 		FPayoutOption O; O.Rails = R; O.Multipliers = M; PayoutTable.Add(O);
 	};
-	Add(3, { 3, 3, 3 });
+	Add(3, { 0, 0, 3 });
 	Add(4, { 0, 0, 2, 2 });
 	Add(4, { 0, 0, 0, 4 });
 	Add(4, { 0, 0, 1, 3 });
