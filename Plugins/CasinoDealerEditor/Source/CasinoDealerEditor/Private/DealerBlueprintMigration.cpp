@@ -14,6 +14,7 @@
 #include "Components/TimelineComponent.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphSchema.h"
+#include "EdGraphUtilities.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
@@ -37,6 +38,11 @@
 #include "KismetCompiler.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/PackageName.h"
+#include "Misc/AssertionMacros.h"
+#include "Misc/FeedbackContext.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "HAL/FileManager.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 #include "UObject/UnrealType.h"
@@ -53,6 +59,18 @@ const FString ShufflePath = RetargetFolder + TEXT("/AM_Dealer_BJ_Shuffle_WBG");
 FString ObjectPath(const FString& PackagePath)
 {
 	return PackagePath + TEXT(".") + FPackageName::GetLongPackageAssetName(PackagePath);
+}
+
+bool SetLocalDealerReplicationDefault(AActor* Defaults, FString& OutError)
+{
+	FBoolProperty* Replicates = Defaults ? FindFProperty<FBoolProperty>(Defaults->GetClass(), TEXT("bReplicates")) : nullptr;
+	if (!Replicates)
+	{
+		OutError = TEXT("Dealer replication default property was not found.");
+		return false;
+	}
+	Replicates->SetPropertyValue_InContainer(Defaults, false);
+	return true;
 }
 
 bool SaveAsset(UObject* Asset, FString& OutError)
@@ -793,6 +811,7 @@ bool RefreshDealerChildTemplates(UBlueprint* Table, UBlueprint* Dealer, FString&
 	auto RefreshChild = [&](UChildActorComponent* Child)
 	{
 		Child->SetChildActorClass(Dealer->GeneratedClass.Get(), Defaults);
+		Child->SetIsReplicated(false);
 		const ABlackjackDealerVisual* Template = Cast<ABlackjackDealerVisual>(Child->GetChildActorTemplate());
 		if (!Template || Template->ShuffleCardBackMaterial != Defaults->ShuffleCardBackMaterial
 			|| Template->ShuffleBackTexture != Defaults->ShuffleBackTexture
@@ -911,7 +930,7 @@ bool MigrateBlackjackDealerBlueprints(FString& OutError)
 	Defaults->ShuffleMontage = ShuffleMontage;
 	Defaults->DealPlayRate = 1.25f;
 	Defaults->PrimaryActorTick.bCanEverTick = false;
-	Defaults->SetReplicates(true);
+	if (!SetLocalDealerReplicationDefault(Defaults, OutError)) return false;
 	Defaults->SetReplicateMovement(false);
 	CastChecked<UBlueprintGeneratedClass>(Dealer->GeneratedClass.Get())->UpdateCustomPropertyListForPostConstruction();
 	TArray<UActorComponent*> Components;
@@ -945,6 +964,7 @@ bool MigrateBlackjackDealerBlueprints(FString& OutError)
 				Child && Node->GetVariableName() == TEXT("BP_NPC_BlackjackDealer"))
 			{
 				Child->SetChildActorClass(Dealer->GeneratedClass.Get(), Defaults);
+				Child->SetIsReplicated(false);
 				++DealerComponents;
 			}
 		}
@@ -1038,6 +1058,130 @@ bool ExtendBlackjackDealerPresentation(FString& OutError)
 		|| !RefreshDealerChildTemplates(Table, Dealer, OutError)
 		|| !SetTableTiming(Table, Cast<ABlackjackDealerVisual>(Dealer->GeneratedClass->GetDefaultObject()), OutError))
 	{
+		return false;
+	}
+	return SaveAsset(Dealer, OutError) && SaveAsset(Table, OutError);
+}
+
+bool MigrateBlackjackDealerLocalLifetime(FString& OutError)
+{
+	const SIZE_T EnsuresBefore = FDebug::GetNumEnsureFailures();
+	const int32 ErrorsBefore = GWarn ? GWarn->GetNumErrors() : 0;
+	UBlueprint* Dealer = LoadObject<UBlueprint>(nullptr, *ObjectPath(DealerPath));
+	UBlueprint* Table = LoadObject<UBlueprint>(nullptr, *ObjectPath(TablePath));
+	if (!Dealer || !Table || Dealer->ParentClass != ABlackjackDealerVisual::StaticClass()
+		|| !Dealer->GeneratedClass || !Table->GeneratedClass || !Table->SimpleConstructionScript)
+	{
+		OutError = TEXT("Expected the production visual dealer and blackjack table Blueprints.");
+		return false;
+	}
+	UChildActorComponent* DealerChild = nullptr;
+	int32 DealerChildren = 0;
+	for (USCS_Node* Node : Table->SimpleConstructionScript->GetAllNodes())
+	{
+		if (Node->GetVariableName() == TEXT("BP_NPC_BlackjackDealer"))
+		{
+			DealerChild = Cast<UChildActorComponent>(Node->ComponentTemplate);
+			++DealerChildren;
+		}
+	}
+	if (DealerChildren != 1 || !DealerChild || DealerChild->GetChildActorClass() != Dealer->GeneratedClass)
+	{
+		OutError = TEXT("Expected exactly one production dealer child on the table.");
+		return false;
+	}
+
+	// Only replication defaults change. Preserve every graph, variable and child transform.
+	auto GraphContract = [](UBlueprint* Blueprint)
+	{
+		TArray<UEdGraph*> Graphs;
+		Blueprint->GetAllGraphs(Graphs);
+		TArray<FString> Exports;
+		for (UEdGraph* Graph : Graphs)
+		{
+			for (UEdGraphNode* Node : Graph->Nodes)
+			{
+				TSet<UObject*> SingleNode;
+				SingleNode.Add(Node);
+				FString Export;
+				FEdGraphUtilities::ExportNodesToText(SingleNode, Export);
+				Exports.Add(Graph->GetName() + TEXT("\n") + Export);
+			}
+		}
+		Exports.Sort();
+		return Exports;
+	};
+	const TArray<FString> DealerGraphs = GraphContract(Dealer);
+	const TArray<FString> TableGraphs = GraphContract(Table);
+	const FTransform ChildTransform = DealerChild->GetRelativeTransform();
+	const FString BackupDirectory = FPaths::ProjectSavedDir() / TEXT("CasinoDealerSetup")
+		/ TEXT("DealerLocalLifetimeBackup");
+	IFileManager::Get().MakeDirectory(*BackupDirectory, true);
+	for (UBlueprint* Blueprint : {Dealer, Table})
+	{
+		const FString Source = FPackageName::LongPackageNameToFilename(
+			Blueprint->GetOutermost()->GetName(), FPackageName::GetAssetPackageExtension());
+		const FString Backup = BackupDirectory / (Blueprint->GetName() + TEXT(".uasset"));
+		if (!IFileManager::Get().FileExists(*Backup)
+			&& IFileManager::Get().Copy(*Backup, *Source, false, false) != COPY_OK)
+		{
+			OutError = FString::Printf(TEXT("Unable to back up %s before dealer lifetime migration."), *Source);
+			return false;
+		}
+	}
+	Dealer->Modify();
+	ABlackjackDealerVisual* Defaults = CastChecked<ABlackjackDealerVisual>(Dealer->GeneratedClass->GetDefaultObject());
+	if (!SetLocalDealerReplicationDefault(Defaults, OutError)) return false;
+	FBlueprintEditorUtils::MarkBlueprintAsModified(Dealer);
+	if (!Compile(Dealer, OutError)) return false;
+	Defaults = CastChecked<ABlackjackDealerVisual>(Dealer->GeneratedClass->GetDefaultObject());
+	if (!SetLocalDealerReplicationDefault(Defaults, OutError)) return false;
+	CastChecked<UBlueprintGeneratedClass>(Dealer->GeneratedClass.Get())->UpdateCustomPropertyListForPostConstruction();
+
+	Table->Modify();
+	auto ConfigureChild = [&](UChildActorComponent* Child)
+	{
+		AActor* Template = Child->GetChildActorTemplate();
+		if (!Template || Template->GetClass() != Dealer->GeneratedClass)
+		{
+			OutError = TEXT("Dealer child template is missing or uses an unexpected class.");
+			return false;
+		}
+		if (!SetLocalDealerReplicationDefault(Template, OutError)) return false;
+		Child->SetIsReplicated(false);
+		return !Template->GetIsReplicated() && !Child->GetIsReplicated();
+	};
+	if (!ConfigureChild(DealerChild))
+	{
+		OutError = TEXT("Dealer child template is missing or still replicates.");
+		return false;
+	}
+	FBlueprintEditorUtils::MarkBlueprintAsModified(Table);
+	if (!Compile(Table, OutError)) return false;
+	for (USCS_Node* Node : Table->SimpleConstructionScript->GetAllNodes())
+	{
+		if (Node->GetVariableName() == TEXT("BP_NPC_BlackjackDealer"))
+		{
+			DealerChild = CastChecked<UChildActorComponent>(Node->ComponentTemplate);
+			if (!ConfigureChild(DealerChild)) return false;
+		}
+	}
+	TArray<UChildActorComponent*> CompiledChildren;
+	CastChecked<AActor>(Table->GeneratedClass->GetDefaultObject())->GetComponents(CompiledChildren);
+	for (UChildActorComponent* Child : CompiledChildren)
+	{
+		if (Child->GetChildActorClass() == Dealer->GeneratedClass && !ConfigureChild(Child)) return false;
+	}
+	CastChecked<UBlueprintGeneratedClass>(Table->GeneratedClass.Get())->UpdateCustomPropertyListForPostConstruction();
+	if (Defaults->GetIsReplicated() || !ChildTransform.Equals(DealerChild->GetRelativeTransform())
+		|| GraphContract(Dealer) != DealerGraphs || GraphContract(Table) != TableGraphs)
+	{
+		OutError = TEXT("Dealer migration changed a graph/transform or retained actor replication; refusing to save.");
+		return false;
+	}
+	if (FDebug::GetNumEnsureFailures() != EnsuresBefore || (GWarn && GWarn->GetNumErrors() > ErrorsBefore))
+	{
+		OutError = TEXT("Dealer lifetime migration raised a new ensure/error; refusing to save assets.");
 		return false;
 	}
 	return SaveAsset(Dealer, OutError) && SaveAsset(Table, OutError);

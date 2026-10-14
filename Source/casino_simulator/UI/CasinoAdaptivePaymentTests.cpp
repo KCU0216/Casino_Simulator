@@ -137,7 +137,7 @@ bool FCasinoAdaptivePaymentTest::RunTest(const FString& Parameters)
     SetWallet(1, 0.f);
     TestEqual(TEXT("Fractional targets round upward to whole currency"), Mode->CalculateRequiredPayment(2), 1501);
     SetWallet(0, -100.f);
-    TestEqual(TEXT("Nonpositive team balance keeps a nonzero target"), Mode->CalculateRequiredPayment(2), 1);
+    TestEqual(TEXT("Nonpositive team balance retains the starting-bill growth floor"), Mode->CalculateRequiredPayment(2), 185);
     SetWallet(0, 1.e20f);
     TestEqual(TEXT("Very large wallets cannot overflow the replicated integer target"), Mode->CalculateRequiredPayment(2), MAX_int32);
 

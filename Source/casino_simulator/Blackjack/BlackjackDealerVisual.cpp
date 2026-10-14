@@ -71,7 +71,10 @@ namespace
 ABlackjackDealerVisual::ABlackjackDealerVisual()
 {
 	PrimaryActorTick.bCanEverTick = false;
-	bReplicates = true;
+	// Card and animation events already arrive through the replicated table.
+	// A local child exists before the table's BeginPlay and shares its lifetime;
+	// a separately replicated child can arrive late or lose its own actor channel.
+	bReplicates = false;
 	SetReplicateMovement(false);
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));

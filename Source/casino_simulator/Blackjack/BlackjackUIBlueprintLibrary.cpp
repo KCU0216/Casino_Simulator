@@ -93,11 +93,11 @@ namespace
 	{
 		if (!IsValid(Cards)) return;
 		const int32 Count = Cards->GetChildrenCount();
-		// Keep the rank/suit edge readable on long hands instead of shrinking
-		// seven independent cards to half the usual height in a split column.
+		// Keep every face visible. The enclosing ScaleBox fits long hands to the
+		// available strip instead of covering one card with the next.
 		for (int32 Index = 0; Index < Count; ++Index)
 			if (UHorizontalBoxSlot* Slot = Cast<UHorizontalBoxSlot>(Cards->GetChildAt(Index)->Slot))
-				Slot->SetPadding(FMargin(0.f, 0.f, Count > 3 && Index + 1 < Count ? -44.f : 0.f, 0.f));
+				Slot->SetPadding(FMargin(0.f, 0.f, Index + 1 < Count ? 4.f : 0.f, 0.f));
 	}
 
 	UTextBlock* AddText(UWidgetTree* Tree, UVerticalBox* Parent, const FString& Name,

@@ -72,6 +72,7 @@ public:
     TArray<int32> DailyPayments;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="1", DisplayName="First Day Payment"))
     int32 DefaultDailyPayment = 100;
+    // Multiply the larger of the previous day's bill and the post-payment team balance.
     // Day 2 starts here; later days add the increase once per day.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loop", meta=(ClampMin="0.0"))
     double DailyPaymentBaseMultiplier = 1.5;
@@ -109,6 +110,7 @@ private:
     friend class FCasinoPaymentCompletionTest;
     friend class FCasinoMiningDayEndTest;
     friend class FCasinoAdaptivePaymentTest;
+    friend class FCasinoPaymentGrowthFloorTest;
     friend class FRaceWorldEventTest;
 #endif
     FTimerHandle RaceEventTimer;
@@ -131,6 +133,10 @@ private:
     TArray<TWeakObjectPtr<AActor>> PaymentSpawns;
     TArray<TWeakObjectPtr<class Acasino_simulatorPlayerState>> PaymentParticipants;
     bool bCollectingPayment = false;
+    int32 PreviousPaymentDay = 0;
+    int32 PreviousDayRequiredPayment = 0;
+    double PreviousDayRemainingCurrency = 0.0;
+    double CalculateTeamCurrency() const;
     int32 CalculateRequiredPayment(int32 Day) const;
     void BeginCasinoDay(int32 Day);
     void ActivateCasinoDay();
