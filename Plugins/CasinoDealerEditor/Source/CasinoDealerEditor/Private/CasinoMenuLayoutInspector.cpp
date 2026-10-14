@@ -156,7 +156,8 @@ bool InspectCasinoMenuWidgets(FString& OutError)
         TEXT("/Game/Blackjack/Level/WBP_MainMenu.WBP_MainMenu"),
         TEXT("/Game/Blackjack/Level/WBP_LobbyUI.WBP_LobbyUI"),
         TEXT("/Game/Blackjack/Level/WBP_LobbyPlayerEntry.WBP_LobbyPlayerEntry"),
-        TEXT("/Game/Blackjack/Level/WBP_RoomEntry.WBP_RoomEntry")
+        TEXT("/Game/Blackjack/Level/WBP_RoomEntry.WBP_RoomEntry"),
+        TEXT("/Game/KCU/WBP_Settings.WBP_Settings")
     };
     for (const TCHAR* Path : Paths)
     {

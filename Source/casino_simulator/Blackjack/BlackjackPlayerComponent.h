@@ -203,6 +203,7 @@ private:
 	bool ExecuteAction(EBlackjackRequestAction Action, int32 Amount = 0);
 
 	bool bMovementLockApplied = false;
+	bool bPreviousUseControllerRotationYaw = false;
 	bool bLocalSeatViewApplied = false;
 	bool bLocalSeatLookLockApplied = false;
 	TWeakObjectPtr<class Acasino_simulatorPlayerController> SeatViewController;

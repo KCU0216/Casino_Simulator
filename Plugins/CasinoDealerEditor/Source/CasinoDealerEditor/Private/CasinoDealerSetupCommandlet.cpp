@@ -149,6 +149,17 @@ int32 UCasinoDealerSetupCommandlet::Main(const FString& Params)
         UE_LOG(LogCasinoDealerSetup, Display, TEXT("Menu layout update completed."));
         return 0;
     }
+    if (Mode.Equals(TEXT("SettingsUI"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoSettingsLayout(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Settings layout update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Settings layout update completed; settings logic and defaults preserved."));
+        return 0;
+    }
     if (Mode.Equals(TEXT("RoomUI"), ESearchCase::IgnoreCase))
     {
         FString Error;

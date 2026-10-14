@@ -8,14 +8,18 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/CheckBox.h"
+#include "Components/ComboBoxString.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
+#include "Components/SizeBoxSlot.h"
+#include "Components/Spacer.h"
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/WidgetSwitcher.h"
 #include "Engine/Font.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
@@ -389,7 +393,7 @@ bool RoomEntry(UWidgetBlueprint* Blueprint, FString& Error)
 
 bool Save(UWidgetBlueprint* Blueprint, FString& Error)
 {
-    bool Allowed = false;
+    bool Allowed = Blueprint->GetPathName() == TEXT("/Game/KCU/WBP_Settings.WBP_Settings");
     for (const TCHAR* Path : AssetPaths) if (Blueprint->GetPathName() == Path) Allowed = true;
     if (!Allowed) { Error = TEXT("Attempt to save an asset outside menu migration scope."); return false; }
     const FString Filename = FPackageName::LongPackageNameToFilename(Blueprint->GetOutermost()->GetName(), FPackageName::GetAssetPackageExtension());
@@ -481,6 +485,236 @@ bool ValidateContract(UWidgetBlueprint* Blueprint, const FMenuContract& Before, 
     }
     return true;
 }
+
+// Include pins, connections, function references and defaults, not just node IDs.
+FString SettingsGraphSnapshot(UWidgetBlueprint* Blueprint)
+{
+    TArray<UEdGraph*> Graphs;
+    Blueprint->GetAllGraphs(Graphs);
+    TArray<FString> Records;
+    for (UEdGraph* Graph : Graphs) if (Graph)
+    {
+        Records.Add(Graph->GetPathName());
+        for (UEdGraphNode* Node : Graph->Nodes) if (Node)
+        {
+            TSet<UObject*> SingleNode;
+            SingleNode.Add(Node);
+            FString Export;
+            FEdGraphUtilities::ExportNodesToText(SingleNode, Export);
+            Records.Add(Graph->GetName() + TEXT(":") + Export);
+        }
+    }
+    Records.Sort();
+    return FString::Join(Records, TEXT("\n"));
+}
+
+FString SettingsDefaultsSnapshot(UWidgetBlueprint* Blueprint)
+{
+    FString Result;
+    const auto Append = [&Result](UObject* Object, const TCHAR* Name)
+    {
+        if (const FProperty* Property = FindFProperty<FProperty>(Object->GetClass(), Name))
+        {
+            FString Value;
+            Property->ExportText_InContainer(0, Value, Object, nullptr, Object, PPF_None);
+            Result += Object->GetName() + TEXT(".") + Name + TEXT("=") + Value + TEXT("\n");
+        }
+    };
+    Append(Blueprint, TEXT("NewVariables"));
+    TArray<UWidget*> Widgets;
+    Blueprint->WidgetTree->GetAllWidgets(Widgets);
+    Widgets.Sort([](const UWidget& A, const UWidget& B) { return A.GetName() < B.GetName(); });
+    for (UWidget* Widget : Widgets)
+    {
+        // Ignore new decorative widgets but capture every interactive control.
+        if (!Cast<UButton>(Widget) && !Cast<UComboBoxString>(Widget) && !Cast<USlider>(Widget)
+            && !Cast<UCheckBox>(Widget) && !Cast<UWidgetSwitcher>(Widget)) continue;
+        const TCHAR* Names[] = { TEXT("DefaultOptions"), TEXT("SelectedOption"), TEXT("Value"),
+            TEXT("MinValue"), TEXT("MaxValue"), TEXT("StepSize"), TEXT("MouseUsesStep"),
+            TEXT("RequiresControllerLock"), TEXT("CheckedState"), TEXT("ActiveWidgetIndex"),
+            TEXT("bIsFocusable"), TEXT("EnableGamepadNavigationMode"), TEXT("Navigation"),
+            TEXT("OnClicked"), TEXT("OnValueChanged"), TEXT("OnCheckStateChanged"),
+            TEXT("OnSelectionChanged"), TEXT("OnOpening"), TEXT("OnGenerateWidgetEvent") };
+        for (const TCHAR* Name : Names) Append(Widget, Name);
+    }
+    return Result;
+}
+
+void SettingsComboStyle(UComboBoxString* Combo)
+{
+    FComboBoxStyle Style = Combo->GetWidgetStyle();
+    FButtonStyle& Button = Style.ComboButtonStyle.ButtonStyle;
+    Button.Normal = Brush(Background, 8.f, Gold * .5f);
+    Button.Hovered = Brush(FLinearColor(.045f, .060f, .09f, 1.f), 8.f, Gold);
+    Button.Pressed = Brush(Panel, 8.f, Gold);
+    Button.Disabled = Brush(Panel, 8.f, Muted * .4f);
+    Button.NormalForeground = Button.HoveredForeground = Button.PressedForeground = FSlateColor(Ivory);
+    Button.DisabledForeground = FSlateColor(Muted);
+    Button.NormalPadding = Button.PressedPadding = FMargin(0.f);
+    Style.ComboButtonStyle.DownArrowImage.TintColor = FSlateColor(Gold);
+    Style.ComboButtonStyle.MenuBorderBrush = Brush(Panel, 8.f, Gold * .5f);
+    Style.ComboButtonStyle.MenuBorderPadding = FMargin(8.f);
+    Combo->SetWidgetStyle(Style);
+    Combo->SetContentPadding(FMargin(16.f, 10.f));
+    FTableRowStyle Item = Combo->GetItemStyle();
+    Item.EvenRowBackgroundBrush = Item.OddRowBackgroundBrush = Brush(Panel, 4.f);
+    Item.EvenRowBackgroundHoveredBrush = Item.OddRowBackgroundHoveredBrush = Brush(FLinearColor(.045f, .060f, .09f, 1.f), 4.f);
+    Item.ActiveBrush = Item.InactiveBrush = Brush(Gold * .25f, 4.f);
+    Item.ActiveHoveredBrush = Item.InactiveHoveredBrush = Brush(Gold * .4f, 4.f);
+    Item.SelectorFocusedBrush = Brush(FLinearColor::Transparent, 4.f, Gold);
+    Item.TextColor = Item.SelectedTextColor = FSlateColor(Ivory);
+    Combo->SetItemStyle(Item);
+    // These UMG properties have no runtime setter; assign only the source asset.
+    if (FStructProperty* Property = FindFProperty<FStructProperty>(Combo->GetClass(), TEXT("Font")))
+    {
+        FSlateFontInfo& Font = *Property->ContainerPtrToValuePtr<FSlateFontInfo>(Combo);
+        Font.Size = 20;
+    }
+    if (FStructProperty* Property = FindFProperty<FStructProperty>(Combo->GetClass(), TEXT("ForegroundColor")))
+        *Property->ContainerPtrToValuePtr<FSlateColor>(Combo) = FSlateColor(Ivory);
+}
+
+void SettingsRow(UWidgetBlueprint* Blueprint, UVerticalBox* Column, UHorizontalBox* Row)
+{
+    const bool HasControls = Row->GetChildrenCount() > 0;
+    if (!HasControls)
+    {
+        if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Row->Slot))
+        { Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic)); Slot->SetPadding(FMargin()); }
+        return;
+    }
+    USizeBox* Height = Decoration<USizeBox>(Blueprint, *(TEXT("CasinoSettingsRow_") + Row->GetName()));
+    const int32 Index = Column->GetChildIndex(Row);
+    Height->SetHeightOverride(64.f);
+    if (Row->GetParent() != Height)
+    {
+        Row->RemoveFromParent();
+        Height->SetContent(Row);
+        Column->InsertChildAt(Index, Height);
+    }
+    if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Height->Slot))
+    { Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic)); Slot->SetPadding(FMargin()); Slot->SetHorizontalAlignment(HAlign_Fill); }
+    TArray<UWidget*> Children = Row->GetAllChildren();
+    for (UWidget* Child : Children)
+    {
+        if (USlider* Slider = Cast<USlider>(Child))
+        {
+            USizeBox* Width = Decoration<USizeBox>(Blueprint, *(TEXT("CasinoSettingsControl_") + Slider->GetName()));
+            const int32 ChildIndex = Row->GetChildIndex(Slider);
+            Slider->RemoveFromParent(); Width->SetContent(Slider); Row->InsertChildAt(ChildIndex, Width);
+            Width->SetWidthOverride(360.f); Width->SetHeightOverride(48.f);
+        }
+        if (USizeBox* Box = Cast<USizeBox>(Child))
+        {
+            Box->ClearMinDesiredWidth(); Box->ClearMinDesiredHeight();
+            Box->ClearMaxDesiredWidth(); Box->ClearMaxDesiredHeight();
+            Box->SetHeightOverride(Box->GetContent() ? 48.f : 0.f);
+            Box->SetWidthOverride(Cast<UTextBlock>(Box->GetContent()) ? 250.f : Box->GetContent() ? 360.f : 0.f);
+            if (USizeBoxSlot* Slot = Cast<USizeBoxSlot>(Box->GetContent() ? Box->GetContent()->Slot : nullptr))
+            { Slot->SetVerticalAlignment(VAlign_Center); Slot->SetHorizontalAlignment(Cast<UCheckBox>(Box->GetContent()) ? HAlign_Left : HAlign_Fill); }
+        }
+        if (USpacer* Spacer = Cast<USpacer>(Child)) Spacer->SetSize(FVector2D(24.f, 0.f));
+    }
+    for (UWidget* Child : Row->GetAllChildren()) if (UHorizontalBoxSlot* Slot = Cast<UHorizontalBoxSlot>(Child->Slot))
+    {
+        Slot->SetSize(FSlateChildSize(Cast<USpacer>(Child) ? ESlateSizeRule::Fill : ESlateSizeRule::Automatic));
+        Slot->SetPadding(FMargin()); Slot->SetVerticalAlignment(VAlign_Center);
+        Slot->SetHorizontalAlignment(HAlign_Fill);
+    }
+}
+
+bool SettingsPage(UWidgetBlueprint* Blueprint, const TCHAR* PageName, const TCHAR* ColumnName,
+    const TCHAR* FooterName, const TCHAR* Title, const TCHAR* Subtitle, FString& Error)
+{
+    UCanvasPanel* Page = Find<UCanvasPanel>(Blueprint, PageName);
+    UVerticalBox* Column = Find<UVerticalBox>(Blueprint, ColumnName);
+    UHorizontalBox* Footer = Find<UHorizontalBox>(Blueprint, FooterName);
+    if (!Page || !Column || !Footer) { Error = TEXT("Settings page layout differs: ") + FString(PageName); return false; }
+    Label(Blueprint, Page, *(TEXT("CasinoSettingsTitle_") + FString(PageName)), Title,
+        FAnchors(.06f, .07f, .94f, .07f), FMargin(0.f, 0.f, 0.f, 60.f), 40.f, Gold);
+    Label(Blueprint, Page, *(TEXT("CasinoSettingsSubtitle_") + FString(PageName)), Subtitle,
+        FAnchors(.06f, .15f, .94f, .15f), FMargin(0.f, 0.f, 0.f, 32.f), 18.f, Muted);
+    Place(Page, Footer, FAnchors(.06f, .79f, .94f, .79f), FMargin(0.f, 0.f, 0.f, 56.f));
+    for (UWidget* Child : Footer->GetAllChildren())
+    {
+        if (USizeBox* Box = Cast<USizeBox>(Child)) { Box->SetWidthOverride(160.f); Box->SetHeightOverride(56.f); }
+        if (USpacer* Spacer = Cast<USpacer>(Child)) Spacer->SetSize(FVector2D(16.f, 0.f));
+        if (UHorizontalBoxSlot* Slot = Cast<UHorizontalBoxSlot>(Child->Slot))
+        {
+            Slot->SetSize(FSlateChildSize(Cast<USpacer>(Child) ? ESlateSizeRule::Fill : ESlateSizeRule::Automatic));
+            Slot->SetVerticalAlignment(VAlign_Center);
+            Slot->SetPadding(FMargin(0.f, 0.f, Cast<USpacer>(Child) ? 0.f : 12.f, 0.f));
+        }
+    }
+    UBorder* Frame = Decoration<UBorder>(Blueprint, *(TEXT("CasinoSettingsFrame_") + FString(PageName)));
+    Frame->SetBrush(Brush(Panel, 10.f, FLinearColor(.06f, .07f, .09f, 1.f)));
+    Frame->SetPadding(FMargin(28.f)); Frame->SetVerticalAlignment(VAlign_Top);
+    Frame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    if (Column->GetParent() != Frame) { Column->RemoveFromParent(); Frame->SetContent(Column); }
+    Place(Page, Frame, FAnchors(.06f, .27f, .94f, .72f));
+    for (UWidget* Child : Column->GetAllChildren())
+    {
+        UHorizontalBox* Row = Cast<UHorizontalBox>(Child);
+        if (!Row) if (USizeBox* Height = Cast<USizeBox>(Child)) Row = Cast<UHorizontalBox>(Height->GetContent());
+        if (Row) SettingsRow(Blueprint, Column, Row);
+    }
+    Label(Blueprint, Page, *(TEXT("CasinoSettingsHint_") + FString(PageName)), TEXT("변경한 설정은 적용 버튼으로 저장하세요"),
+        FAnchors(.06f, .88f, .94f, .88f), FMargin(0.f, 0.f, 0.f, 32.f), 17.f, Muted);
+    return true;
+}
+
+bool SettingsLayout(UWidgetBlueprint* Blueprint, FString& Error)
+{
+    UCanvasPanel* Root = Cast<UCanvasPanel>(Blueprint->WidgetTree->RootWidget);
+    UCanvasPanel* PanelRoot = Find<UCanvasPanel>(Blueprint, TEXT("SettingsPanel"));
+    UCanvasPanel* Menu = Find<UCanvasPanel>(Blueprint, TEXT("SettingsMenuPanel"));
+    UWidgetSwitcher* Switcher = Find<UWidgetSwitcher>(Blueprint, TEXT("SettingsSwitcher"));
+    UVerticalBox* Categories = Find<UVerticalBox>(Blueprint, TEXT("VerticalBox_0"));
+    UButton* Back = Find<UButton>(Blueprint, TEXT("BackButton_Settings"));
+    if (!Root || !PanelRoot || !Menu || !Switcher || !Categories || !Back || Switcher->GetChildrenCount() != 4)
+    { Error = TEXT("Settings menu layout contract differs."); return false; }
+    Backdrop(Blueprint, Root);
+    Place(Root, PanelRoot, FAnchors(0.f, 0.f, 1.f, 1.f));
+    Place(PanelRoot, Switcher, FAnchors(0.f, 0.f, 1.f, 1.f));
+    Label(Blueprint, Menu, TEXT("CasinoSettingsMenuTitle"), TEXT("SETTINGS"),
+        FAnchors(.06f, .07f, .94f, .07f), FMargin(0.f, 0.f, 0.f, 60.f), 40.f, Gold);
+    Label(Blueprint, Menu, TEXT("CasinoSettingsMenuSubtitle"), TEXT("환경 설정"),
+        FAnchors(.06f, .15f, .94f, .15f), FMargin(0.f, 0.f, 0.f, 32.f), 18.f, Muted);
+    Place(Menu, Back, FAnchors(.94f, .07f), FMargin(0.f, 0.f, 160.f, 48.f), FVector2D(1.f, 0.f));
+    MenuButtons(Categories);
+    Place(Menu, Categories, FAnchors(.07f, .32f, .33f, .75f));
+    UBorder* Frame = Decoration<UBorder>(Blueprint, TEXT("CasinoSettingsOverviewFrame"));
+    Frame->SetBrush(Brush(Panel, 10.f, FLinearColor(.06f, .07f, .09f, 1.f)));
+    Frame->SetVisibility(ESlateVisibility::HitTestInvisible);
+    Place(Menu, Frame, FAnchors(.40f, .29f, .94f, .78f), FMargin(), FVector2D::ZeroVector, -1);
+    const TCHAR* Titles[] = { TEXT("그래픽"), TEXT("오디오"), TEXT("조작") };
+    const TCHAR* Hints[] = { TEXT("화면 모드 · 해상도 · 그래픽 품질 · 프레임 제한"),
+        TEXT("마스터 볼륨"), TEXT("마우스 감도 · Y축 반전") };
+    for (int32 Index = 0; Index < 3; ++Index)
+    {
+        const float Y = .34f + Index * .14f;
+        Label(Blueprint, Menu, *FString::Printf(TEXT("CasinoSettingsOverviewTitle%d"), Index), Titles[Index],
+            FAnchors(.43f, Y, .91f, Y), FMargin(0.f, 0.f, 0.f, 36.f), 24.f, Ivory);
+        Label(Blueprint, Menu, *FString::Printf(TEXT("CasinoSettingsOverviewHint%d"), Index), Hints[Index],
+            FAnchors(.43f, Y + .045f, .91f, Y + .045f), FMargin(0.f, 0.f, 0.f, 40.f), 17.f, Muted);
+        Find<UTextBlock>(Blueprint, *FString::Printf(TEXT("CasinoSettingsOverviewHint%d"), Index))->SetAutoWrapText(true);
+    }
+    if (!SettingsPage(Blueprint, TEXT("GraphicPanel"), TEXT("VerticalBox_3"), TEXT("HorizontalBox_Footer"),
+        TEXT("GRAPHICS"), TEXT("그래픽 설정"), Error)
+        || !SettingsPage(Blueprint, TEXT("AudioPanel"), TEXT("VerticalBox_4"), TEXT("HorizontalBox_Footer_1"),
+        TEXT("AUDIO"), TEXT("오디오 설정"), Error)
+        || !SettingsPage(Blueprint, TEXT("KeySettingsPanel"), TEXT("VerticalBox"), TEXT("HorizontalBox_Footer_2"),
+        TEXT("CONTROLS"), TEXT("조작 설정"), Error)) return false;
+    TArray<UWidget*> Widgets;
+    Blueprint->WidgetTree->GetAllWidgets(Widgets);
+    for (UWidget* Widget : Widgets)
+    {
+        if (UComboBoxString* Combo = Cast<UComboBoxString>(Widget)) SettingsComboStyle(Combo);
+        if (UButton* Button = Cast<UButton>(Widget))
+            ButtonStyle(Button, Button->GetName().EndsWith(TEXT("Apply")));
+    }
+    return true;
+}
 }
 
 bool MigrateCasinoMenuLayouts(FString& OutError)
@@ -521,4 +755,41 @@ bool MigrateCasinoMenuLayouts(FString& OutError)
     // Validate all four before the first save; no game/voice graphs are edited.
     for (UWidgetBlueprint* Blueprint : Blueprints) if (!Save(Blueprint, OutError)) return false;
     return true;
+}
+
+bool MigrateCasinoSettingsLayout(FString& OutError)
+{
+    OutError.Reset();
+    UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/KCU/WBP_Settings.WBP_Settings"));
+    if (!Blueprint || !Blueprint->WidgetTree || !Blueprint->GeneratedClass)
+    { OutError = TEXT("Could not load settings WidgetBlueprint."); return false; }
+    const SIZE_T EnsuresBefore = FDebug::GetNumEnsureFailures();
+    const int32 ErrorsBefore = GWarn ? GWarn->GetNumErrors() : 0;
+    const FMenuContract Before = CaptureContract(Blueprint);
+    const FString GraphsBefore = SettingsGraphSnapshot(Blueprint);
+    const FString DefaultsBefore = SettingsDefaultsSnapshot(Blueprint);
+    const TMap<FName, FGuid> GuidsBefore = Blueprint->WidgetVariableNameToGuidMap;
+    Blueprint->Modify(); Blueprint->WidgetTree->Modify();
+    Restyle(Blueprint);
+    if (!SettingsLayout(Blueprint, OutError) || !RegisterSourceWidgetGuids(Blueprint, OutError)) return false;
+    const auto Validate = [&]()
+    {
+        if (!ValidateContract(Blueprint, Before, OutError)) return false;
+        if (SettingsGraphSnapshot(Blueprint) != GraphsBefore || SettingsDefaultsSnapshot(Blueprint) != DefaultsBefore)
+        { OutError = TEXT("Settings graph wiring or control defaults changed; asset was not saved."); return false; }
+        for (const TPair<FName, FGuid>& Entry : GuidsBefore)
+            if (Blueprint->WidgetVariableNameToGuidMap.FindRef(Entry.Key) != Entry.Value)
+            { OutError = TEXT("Existing settings widget GUID changed: ") + Entry.Key.ToString(); return false; }
+        return true;
+    };
+    if (!Validate()) return false;
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FCompilerResultsLog Results;
+    FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection, &Results);
+    if (Results.NumErrors > 0 || Blueprint->Status != BS_UpToDate)
+    { OutError = TEXT("Settings Blueprint did not compile cleanly."); return false; }
+    if (!Validate()) return false;
+    if (FDebug::GetNumEnsureFailures() != EnsuresBefore || (GWarn && GWarn->GetNumErrors() > ErrorsBefore))
+    { OutError = TEXT("Settings migration logged an engine error; asset was not saved."); return false; }
+    return Save(Blueprint, OutError);
 }

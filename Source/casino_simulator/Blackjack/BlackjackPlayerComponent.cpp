@@ -5,6 +5,7 @@
 #include "Blackjack/BlackjackTableActor.h"
 #include "Blackjack/BlackjackSeatInteractionActor.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/SceneComponent.h"
 #include "Interaction/CasinoDayParticipant.h"
 #include "UI/CasinoUIManagerComponent.h"
 #include "casino_simulatorPlayerController.h"
@@ -596,6 +597,22 @@ void UBlackjackPlayerComponent::ApplyMovementLock()
 		return;
 	}
 
+	// Control rotation can still turn a pawn while movement is disabled, including
+	// old client movement packets arriving on the server after the seat claim.
+	bPreviousUseControllerRotationYaw = Character->bUseControllerRotationYaw;
+	Character->bUseControllerRotationYaw = false;
+	if (USceneComponent* SeatPoint = CurrentBlackjackTable
+		? CurrentBlackjackTable->GetSeatPoint(CurrentSeatIndex) : nullptr)
+	{
+		const FRotator SeatFacing(0.0f, SeatPoint->GetComponentRotation().Yaw, 0.0f);
+		Character->SetActorRotation(SeatFacing, ETeleportType::TeleportPhysics);
+		if (AController* Controller = Character->GetController())
+		{
+			Controller->SetControlRotation(SeatFacing);
+		}
+		if (Character->HasAuthority()) Character->ForceNetUpdate();
+	}
+
 	// Activate once on the server; GAS replicates the sitting ability/montage.
 	if (Character->HasAuthority())
 	{
@@ -633,6 +650,16 @@ void UBlackjackPlayerComponent::ClearMovementLock()
 		bMovementLockApplied = false;
 		return;
 	}
+
+	// Resume normal turning from the seated body direction rather than an old
+	// view yaw, so leaving the seat does not immediately snap the pawn around.
+	if (AController* Controller = Character->GetController())
+	{
+		FRotator ControlRotation = Controller->GetControlRotation();
+		ControlRotation.Yaw = Character->GetActorRotation().Yaw;
+		Controller->SetControlRotation(ControlRotation);
+	}
+	Character->bUseControllerRotationYaw = bPreviousUseControllerRotationYaw;
 
 	// End the sitting ability even when payment currently owns movement.
 	if (Character->HasAuthority())

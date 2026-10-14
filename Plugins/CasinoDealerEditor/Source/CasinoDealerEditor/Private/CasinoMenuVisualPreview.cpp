@@ -4,6 +4,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/CheckBox.h"
+#include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
@@ -25,6 +26,7 @@
 #include "RenderingThread.h"
 #include "Slate/WidgetRenderer.h"
 #include "UObject/StrongObjectPtr.h"
+#include "UObject/UnrealType.h"
 #include "UI/CasinoRoomDialogWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCasinoMenuPreview, Log, All);
@@ -32,10 +34,43 @@ DEFINE_LOG_CATEGORY_STATIC(LogCasinoMenuPreview, Log, All);
 namespace
 {
 IConsoleCommand* PreviewCommand = nullptr;
+IConsoleCommand* SettingsPreviewCommand = nullptr;
 const TCHAR* MainClassPath = TEXT("/Game/Blackjack/Level/WBP_MainMenu.WBP_MainMenu_C");
 const TCHAR* LobbyClassPath = TEXT("/Game/Blackjack/Level/WBP_LobbyUI.WBP_LobbyUI_C");
 const TCHAR* PlayerClassPath = TEXT("/Game/Blackjack/Level/WBP_LobbyPlayerEntry.WBP_LobbyPlayerEntry_C");
 const TCHAR* RoomClassPath = TEXT("/Game/Blackjack/Level/WBP_RoomEntry.WBP_RoomEntry_C");
+const TCHAR* SettingsClassPath = TEXT("/Game/KCU/WBP_Settings.WBP_Settings_C");
+
+void ClearPreviewDelegates(UWidget* Widget)
+{
+    for (TFieldIterator<FProperty> It(Widget->GetClass()); It; ++It)
+    {
+        if (FMulticastDelegateProperty* Delegate = CastField<FMulticastDelegateProperty>(*It))
+            Delegate->ClearDelegate(Widget, Delegate->ContainerPtrToValuePtr<void>(Widget));
+        else if (FDelegateProperty* SingleDelegate = CastField<FDelegateProperty>(*It))
+            SingleDelegate->ContainerPtrToValuePtr<FScriptDelegate>(Widget)->Unbind();
+    }
+    // These controls broadcast when sample values/options are assigned.
+    if (UComboBoxString* Combo = Cast<UComboBoxString>(Widget))
+    { Combo->OnSelectionChanged.Clear(); Combo->OnOpening.Clear(); }
+    if (USlider* Slider = Cast<USlider>(Widget)) Slider->OnValueChanged.Clear();
+    if (UCheckBox* Check = Cast<UCheckBox>(Widget)) Check->OnCheckStateChanged.Clear();
+}
+
+void PreparePreviewTree(UUserWidget* Widget)
+{
+    Widget->SetDesignerFlags(EWidgetDesignFlags::Designing);
+    UBlueprintGeneratedClass::UnbindDynamicDelegates(Widget->GetClass(), Widget);
+    ClearPreviewDelegates(Widget);
+    if (!Widget->WidgetTree) return;
+    Widget->WidgetTree->ForEachWidget([](UWidget* Child)
+    {
+        Child->SetDesignerFlags(EWidgetDesignFlags::Designing);
+        ClearPreviewDelegates(Child);
+        // WidgetTree iteration stops at a nested UserWidget's own tree.
+        if (UUserWidget* Nested = Cast<UUserWidget>(Child)) PreparePreviewTree(Nested);
+    });
+}
 
 UUserWidget* CreatePreview(const TCHAR* ClassPath, FString& Error)
 {
@@ -47,13 +82,7 @@ UUserWidget* CreatePreview(const TCHAR* ClassPath, FString& Error)
     { Error = TEXT("Could not initialize designer menu preview: ") + FString(ClassPath); return nullptr; }
     // Programmatic USlider.SetValue broadcasts in UE5.7. Unbind the transient
     // instance's Blueprint event handlers before injecting visual sample data.
-    UBlueprintGeneratedClass::UnbindDynamicDelegates(Class, Widget);
-    Widget->WidgetTree->ForEachWidget([](UWidget* Child)
-    {
-        Child->SetDesignerFlags(EWidgetDesignFlags::Designing);
-        if (USlider* Slider = Cast<USlider>(Child)) Slider->OnValueChanged.Clear();
-        if (UCheckBox* Check = Cast<UCheckBox>(Child)) Check->OnCheckStateChanged.Clear();
-    });
+    PreparePreviewTree(Widget);
     return Widget;
 }
 
@@ -122,6 +151,48 @@ bool AddPlayerSamples(UUserWidget* Lobby, FString& Error)
     if (USlider* Output = Find<USlider>(Lobby, TEXT("VoiceOutputSlider"))) Output->SetValue(.75f);
     if (UCheckBox* Enabled = Find<UCheckBox>(Lobby, TEXT("VoiceEnabledCheck"))) Enabled->SetIsChecked(true);
     if (UCheckBox* PTT = Find<UCheckBox>(Lobby, TEXT("PushToTalkCheck"))) PTT->SetIsChecked(true);
+    return true;
+}
+
+bool SelectSettingsPage(UUserWidget* Settings, int32 Index, FString& Error)
+{
+    const TCHAR* Pages[] = { TEXT("SettingsMenuPanel"), TEXT("GraphicPanel"), TEXT("AudioPanel"), TEXT("KeySettingsPanel") };
+    UWidgetSwitcher* Switcher = Find<UWidgetSwitcher>(Settings, TEXT("SettingsSwitcher"));
+    UWidget* Page = Index >= 0 && Index < UE_ARRAY_COUNT(Pages) ? Find<UWidget>(Settings, Pages[Index]) : nullptr;
+    if (!Switcher || !Page || Switcher->GetChildAt(Index) != Page)
+    { Error = TEXT("Settings preview switcher/page contract is missing or reordered."); return false; }
+    Switcher->SetActiveWidgetIndex(Index);
+    return true;
+}
+
+bool AddSettingsSamples(UUserWidget* Settings, FString& Error)
+{
+    const TCHAR* Names[] = { TEXT("Combo_WindowMode"), TEXT("Combo_Resolution"), TEXT("Combo_Quality"), TEXT("Combo_FrameRate") };
+    const TArray<FString> Options[] = {
+        { TEXT("창 모드"), TEXT("테두리 없는 창"), TEXT("전체 화면") },
+        { TEXT("1280 x 720"), TEXT("1920 x 1080"), TEXT("2560 x 1440") },
+        { TEXT("낮음"), TEXT("중간"), TEXT("높음"), TEXT("매우 높음") },
+        { TEXT("30fps"), TEXT("60fps"), TEXT("120fps"), TEXT("제한 없음") }
+    };
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(Names); ++Index)
+    {
+        UComboBoxString* Combo = Find<UComboBoxString>(Settings, Names[Index]);
+        if (!Combo) { Error = TEXT("Settings preview is missing combo: ") + FString(Names[Index]); return false; }
+        Combo->OnSelectionChanged.Clear();
+        Combo->OnOpening.Clear();
+        // Designer asset defaults remain intact. Only an empty transient list
+        // receives sample resolutions/options normally populated at runtime.
+        if (Combo->GetOptionCount() == 0)
+            for (const FString& Option : Options[Index]) Combo->AddOption(Option);
+        if (Combo->GetSelectedOption().IsEmpty())
+            Combo->SetSelectedIndex(FMath::Min(Index == 2 ? 2 : 1, Combo->GetOptionCount() - 1));
+    }
+    USlider* Volume = Find<USlider>(Settings, TEXT("Slider_MasterVolume"));
+    USlider* Sensitivity = Find<USlider>(Settings, TEXT("Slider_MouseSensitivity"));
+    if (!Volume || !Sensitivity) { Error = TEXT("Settings preview is missing its volume/sensitivity sliders."); return false; }
+    Volume->OnValueChanged.Clear(); Sensitivity->OnValueChanged.Clear();
+    Volume->SetValue(FMath::Clamp(.75f, Volume->GetMinValue(), Volume->GetMaxValue()));
+    Sensitivity->SetValue(FMath::Clamp(1.f, Sensitivity->GetMinValue(), Sensitivity->GetMaxValue()));
     return true;
 }
 
@@ -226,6 +297,60 @@ bool RenderCasinoMenuPreviews(FString& OutError)
     return true;
 }
 
+bool RenderCasinoSettingsPreviews(FString& OutError)
+{
+    OutError.Reset();
+    if (!IsInGameThread() || IsRunningCommandlet() || !GIsEditor || !FApp::CanEverRender()
+        || !FSlateApplication::IsInitialized() || !GDynamicRHI || GDynamicRHI->GetInterfaceType() == ERHIInterfaceType::Null)
+    { OutError = TEXT("Settings previews require the running editor with Slate and a rendering RHI."); return false; }
+    const FString SavedRoot = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir());
+    const FString Directory = FPaths::ConvertRelativePathToFull(SavedRoot / TEXT("CasinoDealerSetup/SettingsPreviews"));
+    if (!Directory.StartsWith(SavedRoot, ESearchCase::IgnoreCase) || !IFileManager::Get().MakeDirectory(*Directory, true))
+    { OutError = TEXT("Settings preview output must stay within the project Saved directory."); return false; }
+    FWidgetRenderer* Renderer = new FWidgetRenderer(false, true);
+    ON_SCOPE_EXIT { FlushRenderingCommands(); BeginCleanup(Renderer); };
+    if (!Renderer->GetSlateRenderer()) { OutError = TEXT("Slate widget renderer is unavailable."); return false; }
+    const FIntPoint Sizes[] = { FIntPoint(1920, 1080), FIntPoint(2560, 1080), FIntPoint(1440, 1080), FIntPoint(1280, 720) };
+    const TCHAR* Names[] = { TEXT("SettingsMenu"), TEXT("Graphics"), TEXT("Audio"), TEXT("Controls") };
+    FString Manifest = TEXT("Actual WBP_Settings design-mode previews, including the real nested MainMenu instance. All dynamic delegates and nested widgets are disabled for runtime events before injecting transient selections. No Construct, settings apply/reset, subsystem, login, or config-save calls are made.\n");
+    int32 Rendered = 0;
+    for (const FIntPoint& Size : Sizes)
+    {
+        for (int32 Page = 0; Page < UE_ARRAY_COUNT(Names); ++Page)
+        {
+            TStrongObjectPtr<UUserWidget> Settings(CreatePreview(SettingsClassPath, OutError));
+            if (!Settings.IsValid() || !AddSettingsSamples(Settings.Get(), OutError) || !SelectSettingsPage(Settings.Get(), Page, OutError)) return false;
+            const bool bStyled = Find<UWidget>(Settings.Get(), TEXT("CasinoThemeBackground")) != nullptr;
+            const FString Filename = Directory / FString::Printf(TEXT("%s_%dx%d.png"), Names[Page], Size.X, Size.Y);
+            if (!RenderOne(*Renderer, Settings.Get(), Size, Filename, OutError, bStyled)) return false;
+            ++Rendered;
+            Manifest += FString::Printf(TEXT("%s themed=%d\n"), *Filename, bStyled);
+        }
+        // Use the actual serialized child already present in the main menu,
+        // including its switcher slot, to expose embedding/Fill layout defects.
+        TStrongObjectPtr<UUserWidget> Menu(CreatePreview(MainClassPath, OutError));
+        UUserWidget* Settings = Menu.IsValid() ? Find<UUserWidget>(Menu.Get(), TEXT("WBP_Settings")) : nullptr;
+        UWidgetSwitcher* MainSwitcher = Menu.IsValid() ? Find<UWidgetSwitcher>(Menu.Get(), TEXT("WidgetSwitcher_1")) : nullptr;
+        if (!Settings || !MainSwitcher)
+        { OutError = TEXT("Main-menu preview has no embedded WBP_Settings/switcher."); return false; }
+        PreparePreviewTree(Settings);
+        if (!AddSettingsSamples(Settings, OutError) || !SelectSettingsPage(Settings, 1, OutError)) return false;
+        Settings->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        MainSwitcher->SetActiveWidget(Settings);
+        if (MainSwitcher->GetActiveWidget() != Settings)
+        { OutError = TEXT("Embedded settings is not a direct main-menu switcher page."); return false; }
+        const bool bStyled = Find<UWidget>(Settings, TEXT("CasinoThemeBackground")) != nullptr;
+        const FString Filename = Directory / FString::Printf(TEXT("MainMenu_Settings_Graphics_%dx%d.png"), Size.X, Size.Y);
+        if (!RenderOne(*Renderer, Menu.Get(), Size, Filename, OutError, bStyled)) return false;
+        ++Rendered;
+        Manifest += FString::Printf(TEXT("%s embedded themed=%d\n"), *Filename, bStyled);
+    }
+    if (!FFileHelper::SaveStringToFile(Manifest, *(Directory / TEXT("preview-info.txt")), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+    { OutError = TEXT("Could not write settings preview manifest."); return false; }
+    UE_LOG(LogCasinoMenuPreview, Display, TEXT("Completed %d settings previews: %s"), Rendered, *Directory);
+    return true;
+}
+
 void RegisterCasinoMenuPreviewCommands()
 {
     if (!PreviewCommand)
@@ -238,6 +363,16 @@ void RegisterCasinoMenuPreviewCommands()
                 if (!RenderCasinoMenuPreviews(Error)) UE_LOG(LogCasinoMenuPreview, Error, TEXT("Menu previews failed: %s"), *Error);
             }), ECVF_Default);
     }
+    if (!SettingsPreviewCommand)
+    {
+        SettingsPreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(TEXT("CasinoSettings.RenderPreviews"),
+            TEXT("Render four settings pages and embedded main-menu settings in design mode into Saved/CasinoDealerSetup/SettingsPreviews."),
+            FConsoleCommandDelegate::CreateLambda([]()
+            {
+                FString Error;
+                if (!RenderCasinoSettingsPreviews(Error)) UE_LOG(LogCasinoMenuPreview, Error, TEXT("Settings previews failed: %s"), *Error);
+            }), ECVF_Default);
+    }
 }
 
 void UnregisterCasinoMenuPreviewCommands()
@@ -246,5 +381,10 @@ void UnregisterCasinoMenuPreviewCommands()
     {
         IConsoleManager::Get().UnregisterConsoleObject(PreviewCommand, false);
         PreviewCommand = nullptr;
+    }
+    if (SettingsPreviewCommand)
+    {
+        IConsoleManager::Get().UnregisterConsoleObject(SettingsPreviewCommand, false);
+        SettingsPreviewCommand = nullptr;
     }
 }
