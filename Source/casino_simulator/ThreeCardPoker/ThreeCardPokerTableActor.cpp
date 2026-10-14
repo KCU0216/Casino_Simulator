@@ -178,18 +178,32 @@ bool AThreeCardPokerTableActor::CanInteract(Acasino_simulatorCharacter* Interact
 
 void AThreeCardPokerTableActor::HandleSessionUserJoined(Acasino_simulatorCharacter* JoinedUser)
 {
-	if (HasAuthority() && IsValid(JoinedUser))
+	if (!IsValid(JoinedUser))
 	{
-		JoinedUser->SetCurrentInteractionTarget(this);
+		return;
+	}
+
+	// CurrentInteractionTarget isn't replicated, so this must also run on clients (OnUserJoined fires
+	// there via the session component's OnRep_Users) - same as ASeatedMachineBase.
+	JoinedUser->SetCurrentInteractionTarget(this);
+
+	if (HasAuthority())
+	{
 		SetInteractingPlayer(JoinedUser);
 	}
 }
 
 void AThreeCardPokerTableActor::HandleSessionUserLeft(Acasino_simulatorCharacter* LeftUser)
 {
+	if (!IsValid(LeftUser))
+	{
+		return;
+	}
+
+	LeftUser->ClearCurrentInteractionTarget(this);
+
 	if (HasAuthority() && InteractingPlayer.Get() == LeftUser)
 	{
-		LeftUser->ClearCurrentInteractionTarget(this);
 		SetInteractingPlayer(nullptr);
 	}
 }
@@ -216,11 +230,12 @@ void AThreeCardPokerTableActor::OnLocalInteract_Implementation(Acasino_simulator
 
 bool AThreeCardPokerTableActor::PlacePlayGame(Acasino_simulatorCharacter* Player, int32 AnteAmount, int32 PairBetAmount)
 {
+
 	if (!Player || AnteAmount < MinAnteBet || AnteAmount+ PairBetAmount > Player->GetCurrency())
 	{
 		return false;
 	}
-	
+
 	if (PairBetAmount > 0 && PairBetAmount < MinPairPlusBet)
 	{
 		return false;
@@ -255,7 +270,7 @@ bool AThreeCardPokerTableActor::ExecutePlacePlayGame(Acasino_simulatorCharacter*
 	{
 		return false;
 	}
-	
+
 	float TotalAmount = AnteAmount + PairBetAmount;
 
 	if (!Player->TrySpendCurrency(static_cast<float>(TotalAmount)))
