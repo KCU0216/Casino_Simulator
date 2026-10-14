@@ -8,7 +8,9 @@
 #include "Components/TextRenderComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Interaction/InteractionSessionComponent.h"
+#include "Engine/GameInstance.h"
 #include "Net/UnrealNetwork.h"
+#include "Sound/CasinoSoundSubsystem.h"
 #include "casino_simulatorCharacter.h"
 #include "casino_simulatorPlayerController.h"
 #include "ThreeCardPoker/ThreeCardPokerBlueprintLibrary.h"
@@ -522,12 +524,28 @@ void AThreeCardPokerTableActor::DealCardToDealer(bool bFaceUp)
 
 void AThreeCardPokerTableActor::Multicast_PlayerCardDealt_Implementation(const FBlackjackCard& Card)
 {
+	PlayDealCardSound();
 	OnPlayerCardDealt.Broadcast(Card);
 }
 
 void AThreeCardPokerTableActor::Multicast_DealerCardDealt_Implementation(const FBlackjackCard& Card)
 {
+	PlayDealCardSound();
 	OnDealerCardDealt.Broadcast(Card);
+}
+
+void AThreeCardPokerTableActor::PlayDealCardSound() const
+{
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	UGameInstance* GameInstance = World->GetGameInstance();
+	if (UCasinoSoundSubsystem* Sound = GameInstance ? GameInstance->GetSubsystem<UCasinoSoundSubsystem>() : nullptr)
+	{
+		Sound->PlaySFX(TEXT("BlackjackCardPlace"), true, GetActorLocation());
+	}
 }
 
 void AThreeCardPokerTableActor::Multicast_ThreeCardPokerInteractionStarted_Implementation(Acasino_simulatorCharacter* Player)
