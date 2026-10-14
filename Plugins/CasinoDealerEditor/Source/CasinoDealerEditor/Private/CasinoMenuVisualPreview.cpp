@@ -3,6 +3,8 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/CheckBox.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
@@ -29,6 +31,8 @@
 #include "UObject/UnrealType.h"
 #include "UI/CasinoRoomDialogWidget.h"
 #include "UI/PauseMenuWidget.h"
+#include "UI/CasinoKeypadStyle.h"
+#include "Widgets/SOverlay.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCasinoMenuPreview, Log, All);
 
@@ -37,6 +41,8 @@ namespace
 IConsoleCommand* PreviewCommand = nullptr;
 IConsoleCommand* SettingsPreviewCommand = nullptr;
 IConsoleCommand* PausePreviewCommand = nullptr;
+IConsoleCommand* DayPreviewCommand = nullptr;
+IConsoleCommand* LadderPreviewCommand = nullptr;
 const TCHAR* MainClassPath = TEXT("/Game/Blackjack/Level/WBP_MainMenu.WBP_MainMenu_C");
 const TCHAR* LobbyClassPath = TEXT("/Game/Blackjack/Level/WBP_LobbyUI.WBP_LobbyUI_C");
 const TCHAR* PlayerClassPath = TEXT("/Game/Blackjack/Level/WBP_LobbyPlayerEntry.WBP_LobbyPlayerEntry_C");
@@ -65,6 +71,7 @@ void PreparePreviewTree(UUserWidget* Widget)
     Widget->SetDesignerFlags(EWidgetDesignFlags::Designing);
     UBlueprintGeneratedClass::UnbindDynamicDelegates(Widget->GetClass(), Widget);
     ClearPreviewDelegates(Widget);
+    ApplyCasinoPaymentKeypadLayout(Widget);
     if (!Widget->WidgetTree) return;
     Widget->WidgetTree->ForEachWidget([](UWidget* Child)
     {
@@ -200,7 +207,8 @@ bool AddSettingsSamples(UUserWidget* Settings, FString& Error)
 }
 
 bool RenderOne(FWidgetRenderer& Renderer, UUserWidget* Widget, const FIntPoint& Size,
-    const FString& Filename, FString& Error, bool bCheckMenuPalette = true, bool bCheckTranslucency = false)
+    const FString& Filename, FString& Error, bool bCheckMenuPalette = true, bool bCheckTranslucency = false,
+    TSharedPtr<SWidget> Composite = nullptr)
 {
     const float Scale = FMath::Max(.01f, GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Size));
     const FVector2D DrawSize(Size.X, Size.Y);
@@ -216,7 +224,7 @@ bool RenderOne(FWidgetRenderer& Renderer, UUserWidget* Widget, const FIntPoint& 
         Target->InitCustomFormat(Size.X, Size.Y, PF_FloatRGBA, true);
         Target->UpdateResourceImmediate(true);
     }
-    Renderer.DrawWidget(Target.Get(), Widget->TakeWidget(), Scale, DrawSize, 0.f, false);
+    Renderer.DrawWidget(Target.Get(), Composite.IsValid() ? Composite.ToSharedRef() : Widget->TakeWidget(), Scale, DrawSize, 0.f, false);
     FlushRenderingCommands();
     FImage Image;
     if (!FImageUtils::GetRenderTargetImage(Target.Get(), Image))
@@ -444,8 +452,123 @@ bool RenderCasinoPausePreviews(FString& OutError)
     return true;
 }
 
+bool RenderCasinoDayPreviews(FString& Error)
+{
+    const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("CasinoDealerSetup/DayPreviews"));
+    if (!IFileManager::Get().MakeDirectory(*Directory, true)) return false;
+    FWidgetRenderer* Renderer = new FWidgetRenderer(false, true);
+    ON_SCOPE_EXIT { FlushRenderingCommands(); BeginCleanup(Renderer); };
+    const TCHAR* Assets[] = {TEXT("WBP_DayIntro"), TEXT("WBP_DailyPayment"), TEXT("WBP_DayPassed"), TEXT("WBP_Result"), TEXT("WBP_Result")};
+    const TCHAR* Names[] = {TEXT("DayIntro"), TEXT("Payment"), TEXT("DayPassed"), TEXT("Cleared"), TEXT("Failed")};
+    for (const FIntPoint& Size : {FIntPoint(1920, 1080), FIntPoint(1280, 720), FIntPoint(2560, 1080)})
+    {
+        for (int32 Index = 0; Index < 5; ++Index)
+        {
+            const FString Path = FString::Printf(TEXT("/Game/Blackjack/WBP/%s.%s_C"), Assets[Index], Assets[Index]);
+            TStrongObjectPtr<UUserWidget> Widget(CreatePreview(*Path, Error));
+            if (!Widget.IsValid()) return false;
+            TSharedRef<SWidget> PreviewRoot = Widget->TakeWidget();
+            const auto Sample = [&](const TCHAR* Name, const TCHAR* Value)
+            {
+                if (UTextBlock* Label = Find<UTextBlock>(Widget.Get(), Name))
+                    Label->SetText(FText::FromString(Value));
+            };
+            Sample(TEXT("DayText"), TEXT("DAY 03"));
+            Sample(TEXT("TargetText"), TEXT("오늘의 납부 목표  150,000원"));
+            Sample(TEXT("SummaryText"), TEXT("납부 완료  150,000원"));
+            Sample(TEXT("ResultTitleText"), Index == 4 ? TEXT("목표 달성 실패") : TEXT("카지노 클리어"));
+            Sample(TEXT("ResultSummaryText"), Index == 4 ? TEXT("DAY 03 · 납부 목표를 달성하지 못했습니다") : TEXT("모든 날짜의 납부 목표를 달성했습니다"));
+            Sample(TEXT("TextBlock_51"), TEXT("150,000원 제출"));
+            Sample(TEXT("PaymentProgressText"), TEXT("목표 150,000원 · 납부 100,000원"));
+            if (Index == 1)
+            {
+                Find<UWidget>(Widget.Get(), TEXT("PaymentInputPanel"))->SetVisibility(ESlateVisibility::Visible);
+                Find<UWidget>(Widget.Get(), TEXT("WaitingText"))->SetVisibility(ESlateVisibility::Collapsed);
+                Find<UWidget>(Widget.Get(), TEXT("WaitingText"))->GetCachedWidget()->SetVisibility(EVisibility::Collapsed);
+            }
+            const FString Filename = Directory / FString::Printf(TEXT("%s_%dx%d.png"), Names[Index], Size.X, Size.Y);
+            if (!RenderOne(*Renderer, Widget.Get(), Size, Filename, Error, false, true)) return false;
+        }
+    }
+    UE_LOG(LogCasinoMenuPreview, Display, TEXT("Day previews completed: %s"), *Directory);
+    return true;
+}
+
+bool RenderCasinoLadderPreviews(FString& Error)
+{
+    const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("CasinoDealerSetup/LadderPreviews"));
+    if (!IFileManager::Get().MakeDirectory(*Directory, true)) return false;
+    FWidgetRenderer* Renderer = new FWidgetRenderer(false, true);
+    ON_SCOPE_EXIT { FlushRenderingCommands(); BeginCleanup(Renderer); };
+    for (const FIntPoint& Size : {FIntPoint(1920, 1080), FIntPoint(1280, 720), FIntPoint(2560, 1080)})
+    {
+        TStrongObjectPtr<UUserWidget> Widget(CreatePreview(TEXT("/Game/KCU/LadderMachine/Widget/WBP_LadderControlWidget.WBP_LadderControlWidget_C"), Error));
+        if (!Widget.IsValid()) return false;
+        const bool Updated = Find<UWidget>(Widget.Get(), TEXT("CasinoArrow_SelectRailLeft")) != nullptr;
+        TSharedRef<SWidget> Root = Widget->TakeWidget();
+        UWidget* Bet = Find<UWidget>(Widget.Get(), TEXT("배팅금"));
+        UWidget* Dismiss = Find<UWidget>(Widget.Get(), TEXT("결과창닫기버튼"));
+        if (!Bet || !Dismiss) { Error = TEXT("Ladder preview widgets missing."); return false; }
+        Dismiss->GetCachedWidget()->SetVisibility(EVisibility::Collapsed);
+        const FString Suffix = FString::Printf(TEXT("_%dx%d"), Size.X, Size.Y);
+        if (!RenderOne(*Renderer, Widget.Get(), Size, Directory / ((Updated ? TEXT("Updated") : TEXT("Before")) + Suffix + TEXT(".png")), Error, false)) return false;
+        const FGeometry BetGeometry = Bet->GetCachedGeometry();
+        const FVector2D BetMin = BetGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+        const FVector2D BetMax = BetGeometry.LocalToAbsolute(BetGeometry.GetLocalSize());
+        const FString Geometry = FString::Printf(TEXT("%.3f %.3f %.3f %.3f"), BetMin.X, BetMin.Y, BetMax.X, BetMax.Y);
+        const FString Baseline = Directory / (TEXT("BetBefore") + Suffix + TEXT(".txt"));
+        if (!Updated)
+        {
+            if (!FFileHelper::SaveStringToFile(Geometry, *Baseline)) return false;
+        }
+        else
+        {
+            FString Before;
+            if (!FFileHelper::LoadFileToString(Before, *Baseline) || Before != Geometry)
+            { Error = TEXT("Ladder bet display moved: ") + Geometry; return false; }
+        }
+        TStrongObjectPtr<UUserWidget> Keypad(CreatePreview(TEXT("/Game/1_BluePrint/Widget/WBP_Calculate.WBP_Calculate_C"), Error));
+        if (!Keypad.IsValid()) return false;
+        Keypad->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        TSharedRef<SWidget> KeypadRoot = Keypad->TakeWidget();
+        TSharedRef<SOverlay> Combined = SNew(SOverlay)
+            + SOverlay::Slot()[Root]
+            + SOverlay::Slot()[KeypadRoot];
+        if (!RenderOne(*Renderer, Widget.Get(), Size, Directory / ((Updated ? TEXT("UpdatedKeypad") : TEXT("BeforeKeypad")) + Suffix + TEXT(".png")), Error, false, false, Combined)) return false;
+        UWidget* Grid = Find<UWidget>(Keypad.Get(), TEXT("GridPanel_35"));
+        if (!Grid) return false;
+        const FGeometry GridGeometry = Grid->GetCachedGeometry();
+        if (GridGeometry.GetLocalSize().X <= 0.f || GridGeometry.GetLocalSize().Y <= 0.f)
+        { Error = TEXT("Ladder keypad preview did not render."); return false; }
+        const FVector2D GridMin = GridGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+        const FVector2D GridMax = GridGeometry.LocalToAbsolute(GridGeometry.GetLocalSize());
+        if (BetMin.X < GridMax.X && BetMax.X > GridMin.X && BetMin.Y < GridMax.Y && BetMax.Y > GridMin.Y)
+        { Error = TEXT("Ladder bet display overlaps the keypad."); return false; }
+        UE_LOG(LogCasinoMenuPreview, Display, TEXT("Ladder %s %dx%d: bet bounds %s; keypad does not overlap."), Updated ? TEXT("updated") : TEXT("baseline"), Size.X, Size.Y, *Geometry);
+    }
+    return true;
+}
+
 void RegisterCasinoMenuPreviewCommands()
 {
+    if (!LadderPreviewCommand)
+    {
+        LadderPreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(TEXT("CasinoLadder.RenderPreviews"),
+            TEXT("Render ladder controls and verify unchanged bet placement with keypad."), FConsoleCommandDelegate::CreateLambda([]()
+            {
+                FString Error;
+                if (!RenderCasinoLadderPreviews(Error)) UE_LOG(LogCasinoMenuPreview, Error, TEXT("Ladder previews failed: %s"), *Error);
+            }), ECVF_Default);
+    }
+    if (!DayPreviewCommand)
+    {
+        DayPreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(TEXT("CasinoDay.RenderPreviews"),
+            TEXT("Render design-only payment and day/result screens."), FConsoleCommandDelegate::CreateLambda([]()
+            {
+                FString Error;
+                if (!RenderCasinoDayPreviews(Error)) UE_LOG(LogCasinoMenuPreview, Error, TEXT("Day previews failed: %s"), *Error);
+            }), ECVF_Default);
+    }
     if (!PreviewCommand)
     {
         PreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(TEXT("CasinoMenu.RenderPreviews"),
@@ -480,6 +603,16 @@ void RegisterCasinoMenuPreviewCommands()
 
 void UnregisterCasinoMenuPreviewCommands()
 {
+    if (LadderPreviewCommand)
+    {
+        IConsoleManager::Get().UnregisterConsoleObject(LadderPreviewCommand, false);
+        LadderPreviewCommand = nullptr;
+    }
+    if (DayPreviewCommand)
+    {
+        IConsoleManager::Get().UnregisterConsoleObject(DayPreviewCommand, false);
+        DayPreviewCommand = nullptr;
+    }
     if (PreviewCommand)
     {
         IConsoleManager::Get().UnregisterConsoleObject(PreviewCommand, false);

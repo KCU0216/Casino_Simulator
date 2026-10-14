@@ -4,6 +4,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Animation/WidgetAnimation.h"
 #include "Components/Border.h"
+#include "Components/BorderSlot.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
 #include "Components/CanvasPanel.h"
@@ -12,7 +13,11 @@
 #include "Components/ComboBoxString.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/GridPanel.h"
+#include "Components/GridSlot.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/SizeBoxSlot.h"
 #include "Components/Spacer.h"
@@ -49,6 +54,14 @@ const TCHAR* AssetPaths[] = {
     TEXT("/Game/Blackjack/Level/WBP_LobbyPlayerEntry.WBP_LobbyPlayerEntry"),
     TEXT("/Game/Blackjack/Level/WBP_RoomEntry.WBP_RoomEntry")
 };
+const TCHAR* DayLoopPaths[] = {
+    TEXT("/Game/Blackjack/WBP/WBP_DayIntro.WBP_DayIntro"),
+    TEXT("/Game/Blackjack/WBP/WBP_DailyPayment.WBP_DailyPayment"),
+    TEXT("/Game/Blackjack/WBP/WBP_DayPassed.WBP_DayPassed"),
+    TEXT("/Game/Blackjack/WBP/WBP_Result.WBP_Result"),
+    TEXT("/Game/1_BluePrint/Widget/WBP_Calculate.WBP_Calculate")
+};
+const TCHAR* LadderControlPath = TEXT("/Game/KCU/LadderMachine/Widget/WBP_LadderControlWidget.WBP_LadderControlWidget");
 
 FSlateBrush Brush(FLinearColor Color, float Radius = 8.f, FLinearColor Outline = FLinearColor::Transparent)
 {
@@ -394,9 +407,11 @@ bool RoomEntry(UWidgetBlueprint* Blueprint, FString& Error)
 
 bool Save(UWidgetBlueprint* Blueprint, FString& Error)
 {
-    bool Allowed = Blueprint->GetPathName() == TEXT("/Game/KCU/WBP_Settings.WBP_Settings")
+    bool Allowed = Blueprint->GetPathName() == LadderControlPath
+        || Blueprint->GetPathName() == TEXT("/Game/KCU/WBP_Settings.WBP_Settings")
         || Blueprint->GetPathName() == TEXT("/Game/KCU/WBP_PauseMenu.WBP_PauseMenu");
     for (const TCHAR* Path : AssetPaths) if (Blueprint->GetPathName() == Path) Allowed = true;
+    for (const TCHAR* Path : DayLoopPaths) if (Blueprint->GetPathName() == Path) Allowed = true;
     for (const TCHAR* Path : {
         TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackHUD.WBP_BlackjackHUD"),
         TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackCardUI.WBP_BlackjackCardUI"),
@@ -880,7 +895,8 @@ bool MigrateCasinoPresentationWidget(const TCHAR* AssetPath,
     const TSet<FName>& AddedBindingTargets)
 {
     OutError.Reset();
-    bool Allowed = false;
+    bool Allowed = FString(AssetPath) == LadderControlPath;
+    for (const TCHAR* Path : DayLoopPaths) if (FString(AssetPath) == Path) Allowed = true;
     for (const TCHAR* Path : {
         TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackHUD.WBP_BlackjackHUD"),
         TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackCardUI.WBP_BlackjackCardUI"),
@@ -939,6 +955,221 @@ bool MigrateCasinoPresentationWidget(const TCHAR* AssetPath,
     if (FDebug::GetNumEnsureFailures() != EnsuresBefore || (GWarn && GWarn->GetNumErrors() > ErrorsBefore))
     { OutError = TEXT("Presentation migration logged an engine error; asset was not saved."); return false; }
     return Save(Blueprint, OutError);
+}
+
+namespace
+{
+void DayRow(UWidget* Widget, float Bottom = 18.f)
+{
+    if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Widget->Slot))
+    {
+        Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+        Slot->SetHorizontalAlignment(HAlign_Fill);
+        Slot->SetVerticalAlignment(VAlign_Center);
+        Slot->SetPadding(FMargin(0.f, 0.f, 0.f, Bottom));
+    }
+}
+
+void DayText(UWidgetBlueprint* Blueprint, const TCHAR* Name, int32 Size, FLinearColor Color)
+{
+    if (UTextBlock* Text = Find<UTextBlock>(Blueprint, Name))
+    {
+        TextStyle(Text, Size, Color);
+        Text->SetJustification(ETextJustify::Center);
+        Text->SetAutoWrapText(true);
+        DayRow(Text, Size >= 40 ? 24.f : 18.f);
+    }
+}
+
+bool StyleDayLoop(UWidgetBlueprint* Blueprint, FString& Error)
+{
+    UCanvasPanel* Canvas = Cast<UCanvasPanel>(Blueprint->WidgetTree->RootWidget);
+    const FString Name = Blueprint->GetName();
+    const bool Payment = Name == TEXT("WBP_DailyPayment");
+    const bool Result = Name == TEXT("WBP_Result");
+    const TCHAR* BoxName = Payment ? TEXT("VerticalBox_51") : Result ? TEXT("VerticalBox_33")
+        : Name == TEXT("WBP_DayIntro") ? TEXT("VerticalBox_45") : TEXT("VerticalBox_18");
+    UVerticalBox* Rows = Find<UVerticalBox>(Blueprint, BoxName);
+    if (!Canvas || !Rows) { Error = TEXT("Day screen has an unexpected widget tree: ") + Name; return false; }
+    Restyle(Blueprint);
+    // Retain existing designer objects while removing the full-screen menu presentation.
+    for (const TCHAR* BackgroundName : {TEXT("CasinoThemeBackground"), TEXT("CasinoThemeHeaderRule")})
+        if (UBorder* BackgroundWidget = Find<UBorder>(Blueprint, BackgroundName))
+            BackgroundWidget->SetBrush(Brush(FLinearColor::Transparent, 0.f));
+    for (const TCHAR* HeaderName : {TEXT("CasinoDayBrand"), TEXT("CasinoDaySection")})
+        if (UTextBlock* Header = Find<UTextBlock>(Blueprint, HeaderName)) Header->SetText(FText::GetEmpty());
+
+    for (UWidget* Row : Rows->GetAllChildren()) DayRow(Row);
+    UBorder* Frame = Decoration<UBorder>(Blueprint, TEXT("CasinoDayFrame"));
+    FLinearColor FrameColor = Panel; FrameColor.A = .78f;
+    Frame->SetBrush(Brush(FrameColor, 10.f, Gold * .5f));
+    Frame->SetBrushColor(FLinearColor::White);
+    Frame->SetPadding(FMargin(40.f, 32.f, 40.f, 20.f));
+    Frame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    Rows->RemoveFromParent();
+    Frame->SetContent(Rows);
+    Rows->SetRenderTransform(FWidgetTransform());
+    Frame->SetHorizontalAlignment(HAlign_Fill);
+    Frame->SetVerticalAlignment(VAlign_Center);
+    USizeBox* Bounds = Decoration<USizeBox>(Blueprint, TEXT("CasinoDayBounds"));
+    Bounds->SetWidthOverride(Payment ? 680.f : 600.f);
+    Frame->RemoveFromParent();
+    Bounds->SetContent(Frame);
+    UScaleBox* Scale = Decoration<UScaleBox>(Blueprint, TEXT("CasinoDayScale"));
+    Scale->SetStretch(EStretch::ScaleToFit);
+    Scale->SetStretchDirection(EStretchDirection::DownOnly);
+    Bounds->RemoveFromParent();
+    Scale->SetContent(Bounds);
+    if (UScaleBoxSlot* Slot = Cast<UScaleBoxSlot>(Bounds->Slot))
+    { Slot->SetHorizontalAlignment(HAlign_Center); Slot->SetVerticalAlignment(VAlign_Center); }
+    Place(Canvas, Scale, FAnchors(.08f, .08f, .92f, .92f), FMargin(), FVector2D::ZeroVector, 10);
+    DayText(Blueprint, TEXT("DayText"), 40, Gold);
+    DayText(Blueprint, TEXT("TargetText"), 22, Ivory);
+    DayText(Blueprint, TEXT("TitleText"), 36, Gold);
+    DayText(Blueprint, TEXT("SummaryText"), 22, Ivory);
+    DayText(Blueprint, TEXT("HintText"), 18, Muted);
+    DayText(Blueprint, TEXT("ResultTitleText"), 36, Gold);
+    DayText(Blueprint, TEXT("ResultSummaryText"), 20, Ivory);
+    if (Result)
+    {
+        for (const TCHAR* ButtonName : {TEXT("RestartButton"), TEXT("MainMenuButton")})
+        {
+            UButton* Button = Find<UButton>(Blueprint, ButtonName);
+            if (!Button) { Error = TEXT("Result button missing."); return false; }
+            if (!Button->GetContent())
+            {
+                UTextBlock* Caption = Decoration<UTextBlock>(Blueprint,
+                    Button == Find<UButton>(Blueprint, TEXT("RestartButton")) ? TEXT("CasinoRestartCaption") : TEXT("CasinoMenuCaption"));
+                Caption->SetText(FText::FromString(FString(ButtonName) == TEXT("RestartButton") ? TEXT("다시 도전") : TEXT("메인 메뉴")));
+                Caption->SetJustification(ETextJustify::Center);
+                Button->SetContent(Caption);
+            }
+            ButtonStyle(Button, FString(ButtonName) == TEXT("RestartButton"));
+            DayRow(Button, 12.f);
+        }
+    }
+    if (Payment)
+    {
+        UButton* Blocker = Find<UButton>(Blueprint, TEXT("InputBlocker"));
+        UWidget* Calculator = Blueprint->WidgetTree->FindWidget(TEXT("WBP_Calculate"));
+        if (!Blocker || !Calculator) { Error = TEXT("Payment input widgets missing."); return false; }
+        FButtonStyle Transparent = Blocker->GetStyle();
+        Transparent.Normal = Transparent.Hovered = Transparent.Pressed = Transparent.Disabled = Brush(FLinearColor::Transparent, 0.f);
+        Blocker->SetStyle(Transparent);
+        Place(Canvas, Blocker, FAnchors(0.f, 0.f, 1.f, 1.f), FMargin(), FVector2D::ZeroVector, -50);
+        DayText(Blueprint, TEXT("TextBlock_51"), 34, Gold);
+        DayText(Blueprint, TEXT("ErrorText"), 18, FLinearColor(.85f, .29f, .24f, 1.f));
+        DayText(Blueprint, TEXT("WaitingText"), 22, Ivory);
+        DayText(Blueprint, TEXT("PaymentProgressText"), 20, Gold);
+        USizeBox* KeypadBounds = Decoration<USizeBox>(Blueprint, TEXT("CasinoPaymentKeypadBounds"));
+        UVerticalBox* Input = Find<UVerticalBox>(Blueprint, TEXT("PaymentInputPanel"));
+        if (!Input) { Error = TEXT("Payment input panel missing."); return false; }
+        if (Calculator->GetParent() != KeypadBounds)
+        {
+            const int32 Index = Input->GetChildIndex(Calculator);
+            Calculator->RemoveFromParent();
+            Input->InsertChildAt(Index, KeypadBounds);
+            KeypadBounds->SetContent(Calculator);
+        }
+        KeypadBounds->SetHeightOverride(340.f);
+        DayRow(KeypadBounds);
+    }
+    return true;
+}
+
+bool StylePaymentCalculator(UWidgetBlueprint* Blueprint, FString& Error)
+{
+    UCanvasPanel* Canvas = Cast<UCanvasPanel>(Blueprint->WidgetTree->RootWidget);
+    UWidget* Grid = Blueprint->WidgetTree->FindWidget(TEXT("GridPanel_35"));
+    UButton* Back = Find<UButton>(Blueprint, TEXT("Button_BG"));
+    UButton* Submit = Find<UButton>(Blueprint, TEXT("Button_OK"));
+    if (!Canvas || !Grid || !Back || !Submit) { Error = TEXT("Payment calculator structure missing."); return false; }
+    Restyle(Blueprint);
+    Place(Canvas, Grid, FAnchors(1.f, 1.f), FMargin(-300.f, -300.f, 400.f, 400.f), FVector2D(.5f, .5f), 0);
+    if (UGridPanel* Keys = Cast<UGridPanel>(Grid))
+    {
+        for (int32 Index = 0; Index < 4; ++Index)
+        { Keys->SetColumnFill(Index, 0.f); Keys->SetRowFill(Index, 0.f); }
+        for (UWidget* Cell : Keys->GetAllChildren())
+        {
+            if (USizeBox* Size = Cast<USizeBox>(Cell))
+            { Size->SetWidthOverride(100.f); Size->SetHeightOverride(100.f); }
+            if (UGridSlot* Slot = Cast<UGridSlot>(Cell->Slot)) Slot->SetPadding(FMargin(0.f));
+        }
+    }
+    FButtonStyle Transparent = Back->GetStyle();
+    Transparent.Normal = Transparent.Hovered = Transparent.Pressed = Transparent.Disabled = Brush(FLinearColor::Transparent, 0.f);
+    Back->SetStyle(Transparent);
+    ButtonStyle(Submit, true);
+    return true;
+}
+}
+
+bool MigrateCasinoDayLoopLayouts(FString& OutError)
+{
+    if (!MigrateCasinoPaymentKeypadLayout(OutError)) return false;
+    for (int32 Index = 0; Index < 4; ++Index)
+        if (!MigrateCasinoPresentationWidget(DayLoopPaths[Index], StyleDayLoop, OutError)) return false;
+    return true;
+}
+
+bool MigrateCasinoPaymentKeypadLayout(FString& OutError)
+{
+    return MigrateCasinoPresentationWidget(DayLoopPaths[4], StylePaymentCalculator, OutError);
+}
+
+bool MigrateCasinoLadderControls(FString& OutError)
+{
+    return MigrateCasinoPresentationWidget(LadderControlPath, [](UWidgetBlueprint* Blueprint, FString& Error)
+    {
+        UWidget* Bet = Blueprint->WidgetTree->FindWidget(TEXT("넘패드"));
+        if (!Bet || !Find<UVerticalBox>(Blueprint, TEXT("VerticalBox_2")))
+        { Error = TEXT("Ladder controls have an unexpected layout."); return false; }
+        for (const TCHAR* Name : {TEXT("SelectRailLeft"), TEXT("SelectRailRight"), TEXT("RailCountLeft"), TEXT("RailCountRight")})
+        {
+            UButton* Button = Find<UButton>(Blueprint, Name);
+            if (!Button) { Error = TEXT("Ladder direction button missing: ") + FString(Name); return false; }
+            UTextBlock* Arrow = Cast<UTextBlock>(Button->GetContent());
+            if (!Arrow)
+            {
+                const FString ArrowName = FString(TEXT("CasinoArrow_")) + Name;
+                Arrow = Decoration<UTextBlock>(Blueprint, *ArrowName);
+                Button->SetContent(Arrow);
+            }
+            Arrow->SetText(FText::FromString(FString(Name).EndsWith(TEXT("Left")) ? TEXT("\u25C0") : TEXT("\u25B6")));
+            TextStyle(Arrow, 32.f, Ivory);
+            Arrow->SetColorAndOpacity(FSlateColor::UseForeground());
+            Arrow->SetJustification(ETextJustify::Center);
+            FButtonStyle Style = Button->GetStyle();
+            Style.Normal = Style.Hovered = Style.Pressed = Style.Disabled = Brush(FLinearColor::Transparent, 0.f);
+            Style.NormalForeground = FSlateColor(Ivory);
+            Style.HoveredForeground = FSlateColor(Gold);
+            Style.PressedForeground = Style.DisabledForeground = FSlateColor(Muted);
+            Style.NormalPadding = Style.PressedPadding = FMargin(0.f);
+            Button->SetStyle(Style);
+            if (UButtonSlot* Slot = Cast<UButtonSlot>(Arrow->Slot))
+            { Slot->SetPadding(FMargin(0.f)); Slot->SetHorizontalAlignment(HAlign_Center); Slot->SetVerticalAlignment(VAlign_Center); }
+        }
+        // Keep layout measurements intact: the fill rows determine the bet field's position.
+        const TCHAR* Controls[] = {TEXT("HorizontalBox_0"), TEXT("HorizontalBox_1"), TEXT("SizeBox_7"), TEXT("SizeBox_0"), TEXT("SizeBox_2")};
+        const float MoveY[] = {32.f, 16.f, 8.f, -8.f, -16.f};
+        if (UTextBlock* RefreshCaption = Find<UTextBlock>(Blueprint, TEXT("TextBlock_63")))
+        {
+            FSlateFontInfo Font = RefreshCaption->GetFont(); Font.Size = 20;
+            RefreshCaption->SetFont(Font);
+        }
+        for (int32 Index = 0; Index < UE_ARRAY_COUNT(Controls); ++Index)
+        {
+            UWidget* Widget = Blueprint->WidgetTree->FindWidget(Controls[Index]);
+            if (!Widget) { Error = TEXT("Ladder control row missing."); return false; }
+            FWidgetTransform Transform;
+            Transform.Scale = FVector2D(.85f, .85f);
+            Transform.Translation = FVector2D(0.f, MoveY[Index]);
+            Widget->SetRenderTransformPivot(FVector2D(.5f, .5f));
+            Widget->SetRenderTransform(Transform);
+        }
+        return true;
+    }, OutError);
 }
 
 namespace CasinoWidgetStyle

@@ -171,6 +171,9 @@ bool InspectCasinoMenuWidgets(FString& OutError)
         TEXT("/Game/1_BluePrint/Widget/WBP_ThreeCardPokerBetting.WBP_ThreeCardPokerBetting"),
         TEXT("/Game/1_BluePrint/Widget/WBP_DiceBetting.WBP_DiceBetting"),
         TEXT("/Game/Blackjack/WBP/WBP_DailyPayment.WBP_DailyPayment"),
+        TEXT("/Game/Blackjack/WBP/WBP_DayIntro.WBP_DayIntro"),
+        TEXT("/Game/Blackjack/WBP/WBP_DayPassed.WBP_DayPassed"),
+        TEXT("/Game/Blackjack/WBP/WBP_Result.WBP_Result"),
         TEXT("/Game/KCU/LadderMachine/Widget/WBP_LadderControlWidget.WBP_LadderControlWidget"),
         TEXT("/Game/KCU/HorseRacing/WBP_RaceBettingWidget.WBP_RaceBettingWidget")
     };
