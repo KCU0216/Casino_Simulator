@@ -3,6 +3,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "AbilitySystemComponent.h"
+#include "Camera/CameraComponent.h"
 #include "GameFramework/Actor.h"
 #include "Mining/OreBase.h"
 
@@ -86,10 +87,16 @@ void UAbilityTask_SendMiningTargetData::Activate()
 		return;
 	}
 
-	// 로컬 카메라 시점에서 광석 후보를 찾는다.
-	FVector ViewLocation;
-	FRotator ViewRotation;
-	Avatar->GetActorEyesViewPoint(ViewLocation, ViewRotation);
+	Acasino_simulatorCharacter* Character = Cast<Acasino_simulatorCharacter>(Avatar);
+	UCameraComponent* Camera = Character ? Character->GetFirstPersonCameraComponent() : nullptr;
+	if (!IsValid(Camera))
+	{
+		EndTask();
+		return;
+	}
+
+	const FVector ViewLocation = Camera->GetComponentLocation();
+	const FRotator ViewRotation = Camera->GetComponentRotation();
 
 	FHitResult Hit;
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(MiningTargetData), false, Avatar);

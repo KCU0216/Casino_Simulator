@@ -27,7 +27,7 @@ private:
 	float MaximumRange = 300.f;
 };
 
-/** Traces from the locally controlled player's eyes and sends that hit result as GAS Target Data. */
+/** Traces from the local player's first-person camera and sends the hit as GAS Target Data. */
 UCLASS()
 class CASINO_SIMULATOR_API UAbilityTask_SendMiningTargetData : public UAbilityTask
 {
