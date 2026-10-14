@@ -27,10 +27,6 @@ void Ucasino_simulatorAbilitySystemComponent::PressInputTag(FGameplayTag InputTa
 		return;
 	}
 
-	UE_LOG(LogTemp, Error, TEXT("PressInputTag: %s ActivatableAbilities=%d"),
-		*InputTag.ToString(),
-		GetActivatableAbilities().Num());
-
 	TArray<FGameplayAbilitySpecHandle>& PressedHandles = PressedInputHandles.FindOrAdd(InputTag);
 	PressedHandles.Reset();
 
@@ -42,19 +38,12 @@ void Ucasino_simulatorAbilitySystemComponent::PressInputTag(FGameplayTag InputTa
 			continue;
 		}
 
-		UE_LOG(LogTemp, Error, TEXT("PressInputTag matched ability: %s IsActive=%d"),
-			*GetNameSafe(Spec.Ability),
-			Spec.IsActive());
-
 		PressedHandles.AddUnique(Spec.Handle);
 		Spec.InputPressed = true;
 
 		if (!Spec.IsActive())
 		{
-			const bool bActivated = TryActivateAbility(Spec.Handle);
-			UE_LOG(LogTemp, Error, TEXT("PressInputTag TryActivateAbility result: %d for %s"),
-				bActivated,
-				*GetNameSafe(Spec.Ability));
+			TryActivateAbility(Spec.Handle);
 			continue;
 		}
 
@@ -70,10 +59,6 @@ void Ucasino_simulatorAbilitySystemComponent::PressInputTag(FGameplayTag InputTa
 			GetSpecActivationInfo(Spec).GetActivationPredictionKey()
 		);
 	}
-
-	UE_LOG(LogTemp, Error, TEXT("PressInputTag: %s PressedHandles=%d"),
-		*InputTag.ToString(),
-		PressedHandles.Num());
 }
 
 void Ucasino_simulatorAbilitySystemComponent::ReleaseInputTag(FGameplayTag InputTag)

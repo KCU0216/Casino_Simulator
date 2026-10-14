@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
 #include "InputCoreTypes.h"
+#include "Interaction/InteractionSessionComponent.h"
 #include "Layout/WidgetPath.h"
 #include "Machine/SeatedMachineBase.h"
 #include "Misc/AutomationTest.h"
@@ -43,9 +44,9 @@ bool FCasinoSlotKeypadTest::RunTest(const FString& Parameters)
     GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
     ON_SCOPE_EXIT { World->DestroyWorld(false); GEngine->DestroyWorldContext(World); };
     TGuardValue<bool> ScriptGuard(GAllowActorScriptExecutionInEditor, true);
-    // AppendDigit reads the slot's real CurrentUser and caps input by currency.
+    // AppendDigit reads the slot's current session user and caps input by currency.
     // Deferred actors provide those data only: no construction scripts,
-    // BeginPlay, seat use, spin, purchase, or network request is executed.
+    // BeginPlay, seat/camera transition, spin, purchase, or network request is executed.
     FActorSpawnParameters Spawn;
     Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
     Spawn.bDeferConstruction = true;
@@ -56,7 +57,9 @@ bool FCasinoSlotKeypadTest::RunTest(const FString& Parameters)
     ASC->InitAbilityActorInfo(Player, Player);
     ASC->InitStats(Ucasino_simulatorAttributeSet::StaticClass(), nullptr);
     ASC->SetNumericAttributeBase(Ucasino_simulatorAttributeSet::GetCurrencyAttribute(), 10000.f);
-    FindFProperty<FObjectPropertyBase>(ASeatedMachineBase::StaticClass(), TEXT("CurrentUser"))->SetObjectPropertyValue_InContainer(Machine, Player);
+    UInteractionSessionComponent* Session = Machine->GetInteractionSessionComponent();
+    if (!TestNotNull(TEXT("Isolated slot session"), Session) ||
+        !TestTrue(TEXT("Fixture player joins the deferred slot session"), Session->TryJoin(Player))) return false;
     if (!TestEqual(TEXT("Fixture currency is readable through the original player getter"), Player->GetCurrency(), 10000.f) ||
         !TestTrue(TEXT("Fixture slot current user is the controlled player"), Machine->GetCurrentUser() == Player)) return false;
 
@@ -186,6 +189,42 @@ bool FCasinoSlotKeypadTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("The reopened confirmed amount is 200"), Confirmed->GetPropertyValue_InContainer(Control), 200);
     TestEqual(TEXT("Reopened amount confirmation still cannot start a spin"), SpinCount->GetPropertyValue_InContainer(Machine), SpinsBefore);
     TestEqual(TEXT("Reopened amount confirmation leaves currency unchanged"), Player->GetCurrency(), 10000.f);
+
+    // Cancel a fully erased amount through both actual confirmation routes.
+    // Closing the grid must not confirm zero or click the separate lever.
+    Control->NativeTick(FGeometry(), 1.f / 60.f);
+    for (const bool UseEnter : { false, true })
+    {
+        Slate.SetUserFocus(0, Outside, EFocusCause::SetDirectly);
+        Open->OnClicked.Broadcast();
+        Control->NativeTick(FGeometry(), 1.f / 60.f);
+        TestTrue(TEXT("The keypad can reopen before zero-amount cancellation"), Grid->IsVisible());
+        Route(EKeys::One);
+        Route(EKeys::BackSpace);
+        TestEqual(TEXT("Backspace can erase the amount to zero"), Input->GetPropertyValue_InContainer(Control), 0);
+        const int32 ConfirmationsBefore = OKReceiver->ConfirmCount;
+        const int32 LeverClicksBefore = LeverReceiver->ConfirmCount;
+        if (UseEnter) TestTrue(TEXT("Enter handles a zero-amount cancellation"), Route(EKeys::Enter));
+        else OK->OnClicked.Broadcast();
+        TestEqual(TEXT("Zero confirmation clicks OK exactly once"), OKReceiver->ConfirmCount, ConfirmationsBefore + 1);
+        TestFalse(TEXT("Zero confirmation dismisses the numeric grid"), Grid->IsVisible());
+        TestFalse(TEXT("Zero is not accepted as a confirmed bet"), HasConfirmed->GetPropertyValue_InContainer(Control));
+        TestEqual(TEXT("Zero cancellation does not click the lever"), LeverReceiver->ConfirmCount, LeverClicksBefore);
+        TestEqual(TEXT("Zero cancellation does not start a paid spin"), SpinCount->GetPropertyValue_InContainer(Machine), SpinsBefore);
+        TestEqual(TEXT("Zero cancellation does not spend currency"), Player->GetCurrency(), 10000.f);
+        Control->NativeTick(FGeometry(), 1.f / 60.f);
+        TestTrue(TEXT("Zero cancellation restores earlier UI focus"), Slate.GetUserFocusedWidget(0) == Outside);
+        TestFalse(TEXT("Closed zero-amount keypad stops consuming digits"), Control->HandleCalculatorKey(Event(EKeys::Two)));
+    }
+
+    Open->OnClicked.Broadcast();
+    Control->NativeTick(FGeometry(), 1.f / 60.f);
+    Route(EKeys::Three); Route(EKeys::Zero); Route(EKeys::Zero);
+    TestTrue(TEXT("A valid amount can be confirmed after cancelling zero"), Route(EKeys::Enter));
+    TestEqual(TEXT("The subsequent valid bet remains exactly 300"), Confirmed->GetPropertyValue_InContainer(Control), 300);
+    TestTrue(TEXT("The subsequent valid amount is confirmed"), HasConfirmed->GetPropertyValue_InContainer(Control));
+    TestFalse(TEXT("The subsequent valid confirmation also closes the keypad"), Grid->IsVisible());
+    TestEqual(TEXT("Subsequent confirmation still spends no currency"), Player->GetCurrency(), 10000.f);
     return true;
 }
 

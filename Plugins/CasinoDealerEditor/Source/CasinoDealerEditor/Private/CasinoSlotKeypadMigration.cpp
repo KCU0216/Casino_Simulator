@@ -4,11 +4,16 @@
 #include "Components/Button.h"
 #include "Components/PanelSlot.h"
 #include "EdGraph/EdGraph.h"
+#include "EdGraphSchema_K2.h"
 #include "EdGraphUtilities.h"
 #include "HAL/FileManager.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "KismetCompiler.h"
+#include "K2Node_CallFunction.h"
+#include "K2Node_IfThenElse.h"
+#include "K2Node_Knot.h"
+#include "K2Node_VariableSet.h"
 #include "Misc/AssertionMacros.h"
 #include "Misc/FeedbackContext.h"
 #include "Misc/PackageName.h"
@@ -21,6 +26,68 @@
 
 namespace CasinoSlotKeypadMigration
 {
+bool CloseUnconfirmedZeroAmount(UWidgetBlueprint* Blueprint, FString& OutError)
+{
+    UEdGraph* ConfirmGraph = nullptr;
+    for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+        if (Graph && Graph->GetFName() == TEXT("ConfirmBetAmount")) ConfirmGraph = Graph;
+    if (!ConfirmGraph)
+    { OutError = TEXT("Slot confirmation graph is missing."); return false; }
+
+    UK2Node_VariableSet* Unconfirmed = nullptr;
+    UK2Node_CallFunction* HideKeypad = nullptr;
+    for (UEdGraphNode* Node : ConfirmGraph->Nodes)
+    {
+        if (UK2Node_IfThenElse* Branch = Cast<UK2Node_IfThenElse>(Node))
+        {
+            UEdGraphPin* Rejected = Branch->GetElsePin();
+            if (Rejected && Rejected->LinkedTo.Num() == 1)
+            {
+                UEdGraphNode* RejectedNode = Rejected->LinkedTo[0]->GetOwningNode();
+                TSet<UEdGraphNode*> Visited;
+                while (UK2Node_Knot* Reroute = Cast<UK2Node_Knot>(RejectedNode))
+                {
+                    UEdGraphPin* Output = Reroute->GetOutputPin();
+                    if (Visited.Contains(Reroute) || !Output || Output->LinkedTo.Num() != 1)
+                    { RejectedNode = nullptr; break; }
+                    Visited.Add(Reroute);
+                    RejectedNode = Output->LinkedTo[0]->GetOwningNode();
+                }
+                UK2Node_VariableSet* Setter = Cast<UK2Node_VariableSet>(RejectedNode);
+                if (Setter && Setter->VariableReference.GetMemberName() == TEXT("bHasConfirmedBet"))
+                {
+                    const UEdGraphPin* Value = Setter->FindPin(TEXT("bHasConfirmedBet"), EGPD_Input);
+                    if (Value && Value->LinkedTo.IsEmpty() && Value->DefaultValue == TEXT("false"))
+                        Unconfirmed = Setter;
+                }
+            }
+        }
+        if (UK2Node_CallFunction* Call = Cast<UK2Node_CallFunction>(Node))
+            if (Call->FunctionReference.GetMemberName() == TEXT("SetVisibility"))
+                if (const UEdGraphPin* Visibility = Call->FindPin(TEXT("InVisibility")))
+                    if (Visibility->DefaultValue == TEXT("Hidden") || Visibility->DefaultValue == TEXT("ESlateVisibility::Hidden"))
+                        HideKeypad = Call;
+    }
+    UEdGraphPin* Then = Unconfirmed ? Unconfirmed->FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output) : nullptr;
+    UEdGraphPin* Hide = HideKeypad ? HideKeypad->FindPin(UEdGraphSchema_K2::PN_Execute, EGPD_Input) : nullptr;
+    if (!Then || !Hide)
+    { OutError = TEXT("Slot confirmation no longer has the expected rejection and hide nodes."); return false; }
+    if (Then->LinkedTo.Num() == 1 && Then->LinkedTo[0] == Hide) return true;
+    if (!Then->LinkedTo.IsEmpty())
+    { OutError = TEXT("Slot rejection already has another action; it was not replaced."); return false; }
+
+    ConfirmGraph->Modify();
+    Unconfirmed->Modify();
+    HideKeypad->Modify();
+    const TArray<UEdGraphPin*> ExistingCloseLinks = Hide->LinkedTo;
+    if (!ConfirmGraph->GetSchema()->TryCreateConnection(Then, Hide))
+    { OutError = TEXT("Could not connect zero-amount rejection to the existing keypad close action."); return false; }
+    for (UEdGraphPin* Original : ExistingCloseLinks)
+        if (!Hide->LinkedTo.Contains(Original) || !Original->LinkedTo.Contains(Hide))
+        { OutError = TEXT("An existing positive-amount close connection changed; asset was not saved."); return false; }
+    return true;
+}
+
 FString ExportProperty(UObject* Object, FName Name)
 {
     FString Value;
@@ -111,6 +178,11 @@ bool MigrateCasinoSlotKeypad(FString& OutError)
     if (!IFileManager::Get().MakeDirectory(*BackupDirectory, true) ||
         IFileManager::Get().Copy(*(BackupDirectory / FPaths::GetCleanFilename(Source)), *Source) != COPY_OK)
     { OutError = TEXT("Could not back up slot controls before reparenting."); return false; }
+
+    // Rejecting a zero bet still leaves it unconfirmed, but must also dismiss
+    // the keypad. Both OK and Enter already use this same confirmation graph.
+    Blueprint->Modify();
+    if (!CloseUnconfirmedZeroAmount(Blueprint, OutError)) return false;
 
     const FString GraphsBefore = GraphSnapshot(Blueprint);
     const FString WidgetsBefore = WidgetSnapshot(Blueprint);
