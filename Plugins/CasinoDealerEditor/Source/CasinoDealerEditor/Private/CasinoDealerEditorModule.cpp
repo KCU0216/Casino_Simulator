@@ -1,6 +1,8 @@
 #include "Modules/ModuleManager.h"
 #include "DealerVisualPreview.h"
 #include "CasinoMenuVisualPreview.h"
+#include "CasinoBlackjackUIVisualPreview.h"
+#include "CasinoShopUIVisualPreview.h"
 
 class FCasinoDealerEditorModule : public IModuleInterface
 {
@@ -9,9 +11,13 @@ public:
     {
         RegisterDealerVisualPreviewCallbacks();
         RegisterCasinoMenuPreviewCommands();
+        RegisterCasinoBlackjackPreviewCommands();
+        RegisterCasinoShopPreviewCommands();
     }
     virtual void ShutdownModule() override
     {
+        UnregisterCasinoShopPreviewCommands();
+        UnregisterCasinoBlackjackPreviewCommands();
         UnregisterCasinoMenuPreviewCommands();
         UnregisterDealerVisualPreviewCallbacks();
     }

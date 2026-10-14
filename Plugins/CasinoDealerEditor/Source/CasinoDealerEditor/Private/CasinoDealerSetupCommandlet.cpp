@@ -6,6 +6,9 @@
 #include "CasinoMenuLayoutInspector.h"
 #include "CasinoMenuLayoutMigration.h"
 #include "CasinoRoomWidgetMigration.h"
+#include "CasinoBlackjackUILayoutMigration.h"
+#include "CasinoShopUILayoutMigration.h"
+#include "BlackjackCardSoundSetup.h"
 #include "Engine/Blueprint.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "Engine/SCS_Node.h"
@@ -169,6 +172,50 @@ int32 UCasinoDealerSetupCommandlet::Main(const FString& Params)
             return 1;
         }
         UE_LOG(LogCasinoDealerSetup, Display, TEXT("Room dialog migration completed."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("PauseUI"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoPauseMenuLayout(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("In-game menu layout update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("In-game menu layout update completed; navigation and actions preserved."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("BlackjackUI"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoBlackjackUILayout(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Blackjack UI update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Blackjack UI update completed."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("ShopUI"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoShopLayouts(Error) || !InspectCasinoMenuWidgets(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Shop UI update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Shop UI update completed."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("CardSound"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!SetupBlackjackCardPlacementSound(Error) || !ValidateBlackjackCardPlacementSound(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Card placement sound setup failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Card placement sound setup completed."));
         return 0;
     }
     if (Mode.Equals(TEXT("Build"), ESearchCase::IgnoreCase))

@@ -18,6 +18,9 @@ class CASINO_SIMULATOR_API UBlackjackUIBlueprintLibrary : public UBlueprintFunct
 	GENERATED_BODY()
 
 public:
+	/** Applies blackjack styling to this HUD's keypad instance without changing the shared widget asset. */
+	static void PrepareBetKeypadAppearance(UUserWidget* BlackjackHUD);
+
 	/** Rebuilds the other occupied seats using the HUD's existing RenderCards function. */
 	UFUNCTION(BlueprintCallable, Category="Blackjack|UI")
 	static bool RefreshOtherPlayers(UUserWidget* BlackjackHUD, ABlackjackTableActor* Table,

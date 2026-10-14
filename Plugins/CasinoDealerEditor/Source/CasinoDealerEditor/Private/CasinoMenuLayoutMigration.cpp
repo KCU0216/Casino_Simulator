@@ -1,4 +1,5 @@
 #include "CasinoMenuLayoutMigration.h"
+#include "CasinoWidgetStyle.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Animation/WidgetAnimation.h"
@@ -393,8 +394,16 @@ bool RoomEntry(UWidgetBlueprint* Blueprint, FString& Error)
 
 bool Save(UWidgetBlueprint* Blueprint, FString& Error)
 {
-    bool Allowed = Blueprint->GetPathName() == TEXT("/Game/KCU/WBP_Settings.WBP_Settings");
+    bool Allowed = Blueprint->GetPathName() == TEXT("/Game/KCU/WBP_Settings.WBP_Settings")
+        || Blueprint->GetPathName() == TEXT("/Game/KCU/WBP_PauseMenu.WBP_PauseMenu");
     for (const TCHAR* Path : AssetPaths) if (Blueprint->GetPathName() == Path) Allowed = true;
+    for (const TCHAR* Path : {
+        TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackHUD.WBP_BlackjackHUD"),
+        TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackCardUI.WBP_BlackjackCardUI"),
+        TEXT("/Game/Store/UI/WBP_StoreMain.WBP_StoreMain"),
+        TEXT("/Game/Store/UI/WBP_StoreItemCard.WBP_StoreItemCard"),
+        TEXT("/Game/Store/UI/WBP_StoreItemEntry.WBP_StoreItemEntry")})
+        if (Blueprint->GetPathName() == Path) Allowed = true;
     if (!Allowed) { Error = TEXT("Attempt to save an asset outside menu migration scope."); return false; }
     const FString Filename = FPackageName::LongPackageNameToFilename(Blueprint->GetOutermost()->GetName(), FPackageName::GetAssetPackageExtension());
     FSavePackageArgs Args;
@@ -715,6 +724,41 @@ bool SettingsLayout(UWidgetBlueprint* Blueprint, FString& Error)
     }
     return true;
 }
+
+bool PauseMenuLayout(UWidgetBlueprint* Blueprint, FString& Error)
+{
+    UCanvasPanel* Root = Find<UCanvasPanel>(Blueprint, TEXT("CanvasPanel_11"));
+    UCanvasPanel* Menu = Find<UCanvasPanel>(Blueprint, TEXT("CanvasPanel_53"));
+    UWidgetSwitcher* Switcher = Find<UWidgetSwitcher>(Blueprint, TEXT("WidgetSwitcher_0"));
+    UVerticalBox* Actions = Find<UVerticalBox>(Blueprint, TEXT("VerticalBox_0"));
+    UButton* Continue = Find<UButton>(Blueprint, TEXT("Button_Continue"));
+    UWidget* Settings = Find<UWidget>(Blueprint, TEXT("WBP_Settings"));
+    if (!Root || !Menu || !Switcher || !Actions || !Continue || !Settings
+        || Switcher->GetChildrenCount() != 2 || Switcher->GetChildAt(0) != Menu || Switcher->GetChildAt(1) != Settings)
+    { Error = TEXT("In-game menu layout contract differs from the inspected version."); return false; }
+    Place(Root, Switcher, FAnchors(0.f, 0.f, 1.f, 1.f));
+    // Only the background brushes are translucent; controls remain legible.
+    UBorder* Shade = Decoration<UBorder>(Blueprint, TEXT("CasinoPauseBackdrop"));
+    FLinearColor ShadeColor = Background; ShadeColor.A = .16f;
+    Shade->SetBrush(Brush(ShadeColor, 0.f));
+    Shade->SetVisibility(ESlateVisibility::HitTestInvisible);
+    Place(Root, Shade, FAnchors(0.f, 0.f, 1.f, 1.f), FMargin(), FVector2D::ZeroVector, -100);
+    UBorder* Frame = Decoration<UBorder>(Blueprint, TEXT("CasinoPauseFrame"));
+    FLinearColor FrameColor = Panel; FrameColor.A = .78f;
+    Frame->SetBrush(Brush(FrameColor, 10.f, Gold * .5f));
+    Frame->SetVisibility(ESlateVisibility::HitTestInvisible);
+    Place(Menu, Frame, FAnchors(.04f, .10f, .34f, .90f), FMargin(), FVector2D::ZeroVector, -1);
+    Label(Blueprint, Menu, TEXT("CasinoPauseTitle"), TEXT("GAME MENU"),
+        FAnchors(.065f, .16f, .315f, .16f), FMargin(0.f, 0.f, 0.f, 56.f), 36.f, Gold);
+    Label(Blueprint, Menu, TEXT("CasinoPauseSubtitle"), TEXT("게임 메뉴"),
+        FAnchors(.065f, .23f, .315f, .23f), FMargin(0.f, 0.f, 0.f, 30.f), 18.f, Muted);
+    MenuButtons(Actions);
+    Place(Menu, Actions, FAnchors(.065f, .34f, .315f, .80f));
+    ButtonStyle(Continue, true);
+    Label(Blueprint, Menu, TEXT("CasinoPauseHint"), TEXT("Tab · 메뉴 닫기"),
+        FAnchors(.065f, .84f, .315f, .84f), FMargin(0.f, 0.f, 0.f, 32.f), 17.f, Muted);
+    return true;
+}
 }
 
 bool MigrateCasinoMenuLayouts(FString& OutError)
@@ -792,4 +836,120 @@ bool MigrateCasinoSettingsLayout(FString& OutError)
     if (FDebug::GetNumEnsureFailures() != EnsuresBefore || (GWarn && GWarn->GetNumErrors() > ErrorsBefore))
     { OutError = TEXT("Settings migration logged an engine error; asset was not saved."); return false; }
     return Save(Blueprint, OutError);
+}
+
+bool MigrateCasinoPauseMenuLayout(FString& OutError)
+{
+    OutError.Reset();
+    UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, TEXT("/Game/KCU/WBP_PauseMenu.WBP_PauseMenu"));
+    if (!Blueprint || !Blueprint->WidgetTree || !Blueprint->GeneratedClass)
+    { OutError = TEXT("Could not load in-game menu WidgetBlueprint."); return false; }
+    const SIZE_T EnsuresBefore = FDebug::GetNumEnsureFailures();
+    const int32 ErrorsBefore = GWarn ? GWarn->GetNumErrors() : 0;
+    const FMenuContract Before = CaptureContract(Blueprint);
+    const FString GraphsBefore = SettingsGraphSnapshot(Blueprint);
+    const FString DefaultsBefore = SettingsDefaultsSnapshot(Blueprint);
+    const TMap<FName, FGuid> GuidsBefore = Blueprint->WidgetVariableNameToGuidMap;
+    Blueprint->Modify(); Blueprint->WidgetTree->Modify();
+    Restyle(Blueprint);
+    if (!PauseMenuLayout(Blueprint, OutError) || !RegisterSourceWidgetGuids(Blueprint, OutError)) return false;
+    const auto Validate = [&]()
+    {
+        if (!ValidateContract(Blueprint, Before, OutError)) return false;
+        if (SettingsGraphSnapshot(Blueprint) != GraphsBefore || SettingsDefaultsSnapshot(Blueprint) != DefaultsBefore)
+        { OutError = TEXT("In-game menu logic or control defaults changed; asset was not saved."); return false; }
+        for (const TPair<FName, FGuid>& Entry : GuidsBefore)
+            if (Blueprint->WidgetVariableNameToGuidMap.FindRef(Entry.Key) != Entry.Value)
+            { OutError = TEXT("Existing in-game menu widget GUID changed: ") + Entry.Key.ToString(); return false; }
+        return true;
+    };
+    if (!Validate()) return false;
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FCompilerResultsLog Results;
+    FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection, &Results);
+    if (Results.NumErrors > 0 || Blueprint->Status != BS_UpToDate)
+    { OutError = TEXT("In-game menu Blueprint did not compile cleanly."); return false; }
+    if (!Validate()) return false;
+    if (FDebug::GetNumEnsureFailures() != EnsuresBefore || (GWarn && GWarn->GetNumErrors() > ErrorsBefore))
+    { OutError = TEXT("In-game menu migration logged an engine error; asset was not saved."); return false; }
+    return Save(Blueprint, OutError);
+}
+
+bool MigrateCasinoPresentationWidget(const TCHAR* AssetPath,
+    TFunctionRef<bool(UWidgetBlueprint*, FString&)> ApplyLayout, FString& OutError,
+    const TSet<FName>& AddedBindingTargets)
+{
+    OutError.Reset();
+    bool Allowed = false;
+    for (const TCHAR* Path : {
+        TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackHUD.WBP_BlackjackHUD"),
+        TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackCardUI.WBP_BlackjackCardUI"),
+        TEXT("/Game/Store/UI/WBP_StoreMain.WBP_StoreMain"),
+        TEXT("/Game/Store/UI/WBP_StoreItemCard.WBP_StoreItemCard"),
+        TEXT("/Game/Store/UI/WBP_StoreItemEntry.WBP_StoreItemEntry")})
+        if (FString(AssetPath) == Path) Allowed = true;
+    if (!Allowed) { OutError = TEXT("Presentation asset is outside the requested scope."); return false; }
+    UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, AssetPath);
+    if (!Blueprint || !Blueprint->WidgetTree || !Blueprint->GeneratedClass)
+    { OutError = TEXT("Could not load presentation WidgetBlueprint: ") + FString(AssetPath); return false; }
+    const SIZE_T EnsuresBefore = FDebug::GetNumEnsureFailures();
+    const int32 ErrorsBefore = GWarn ? GWarn->GetNumErrors() : 0;
+    const FMenuContract Before = CaptureContract(Blueprint);
+    const FString GraphsBefore = SettingsGraphSnapshot(Blueprint);
+    const FString DefaultsBefore = SettingsDefaultsSnapshot(Blueprint);
+    const TMap<FName, FGuid> GuidsBefore = Blueprint->WidgetVariableNameToGuidMap;
+    Blueprint->Modify(); Blueprint->WidgetTree->Modify();
+    if (!ApplyLayout(Blueprint, OutError) || !RegisterSourceWidgetGuids(Blueprint, OutError)) return false;
+    const auto Validate = [&]()
+    {
+        // New decorative labels may bind to existing item data. Every original
+        // binding must still serialize exactly as it did before this operation.
+        TArray<FDelegateEditorBinding> ExistingBindings;
+        for (const FDelegateEditorBinding& Binding : Blueprint->Bindings)
+        {
+            if (!Before.Widgets.Contains(FName(Binding.ObjectName)))
+            {
+                if (!AddedBindingTargets.Contains(FName(Binding.ObjectName)))
+                { OutError = TEXT("Unexpected new presentation binding: ") + Binding.ObjectName; return false; }
+            }
+            else ExistingBindings.Add(Binding);
+        }
+        FString SerializedBindings;
+        if (const FArrayProperty* Property = FindFProperty<FArrayProperty>(Blueprint->GetClass(), TEXT("Bindings")))
+            Property->ExportTextItem_Direct(SerializedBindings, &ExistingBindings, nullptr, Blueprint, PPF_None);
+        if (SerializedBindings != Before.Bindings)
+        { OutError = TEXT("Original presentation bindings changed."); return false; }
+        FMenuContract Expected = Before;
+        Expected.Bindings = BindingContract(Blueprint);
+        if (!ValidateContract(Blueprint, Expected, OutError)) return false;
+        if (SettingsGraphSnapshot(Blueprint) != GraphsBefore || SettingsDefaultsSnapshot(Blueprint) != DefaultsBefore)
+        { OutError = TEXT("Presentation graph wiring or control defaults changed; asset was not saved."); return false; }
+        for (const TPair<FName, FGuid>& Entry : GuidsBefore)
+            if (Blueprint->WidgetVariableNameToGuidMap.FindRef(Entry.Key) != Entry.Value)
+            { OutError = TEXT("Existing presentation widget GUID changed: ") + Entry.Key.ToString(); return false; }
+        return true;
+    };
+    if (!Validate()) return false;
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FCompilerResultsLog Results;
+    FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection, &Results);
+    if (Results.NumErrors > 0 || Blueprint->Status != BS_UpToDate)
+    { OutError = TEXT("Presentation Blueprint did not compile cleanly: ") + FString(AssetPath); return false; }
+    if (!Validate()) return false;
+    if (FDebug::GetNumEnsureFailures() != EnsuresBefore || (GWarn && GWarn->GetNumErrors() > ErrorsBefore))
+    { OutError = TEXT("Presentation migration logged an engine error; asset was not saved."); return false; }
+    return Save(Blueprint, OutError);
+}
+
+namespace CasinoWidgetStyle
+{
+FSlateBrush Brush(FLinearColor Color, float Radius, FLinearColor Outline) { return ::Brush(Color, Radius, Outline); }
+void TextStyle(UTextBlock* Text, float Size, FLinearColor Color) { ::TextStyle(Text, Size, Color); }
+void ButtonStyle(UButton* Button, bool Primary) { ::ButtonStyle(Button, Primary); }
+UCanvasPanelSlot* Place(UCanvasPanel* Canvas, UWidget* Widget, const FAnchors& Anchors,
+    const FMargin& Offsets, FVector2D Alignment, int32 Order, bool Auto)
+{ return ::Place(Canvas, Widget, Anchors, Offsets, Alignment, Order, Auto); }
+void Label(UWidgetBlueprint* Blueprint, UCanvasPanel* Canvas, const TCHAR* Name, const TCHAR* Value,
+    FAnchors Anchors, FMargin Offsets, float Size, FLinearColor Color)
+{ ::Label(Blueprint, Canvas, Name, Value, Anchors, Offsets, Size, Color); }
 }

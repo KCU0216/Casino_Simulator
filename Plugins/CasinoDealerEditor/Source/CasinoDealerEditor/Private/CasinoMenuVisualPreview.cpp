@@ -28,6 +28,7 @@
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 #include "UI/CasinoRoomDialogWidget.h"
+#include "UI/PauseMenuWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCasinoMenuPreview, Log, All);
 
@@ -35,11 +36,13 @@ namespace
 {
 IConsoleCommand* PreviewCommand = nullptr;
 IConsoleCommand* SettingsPreviewCommand = nullptr;
+IConsoleCommand* PausePreviewCommand = nullptr;
 const TCHAR* MainClassPath = TEXT("/Game/Blackjack/Level/WBP_MainMenu.WBP_MainMenu_C");
 const TCHAR* LobbyClassPath = TEXT("/Game/Blackjack/Level/WBP_LobbyUI.WBP_LobbyUI_C");
 const TCHAR* PlayerClassPath = TEXT("/Game/Blackjack/Level/WBP_LobbyPlayerEntry.WBP_LobbyPlayerEntry_C");
 const TCHAR* RoomClassPath = TEXT("/Game/Blackjack/Level/WBP_RoomEntry.WBP_RoomEntry_C");
 const TCHAR* SettingsClassPath = TEXT("/Game/KCU/WBP_Settings.WBP_Settings_C");
+const TCHAR* PauseClassPath = TEXT("/Game/KCU/WBP_PauseMenu.WBP_PauseMenu_C");
 
 void ClearPreviewDelegates(UWidget* Widget)
 {
@@ -197,7 +200,7 @@ bool AddSettingsSamples(UUserWidget* Settings, FString& Error)
 }
 
 bool RenderOne(FWidgetRenderer& Renderer, UUserWidget* Widget, const FIntPoint& Size,
-    const FString& Filename, FString& Error, bool bCheckMenuPalette = true)
+    const FString& Filename, FString& Error, bool bCheckMenuPalette = true, bool bCheckTranslucency = false)
 {
     const float Scale = FMath::Max(.01f, GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Size));
     const FVector2D DrawSize(Size.X, Size.Y);
@@ -205,13 +208,51 @@ bool RenderOne(FWidgetRenderer& Renderer, UUserWidget* Widget, const FIntPoint& 
     // to sRGB below: UE's PNG compressor preserves linear BGRA8 bytes as-is.
     TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(DrawSize, TF_Bilinear, false));
     if (!Target.IsValid()) { Error = TEXT("Could not create menu preview render target."); return false; }
+    if (bCheckTranslucency)
+    {
+        // With a 16% dark backdrop, BGRA8 rounds the premultiplied red/green
+        // channels to zero. Retain float precision until the straight-alpha PNG
+        // conversion so the saved overlay preserves the actual navy palette.
+        Target->InitCustomFormat(Size.X, Size.Y, PF_FloatRGBA, true);
+        Target->UpdateResourceImmediate(true);
+    }
     Renderer.DrawWidget(Target.Get(), Widget->TakeWidget(), Scale, DrawSize, 0.f, false);
     FlushRenderingCommands();
     FImage Image;
     if (!FImageUtils::GetRenderTargetImage(Target.Get(), Image))
     { Error = TEXT("Could not read menu preview render target: ") + Filename; return false; }
     FImage PngImage;
-    Image.CopyTo(PngImage, ERawImageFormat::BGRA8, EGammaSpace::sRGB);
+    if (bCheckTranslucency)
+    {
+        // Slate blends against a clear transparent target, producing premultiplied
+        // RGB. PNG stores straight alpha: undo that blend in linear space so a
+        // composited preview has the same appearance as the in-game overlay.
+        FImage LinearImage;
+        Image.CopyTo(LinearImage, ERawImageFormat::RGBA32F, EGammaSpace::Linear);
+        for (FLinearColor& Pixel : LinearImage.AsRGBA32F())
+        {
+            if (Pixel.A > UE_SMALL_NUMBER)
+            { Pixel.R /= Pixel.A; Pixel.G /= Pixel.A; Pixel.B /= Pixel.A; }
+            else Pixel = FLinearColor::Transparent;
+        }
+        LinearImage.CopyTo(PngImage, ERawImageFormat::BGRA8, EGammaSpace::sRGB);
+        const FColor Corner = PngImage.AsBGRA8()[20 * Size.X + 20];
+        if (Corner.A > 64)
+        { Error = TEXT("Pause preview has an opaque full-screen backdrop: ") + Filename; return false; }
+        int64 ClearPixels = 0;
+        int64 TranslucentPixels = 0;
+        for (const FColor& Pixel : PngImage.AsBGRA8())
+        {
+            if (Pixel.A <= 64) ++ClearPixels;
+            if (Pixel.A > 64 && Pixel.A < 250) ++TranslucentPixels;
+        }
+        const int64 PixelCount = int64(Size.X) * Size.Y;
+        if (ClearPixels < PixelCount / 4 || TranslucentPixels < PixelCount / 30)
+        { Error = TEXT("Pause preview does not retain gameplay visibility and a translucent panel: ") + Filename; return false; }
+        UE_LOG(LogCasinoMenuPreview, Display, TEXT("Alpha check %s: exterior=%d; gameplay-visible=%.1f%%; translucent=%.1f%%"),
+            *FPaths::GetBaseFilename(Filename), Corner.A, 100.0 * ClearPixels / PixelCount, 100.0 * TranslucentPixels / PixelCount);
+    }
+    else Image.CopyTo(PngImage, ERawImageFormat::BGRA8, EGammaSpace::sRGB);
     const FColor BackgroundPixel = PngImage.AsBGRA8()[20 * Size.X + 20];
     const FColor ExpectedBackground = FLinearColor(.007f, .011f, .019f, 1.f).ToFColorSRGB();
     const auto Matches = [](FColor Actual, FColor Expected)
@@ -351,6 +392,58 @@ bool RenderCasinoSettingsPreviews(FString& OutError)
     return true;
 }
 
+bool RenderCasinoPausePreviews(FString& OutError)
+{
+    OutError.Reset();
+    if (!IsInGameThread() || IsRunningCommandlet() || !GIsEditor || !FApp::CanEverRender()
+        || !FSlateApplication::IsInitialized() || !GDynamicRHI || GDynamicRHI->GetInterfaceType() == ERHIInterfaceType::Null)
+    { OutError = TEXT("Pause previews require the running editor with Slate and a rendering RHI."); return false; }
+    const FString SavedRoot = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir());
+    const FString Directory = FPaths::ConvertRelativePathToFull(SavedRoot / TEXT("CasinoDealerSetup/PausePreviews"));
+    if (!Directory.StartsWith(SavedRoot, ESearchCase::IgnoreCase) || !IFileManager::Get().MakeDirectory(*Directory, true))
+    { OutError = TEXT("Pause preview output must stay within the project Saved directory."); return false; }
+    FWidgetRenderer* Renderer = new FWidgetRenderer(false, true);
+    ON_SCOPE_EXIT { FlushRenderingCommands(); BeginCleanup(Renderer); };
+    if (!Renderer->GetSlateRenderer()) { OutError = TEXT("Slate widget renderer is unavailable."); return false; }
+    const FIntPoint Sizes[] = { FIntPoint(1920, 1080), FIntPoint(2560, 1080), FIntPoint(1440, 1080), FIntPoint(1280, 720) };
+    const TCHAR* Names[] = { TEXT("PauseMenu"), TEXT("SettingsMenu"), TEXT("Graphics"), TEXT("Audio"), TEXT("Controls") };
+    FString Manifest = TEXT("Actual WBP_PauseMenu design-mode previews, with its real embedded settings instance. All dynamic delegates and nested widget delegates are cleared before injecting transient sample selections. The presentation-only native helper sets in-game translucency. No Construct, settings apply/reset, subsystem, travel, quit, or config-save calls are made. Transparent PNGs retain their alpha; no gameplay background is fabricated.\n");
+    int32 Rendered = 0;
+    for (const FIntPoint& Size : Sizes)
+    {
+        for (int32 Variant = 0; Variant < UE_ARRAY_COUNT(Names); ++Variant)
+        {
+            TStrongObjectPtr<UUserWidget> Widget(CreatePreview(PauseClassPath, OutError));
+            UPauseMenuWidget* Pause = Widget.IsValid() ? Cast<UPauseMenuWidget>(Widget.Get()) : nullptr;
+            UUserWidget* Settings = Pause ? Find<UUserWidget>(Pause, TEXT("WBP_Settings")) : nullptr;
+            UWidgetSwitcher* Switcher = Pause ? Find<UWidgetSwitcher>(Pause, TEXT("WidgetSwitcher_0")) : nullptr;
+            UWidget* Menu = Pause ? Find<UWidget>(Pause, TEXT("CanvasPanel_53")) : nullptr;
+            if (!Pause || !Settings || !Switcher || Switcher->GetChildrenCount() != 2
+                || Switcher->GetChildAt(0) != Menu || Switcher->GetChildAt(1) != Settings)
+            { OutError = TEXT("Pause preview has no native parent or expected settings/menu switcher."); return false; }
+            Pause->ApplyInGameSettingsAppearance();
+            if (Variant == 0)
+            {
+                Switcher->SetActiveWidgetIndex(0);
+            }
+            else
+            {
+                if (!AddSettingsSamples(Settings, OutError) || !SelectSettingsPage(Settings, Variant - 1, OutError)) return false;
+                Settings->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+                Switcher->SetActiveWidget(Settings);
+            }
+            const FString Filename = Directory / FString::Printf(TEXT("%s_%dx%d.png"), Names[Variant], Size.X, Size.Y);
+            if (!RenderOne(*Renderer, Pause, Size, Filename, OutError, false, true)) return false;
+            ++Rendered;
+            Manifest += Filename + TEXT(" alpha checked\n");
+        }
+    }
+    if (!FFileHelper::SaveStringToFile(Manifest, *(Directory / TEXT("preview-info.txt")), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+    { OutError = TEXT("Could not write pause preview manifest."); return false; }
+    UE_LOG(LogCasinoMenuPreview, Display, TEXT("Completed %d pause previews: %s"), Rendered, *Directory);
+    return true;
+}
+
 void RegisterCasinoMenuPreviewCommands()
 {
     if (!PreviewCommand)
@@ -373,6 +466,16 @@ void RegisterCasinoMenuPreviewCommands()
                 if (!RenderCasinoSettingsPreviews(Error)) UE_LOG(LogCasinoMenuPreview, Error, TEXT("Settings previews failed: %s"), *Error);
             }), ECVF_Default);
     }
+    if (!PausePreviewCommand)
+    {
+        PausePreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(TEXT("CasinoPause.RenderPreviews"),
+            TEXT("Render translucent Tab-menu and embedded settings previews into Saved/CasinoDealerSetup/PausePreviews."),
+            FConsoleCommandDelegate::CreateLambda([]()
+            {
+                FString Error;
+                if (!RenderCasinoPausePreviews(Error)) UE_LOG(LogCasinoMenuPreview, Error, TEXT("Pause previews failed: %s"), *Error);
+            }), ECVF_Default);
+    }
 }
 
 void UnregisterCasinoMenuPreviewCommands()
@@ -386,5 +489,10 @@ void UnregisterCasinoMenuPreviewCommands()
     {
         IConsoleManager::Get().UnregisterConsoleObject(SettingsPreviewCommand, false);
         SettingsPreviewCommand = nullptr;
+    }
+    if (PausePreviewCommand)
+    {
+        IConsoleManager::Get().UnregisterConsoleObject(PausePreviewCommand, false);
+        PausePreviewCommand = nullptr;
     }
 }

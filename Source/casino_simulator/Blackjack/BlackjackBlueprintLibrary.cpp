@@ -3,6 +3,24 @@
 #include "Blackjack/BlackjackBlueprintLibrary.h"
 
 #include "Engine/DataTable.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "Sound/CasinoSoundSubsystem.h"
+
+void UBlackjackBlueprintLibrary::PlayCardPlacementSound(AActor* CardActor)
+{
+	UWorld* World = IsValid(CardActor) ? CardActor->GetWorld() : nullptr;
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	UGameInstance* GameInstance = World->GetGameInstance();
+	if (UCasinoSoundSubsystem* Sound = GameInstance ? GameInstance->GetSubsystem<UCasinoSoundSubsystem>() : nullptr)
+	{
+		Sound->PlaySFX(TEXT("BlackjackCardPlace"), true, CardActor->GetActorLocation());
+	}
+}
 
 FName UBlackjackBlueprintLibrary::GetBlackjackCardVisualRowName(EBlackjackDeckStyle DeckStyle, const FBlackjackCard& Card)
 {

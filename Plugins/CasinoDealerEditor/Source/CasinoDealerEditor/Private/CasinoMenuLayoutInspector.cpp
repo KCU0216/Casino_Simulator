@@ -157,7 +157,14 @@ bool InspectCasinoMenuWidgets(FString& OutError)
         TEXT("/Game/Blackjack/Level/WBP_LobbyUI.WBP_LobbyUI"),
         TEXT("/Game/Blackjack/Level/WBP_LobbyPlayerEntry.WBP_LobbyPlayerEntry"),
         TEXT("/Game/Blackjack/Level/WBP_RoomEntry.WBP_RoomEntry"),
-        TEXT("/Game/KCU/WBP_Settings.WBP_Settings")
+        TEXT("/Game/KCU/WBP_Settings.WBP_Settings"),
+        TEXT("/Game/KCU/WBP_PauseMenu.WBP_PauseMenu"),
+        TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackHUD.WBP_BlackjackHUD"),
+        TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackCardUI.WBP_BlackjackCardUI"),
+        TEXT("/Game/Store/UI/WBP_StoreMain.WBP_StoreMain"),
+        TEXT("/Game/Store/UI/WBP_StoreItemCard.WBP_StoreItemCard"),
+        TEXT("/Game/Store/UI/WBP_StoreItemEntry.WBP_StoreItemEntry"),
+        TEXT("/Game/1_BluePrint/Widget/WBP_Calculate.WBP_Calculate")
     };
     for (const TCHAR* Path : Paths)
     {

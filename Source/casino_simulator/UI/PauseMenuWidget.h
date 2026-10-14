@@ -6,15 +6,17 @@
 #include "UI/CasinoManagedWidget.h"
 #include "PauseMenuWidget.generated.h"
 
-/**
- *  Native parent for the inventory UI (e.g. WBP_Inventory). Empty for now - reparent the
- *  Blueprint to this class and add C++ functionality here as it's needed.
- */
+/** In-game menu parent; keeps its embedded settings translucent over gameplay. */
 UCLASS(abstract)
 class CASINO_SIMULATOR_API UPauseMenuWidget : public UCasinoManagedWidget
 {
 	GENERATED_BODY()
 
 public:
+	/** Presentation only, also safe for transient designer previews. */
+	void ApplyInGameSettingsAppearance();
 
+protected:
+	virtual void NativePreConstruct() override;
+	virtual void NativeConstruct() override;
 };

@@ -8,6 +8,7 @@
 #include "BlackjackBlueprintLibrary.generated.h"
 
 class UDataTable;
+class AActor;
 
 UCLASS()
 class CASINO_SIMULATOR_API UBlackjackBlueprintLibrary : public UBlueprintFunctionLibrary
@@ -15,6 +16,10 @@ class CASINO_SIMULATOR_API UBlackjackBlueprintLibrary : public UBlueprintFunctio
 	GENERATED_BODY()
 
 public:
+	/** Local spatial feedback after a cosmetic card's flight finishes; never sends another network event. */
+	UFUNCTION(BlueprintCallable, Category="Blackjack|Sound")
+	static void PlayCardPlacementSound(AActor* CardActor);
+
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Blackjack|Visual")
 	static FName GetBlackjackCardVisualRowName(EBlackjackDeckStyle DeckStyle, const FBlackjackCard& Card);
 
