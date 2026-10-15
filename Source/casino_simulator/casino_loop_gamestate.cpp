@@ -56,6 +56,19 @@ void ACasinoLoopGameState::OnRep_MatchLoadingStatus()
     OnMatchLoadingChanged.Broadcast();
 }
 
+void ACasinoLoopGameState::SetRunResults(const FCasinoRunResults& NewResults)
+{
+    if (!HasAuthority()) return;
+    RunResults = NewResults;
+    OnRunResultsChanged.Broadcast();
+    ForceNetUpdate();
+}
+
+void ACasinoLoopGameState::OnRep_RunResults()
+{
+    OnRunResultsChanged.Broadcast();
+}
+
 void ACasinoLoopGameState::GetLifetimeReplicatedProps(
     TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -63,6 +76,7 @@ void ACasinoLoopGameState::GetLifetimeReplicatedProps(
 
     DOREPLIFETIME(ACasinoLoopGameState, LoopStatus);
     DOREPLIFETIME(ACasinoLoopGameState, MatchLoadingStatus);
+    DOREPLIFETIME(ACasinoLoopGameState, RunResults);
 }
 
 float ACasinoLoopGameState::GetRemainingIntroSeconds() const

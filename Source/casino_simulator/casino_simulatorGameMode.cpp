@@ -132,6 +132,10 @@ void Acasino_simulatorGameMode::HandleStartingNewPlayer_Implementation(APlayerCo
         UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Match player %s, pawn %s, mode %s"),
             *GetNameSafe(NewPlayer), *GetNameSafe(NewPlayer ? NewPlayer->GetPawn() : nullptr), *GetClass()->GetName());
     }
+    const auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (bRunHistoryStarted && GS && !GS->RunResults.bFinalized && NewPlayer)
+        if (auto* PS = NewPlayer->GetPlayerState<Acasino_simulatorPlayerState>())
+            RegisterRunPlayer(PS, Cast<Acasino_simulatorCharacter>(NewPlayer->GetPawn()));
 }
 
 void Acasino_simulatorGameMode::BeginPlay()
@@ -356,6 +360,13 @@ void Acasino_simulatorGameMode::FailOnlineLoading(const FText& Reason)
 void Acasino_simulatorGameMode::Logout(AController* Exiting)
 {
     auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (bRunHistoryStarted && GS && !GS->RunResults.bFinalized && Exiting)
+        if (auto* PS = Exiting->GetPlayerState<Acasino_simulatorPlayerState>())
+        {
+            auto& Entry = RegisterRunPlayer(PS, Cast<Acasino_simulatorCharacter>(Exiting->GetPawn()));
+            RefreshRunPlayerBalance(Entry);
+            Entry.Result.bDisconnected = true;
+        }
     if (GS && GS->MatchLoadingStatus.IsPending())
     {
         if (auto* PC = Cast<Acasino_simulatorPlayerController>(Exiting)) DepartedLoadingPlayers.Add(PC);
@@ -397,7 +408,144 @@ void Acasino_simulatorGameMode::StartDayLoop()
         UE_LOG(LogTemp, Error, TEXT("Day loop: no actors tagged %s. Start cancelled."), *PaymentSpawnTag.ToString());
         return;
     }
+    ResetRunResults();
+    RegisterCurrentRunPlayers();
     BeginCasinoDay(FMath::Max(1, StartDay));
+}
+
+Acasino_simulatorGameMode::FRunPlayerHistory& Acasino_simulatorGameMode::RegisterRunPlayer(
+    Acasino_simulatorPlayerState* PS, Acasino_simulatorCharacter* Pawn)
+{
+    check(PS);
+    FRunPlayerHistory* Entry = RunPlayerHistory.FindByPredicate(
+        [PS](const FRunPlayerHistory& Item) { return Item.PlayerState == PS; });
+    if (!Entry)
+    {
+        Entry = &RunPlayerHistory.AddDefaulted_GetRef();
+        Entry->PlayerState = PS;
+        Entry->Result.RunPlayerId = NextRunPlayerId++;
+    }
+    Entry->Result.PlayerName = PS->GetPlayerName();
+    if (Entry->Result.PlayerName.IsEmpty())
+        Entry->Result.PlayerName = FString::Printf(TEXT("Player %d"), Entry->Result.RunPlayerId);
+    if (!Pawn) Pawn = Cast<Acasino_simulatorCharacter>(PS->GetPawn());
+    if (IsValid(Pawn) && !Entry->Result.bDisconnected)
+    {
+        if (Entry->Pawn.Get() != Pawn)
+        {
+            if (auto* PreviousPawn = Entry->Pawn.Get())
+                PreviousPawn->OnDestroyed.RemoveDynamic(this, &ThisClass::HandleRunPawnDestroyed);
+            Entry->Pawn = Pawn;
+            // PlayerController destroys its pawn before calling GameMode::Logout.
+            // Capture its final wallet here while the attribute set is still available.
+            Pawn->OnDestroyed.AddUniqueDynamic(this, &ThisClass::HandleRunPawnDestroyed);
+        }
+        RefreshRunPlayerBalance(*Entry);
+    }
+    return *Entry;
+}
+
+void Acasino_simulatorGameMode::RefreshRunPlayerBalance(FRunPlayerHistory& Entry)
+{
+    const auto* Pawn = Entry.Pawn.Get();
+    if (!Pawn) return;
+    const double Currency = Pawn->GetCurrency();
+    if (!FMath::IsFinite(Currency)) return;
+    Entry.LastKnownBalance = Currency >= static_cast<double>(MAX_int64)
+        ? MAX_int64 : static_cast<int64>(FMath::FloorToDouble(FMath::Max(0.0, Currency)));
+    Entry.bHasKnownBalance = true;
+    Entry.Result.FinalBalance = Entry.LastKnownBalance;
+}
+
+void Acasino_simulatorGameMode::HandleRunPawnDestroyed(AActor* DestroyedPawn)
+{
+    auto* Pawn = Cast<Acasino_simulatorCharacter>(DestroyedPawn);
+    if (!Pawn) return;
+    for (auto& Entry : RunPlayerHistory)
+        if (Entry.Pawn == Pawn)
+        {
+            // A weak pointer's ordinary Get() may already reject a destroying actor.
+            const double Currency = Pawn->GetCurrency();
+            if (FMath::IsFinite(Currency))
+            {
+                Entry.LastKnownBalance = Currency >= static_cast<double>(MAX_int64)
+                    ? MAX_int64 : static_cast<int64>(FMath::FloorToDouble(FMath::Max(0.0, Currency)));
+                Entry.bHasKnownBalance = true;
+                Entry.Result.FinalBalance = Entry.LastKnownBalance;
+            }
+            Entry.Pawn.Reset();
+        }
+}
+
+void Acasino_simulatorGameMode::RegisterCurrentRunPlayers()
+{
+    if (!GetWorld()) return;
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+        if (const auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
+            if (auto* PS = PC->GetPlayerState<Acasino_simulatorPlayerState>())
+                if (!PS->IsInactive() && !PS->IsOnlyASpectator())
+                    RegisterRunPlayer(PS, Cast<Acasino_simulatorCharacter>(PC->GetPawn()));
+}
+
+void Acasino_simulatorGameMode::ResetRunResults()
+{
+    for (const auto& Entry : RunPlayerHistory)
+        if (auto* Pawn = Entry.Pawn.Get())
+            Pawn->OnDestroyed.RemoveDynamic(this, &ThisClass::HandleRunPawnDestroyed);
+    RunPlayerHistory.Reset();
+    RunRecordedDays.Reset();
+    NextRunPlayerId = 1;
+    bRunHistoryStarted = true;
+    if (auto* GS = GetGameState<ACasinoLoopGameState>()) GS->SetRunResults(FCasinoRunResults());
+}
+
+void Acasino_simulatorGameMode::RecordRunPaymentDay(int32 Day)
+{
+    if (RunRecordedDays.Contains(Day)) return;
+    RegisterCurrentRunPlayers();
+    for (const auto& Participant : PaymentParticipants)
+        if (auto* PS = Participant.Get()) RegisterRunPlayer(PS);
+    RunRecordedDays.Add(Day);
+    for (auto& Entry : RunPlayerHistory)
+    {
+        // A departed player has no wallet on later days. Keep a gap in their graph.
+        if (Entry.Result.bDisconnected && Entry.PendingPaymentDay != Day) continue;
+        RefreshRunPlayerBalance(Entry);
+        if (!Entry.bHasKnownBalance) continue;
+        FCasinoRunBalanceSnapshot Snapshot;
+        Snapshot.Day = Day;
+        Snapshot.Balance = Entry.LastKnownBalance;
+        Entry.Result.DailyBalances.Add(Snapshot);
+        Entry.Result.FinalBalance = Snapshot.Balance;
+        Entry.PendingPaymentDay = 0;
+    }
+}
+
+void Acasino_simulatorGameMode::FinalizeRunResults()
+{
+    auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!GS || GS->RunResults.bFinalized) return;
+    RegisterCurrentRunPlayers();
+    FCasinoRunResults Results;
+    Results.bFinalized = true;
+    Results.Days = RunRecordedDays;
+    for (auto& Entry : RunPlayerHistory)
+    {
+        if (!Entry.Result.bDisconnected && Entry.Result.DailyBalances.IsEmpty())
+            RefreshRunPlayerBalance(Entry);
+        Results.Players.Add(Entry.Result);
+    }
+    Results.Players.Sort([](const auto& A, const auto& B)
+    {
+        if (A.FinalBalance != B.FinalBalance) return A.FinalBalance > B.FinalBalance;
+        const int32 NameOrder = A.PlayerName.Compare(B.PlayerName);
+        return NameOrder != 0 ? NameOrder < 0 : A.RunPlayerId < B.RunPlayerId;
+    });
+    for (int32 Index = 0; Index < Results.Players.Num(); ++Index)
+        Results.Players[Index].Rank = Index > 0
+            && Results.Players[Index].FinalBalance == Results.Players[Index - 1].FinalBalance
+            ? Results.Players[Index - 1].Rank : Index + 1;
+    GS->SetRunResults(Results);
 }
 
 double Acasino_simulatorGameMode::CalculateTeamCurrency() const
@@ -445,6 +593,8 @@ void Acasino_simulatorGameMode::BeginCasinoDay(int32 Day)
 {
     auto* GS = GetGameState<ACasinoLoopGameState>();
     if (!GS) return;
+    if (!bRunHistoryStarted) ResetRunResults();
+    RegisterCurrentRunPlayers();
     if (Day <= 1)
     {
         PreviousPaymentDay = 0;
@@ -478,6 +628,7 @@ void Acasino_simulatorGameMode::BeginCasinoDay(int32 Day)
     else if (!MovePlayersToCentralSpawns(false))
     {
         Status.Phase = ECasinoLoopPhase::GameOver;
+        FinalizeRunResults();
         GS->SetLoopStatus(Status);
         return;
     }
@@ -608,7 +759,10 @@ void Acasino_simulatorGameMode::BeginPaymentPhase()
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
         if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
             if (auto* PS = PC->GetPlayerState<Acasino_simulatorPlayerState>())
+            {
                 PaymentParticipants.Add(PS);
+                RegisterRunPlayer(PS, Cast<Acasino_simulatorCharacter>(PC->GetPawn())).PendingPaymentDay = Status.CurrentDay;
+            }
     Status.PaymentParticipantCount = PaymentParticipants.Num();
     Status.PaymentSubmittedCount = 0;
     const bool bAllMoved = MovePlayersToCentralSpawns(true);
@@ -616,6 +770,7 @@ void Acasino_simulatorGameMode::BeginPaymentPhase()
     {
         UE_LOG(LogTemp, Error, TEXT("Day loop: payment teleport failed. Provide a clear tagged point per player."));
         Status.Phase = ECasinoLoopPhase::GameOver;
+        FinalizeRunResults();
         GS->SetLoopStatus(Status);
         for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
             if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
@@ -651,6 +806,10 @@ bool Acasino_simulatorGameMode::SubmitDailyPayment(Acasino_simulatorCharacter* P
     PS->bDailyPaymentSubmitted = true;
     PS->DailyPaymentAmount = Actual;
     PS->ForceNetUpdate();
+    auto& RunEntry = RegisterRunPlayer(PS, Player);
+    RunEntry.PendingPaymentDay = Status.CurrentDay;
+    RunEntry.Result.TotalContribution = Actual > MAX_int64 - RunEntry.Result.TotalContribution
+        ? MAX_int64 : RunEntry.Result.TotalContribution + Actual;
     Status.CollectedPayment += Actual;
     ++Status.PaymentSubmittedCount;
     GS->SetLoopStatus(Status);
@@ -690,6 +849,9 @@ void Acasino_simulatorGameMode::FinishPaymentPhase()
         PreviousDayRequiredPayment = Status.RequiredPayment;
         PreviousDayRemainingCurrency = CalculateTeamCurrency();
     }
+    RecordRunPaymentDay(Status.CurrentDay);
+    if (Status.Phase == ECasinoLoopPhase::GameOver || Status.Phase == ECasinoLoopPhase::Cleared)
+        FinalizeRunResults();
     GS->SetLoopStatus(Status);
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
         if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))

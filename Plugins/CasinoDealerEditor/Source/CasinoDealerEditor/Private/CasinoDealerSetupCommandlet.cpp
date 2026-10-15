@@ -11,6 +11,7 @@
 #include "CasinoCalculatorMigration.h"
 #include "CasinoSlotKeypadMigration.h"
 #include "CasinoGameStyleMigration.h"
+#include "CasinoRunResultsMigration.h"
 #include "BlackjackCardSoundSetup.h"
 #include "Engine/Blueprint.h"
 #include "Engine/SimpleConstructionScript.h"
@@ -124,6 +125,17 @@ int32 UCasinoDealerSetupCommandlet::Main(const FString& Params)
 {
     FString Mode = TEXT("Inspect");
     FParse::Value(*Params, TEXT("Mode="), Mode);
+    if (Mode.Equals(TEXT("RunResults"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoRunResults(Error))
+        {
+            UE_LOG(LogCasinoDealerSetup, Error, TEXT("Run results update failed: %s"), *Error);
+            return 1;
+        }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Run results connected; original result actions preserved."));
+        return 0;
+    }
     if (Mode.Equals(TEXT("GameStyle"), ESearchCase::IgnoreCase))
     {
         FString Error;

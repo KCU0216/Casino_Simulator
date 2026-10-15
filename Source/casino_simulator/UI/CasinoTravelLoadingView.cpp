@@ -48,18 +48,18 @@ void SCasinoTravelLoadingView::Construct(const FArguments& Arguments)
     ViewState = Arguments._ViewState;
     const auto State = ViewState;
     const FLinearColor Navy(.007f, .011f, .019f, 1.f);
-    const FLinearColor Gold(.76f, .49f, .15f, 1.f);
-    const FLinearColor Ivory(.91f, .86f, .75f, 1.f);
+    const FLinearColor LoadingGold(.76f, .49f, .15f, 1.f);
+    const FLinearColor LoadingIvory(.91f, .86f, .75f, 1.f);
     const FLinearColor Muted(.45f, .51f, .60f, 1.f);
     // The editor's default progress texture is blue; tinting it gold produces a dark fill.
     // Keep these texture-free brushes alive with the widget, including on the loading thread.
     ProgressBarStyle = FCoreStyle::Get().GetWidgetStyle<FProgressBarStyle>("ProgressBar");
     ProgressBarStyle.SetBackgroundImage(FSlateColorBrush(FLinearColor(.035f, .045f, .065f, 1.f)));
     ProgressBarStyle.SetFillImage(FSlateColorBrush(FLinearColor::White));
-    ExitButtonStyle.SetNormal(FSlateColorBrush(Gold));
+    ExitButtonStyle.SetNormal(FSlateColorBrush(LoadingGold));
     ExitButtonStyle.SetHovered(FSlateColorBrush(FLinearColor(.94f, .67f, .29f, 1.f)));
     ExitButtonStyle.SetPressed(FSlateColorBrush(FLinearColor(.58f, .33f, .075f, 1.f)));
-    ExitButtonStyle.SetDisabled(FSlateColorBrush(Gold));
+    ExitButtonStyle.SetDisabled(FSlateColorBrush(LoadingGold));
     ExitButtonStyle.SetNormalForeground(FSlateColor(Navy));
     ExitButtonStyle.SetHoveredForeground(FSlateColor(Navy));
     ExitButtonStyle.SetPressedForeground(FSlateColor(Navy));
@@ -81,20 +81,20 @@ void SCasinoTravelLoadingView::Construct(const FArguments& Arguments)
                     SNew(SVerticalBox)
                     + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 24)
                     [ SNew(STextBlock).Text(FText::FromString(TEXT("CASINO")))
-                        .Font(FCoreStyle::GetDefaultFontStyle("Bold", 18)).ColorAndOpacity(Gold) ]
+                        .Font(FCoreStyle::GetDefaultFontStyle("Bold", 18)).ColorAndOpacity(LoadingGold) ]
                     + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 16)
                     [ SNew(STextBlock).Text_Lambda([State] { return State->Read().Heading; })
-                        .Font(FCoreStyle::GetDefaultFontStyle("Bold", 32)).ColorAndOpacity(Ivory).WrapTextAt(640.f) ]
+                        .Font(FCoreStyle::GetDefaultFontStyle("Bold", 32)).ColorAndOpacity(LoadingIvory).WrapTextAt(640.f) ]
                     + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 44)
                     [ SNew(STextBlock).Text_Lambda([State] { return State->Read().Detail; })
                         .Font(FCoreStyle::GetDefaultFontStyle("Regular", 18)).ColorAndOpacity(Muted).WrapTextAt(640.f) ]
                     + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 18)
                     [ SNew(SBox).HeightOverride(6.f)
                         [ SNew(SProgressBar).Style(&ProgressBarStyle)
-                            .Percent_Lambda([State] { return State->Read().Progress; }).FillColorAndOpacity(Gold) ] ]
+                            .Percent_Lambda([State] { return State->Read().Progress; }).FillColorAndOpacity(LoadingGold) ] ]
                     + SVerticalBox::Slot().AutoHeight()
                     [ SNew(STextBlock).Text_Lambda([State] { return State->Read().Players; })
-                        .Font(FCoreStyle::GetDefaultFontStyle("Regular", 16)).ColorAndOpacity(Ivory) ]
+                        .Font(FCoreStyle::GetDefaultFontStyle("Regular", 16)).ColorAndOpacity(LoadingIvory) ]
                     + SVerticalBox::Slot().AutoHeight().Padding(0, 28, 0, 0).HAlign(HAlign_Left)
                     [ SNew(SButton).ButtonStyle(&ExitButtonStyle)
                         .Visibility_Lambda([State] { return State->Read().bFailed ? EVisibility::Visible : EVisibility::Collapsed; })

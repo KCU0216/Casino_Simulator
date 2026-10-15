@@ -122,6 +122,7 @@ private:
     friend class FCasinoPaymentGrowthFloorTest;
     friend class FRaceWorldEventTest;
     friend class FCasinoMatchLoadingBarrierTest;
+    friend class FCasinoRunResultsTest;
 #endif
     FTimerHandle RaceEventTimer;
     FTimerHandle RaceAnnouncementTimer;
@@ -166,6 +167,29 @@ private:
     int32 PreviousPaymentDay = 0;
     int32 PreviousDayRequiredPayment = 0;
     double PreviousDayRemainingCurrency = 0.0;
+    // GameMode exists only on the server. Never copy these live records to GameState.
+    struct FRunPlayerHistory
+    {
+        TWeakObjectPtr<class Acasino_simulatorPlayerState> PlayerState;
+        TWeakObjectPtr<Acasino_simulatorCharacter> Pawn;
+        FCasinoRunPlayerResult Result;
+        int64 LastKnownBalance = 0;
+        int32 PendingPaymentDay = 0;
+        bool bHasKnownBalance = false;
+    };
+    TArray<FRunPlayerHistory> RunPlayerHistory;
+    TArray<int32> RunRecordedDays;
+    int32 NextRunPlayerId = 1;
+    bool bRunHistoryStarted = false;
+    FRunPlayerHistory& RegisterRunPlayer(class Acasino_simulatorPlayerState* PlayerState,
+        Acasino_simulatorCharacter* Pawn = nullptr);
+    void RefreshRunPlayerBalance(FRunPlayerHistory& Entry);
+    void RegisterCurrentRunPlayers();
+    void ResetRunResults();
+    void RecordRunPaymentDay(int32 Day);
+    void FinalizeRunResults();
+    UFUNCTION()
+    void HandleRunPawnDestroyed(AActor* DestroyedPawn);
     double CalculateTeamCurrency() const;
     int32 CalculateRequiredPayment(int32 Day) const;
     void BeginCasinoDay(int32 Day);

@@ -17,6 +17,9 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "UObject/UnrealType.h"
 #include "UI/CasinoTravelLoadingSubsystem.h"
+#include "UI/CasinoRunResultWidget.h"
+#include "UI/CasinoUIManagerComponent.h"
+#include "Blueprint/WidgetTree.h"
 #include "casino_loop_gamestate.h"
 #include "casino_simulatorCharacter.h"
 #include "casino_simulatorGameMode.h"
@@ -308,7 +311,94 @@ private:
 #endif
 };
 
-bool QueueTravel(FAutomationTestBase* Test, int32 PlayerCount)
+class FResultsReplication final : public IAutomationLatentCommand
+{
+public:
+    explicit FResultsReplication(FAutomationTestBase* InTest) : Test(InTest) {}
+    bool Update() override
+    {
+        const double Now = FPlatformTime::Seconds();
+        if (!Started) Started = Now;
+        if (Now - Started > 30.0)
+        { Test->AddError(TEXT("Two-player result replication/presentation timed out.")); return true; }
+        UWorld* Server = nullptr;
+        UWorld* Client = nullptr;
+        for (const auto& Context : GEngine->GetWorldContexts())
+        {
+            if (Context.WorldType != EWorldType::PIE || !Context.World()) continue;
+            if (Context.World()->GetNetMode() == NM_ListenServer) Server = Context.World();
+            if (Context.World()->GetNetMode() == NM_Client) Client = Context.World();
+        }
+        if (!Server || !Client) return false;
+        auto* ServerState = Server->GetGameState<ACasinoLoopGameState>();
+        auto* ClientState = Client->GetGameState<ACasinoLoopGameState>();
+        auto* ClientPC = Cast<Acasino_simulatorPlayerController>(Client->GetFirstPlayerController());
+        if (!ServerState || !ClientState || !ClientPC || !ClientPC->GetUIManager()) return false;
+        if (Stage == 0)
+        {
+            Test->TestFalse(TEXT("Private history is not published during gameplay"), ClientState->RunResults.bFinalized);
+            FCasinoLoopStatus Status = ServerState->LoopStatus;
+            Status.Phase = ECasinoLoopPhase::GameOver;
+            Status.CurrentDay = 3;
+            ServerState->SetLoopStatus(Status);
+            for (FConstPlayerControllerIterator It = Server->GetPlayerControllerIterator(); It; ++It)
+                if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
+                    PC->ClientFinishDailyPayment(Status.Phase);
+            Stage = 1;
+            return false;
+        }
+        auto* Widget = Cast<UCasinoRunResultWidget>(ClientPC->GetUIManager()->ActiveScreenWidget);
+        if (!Widget) return false;
+        UWidget* Menu = Widget->WidgetTree->FindWidget(TEXT("MainMenuButton"));
+        if (!Menu) return false;
+        if (Stage == 1)
+        {
+            // Exercise the real RPC opening Result before its separately replicated data.
+            Test->TestEqual(TEXT("Early result screen waits for the authoritative report"),
+                Menu->GetVisibility(), ESlateVisibility::Collapsed);
+            FCasinoRunResults Results;
+            Results.bFinalized = true;
+            Results.Days = {1, 2, 3};
+            for (int32 Index = 0; Index < 2; ++Index)
+            {
+                auto& Player = Results.Players.AddDefaulted_GetRef();
+                Player.RunPlayerId = Index + 1;
+                Player.PlayerName = FString::Printf(TEXT("Result Player %d"), Index + 1);
+                Player.Rank = Index + 1;
+                Player.FinalBalance = 3000 - Index * 1000;
+                Player.TotalContribution = 1200 + Index * 100;
+                for (int32 Day : Results.Days)
+                {
+                    auto& Point = Player.DailyBalances.AddDefaulted_GetRef();
+                    Point.Day = Day;
+                    Point.Balance = Player.FinalBalance + (3 - Day) * 500;
+                }
+            }
+            ServerState->SetRunResults(Results);
+            Stage = 2;
+            return false;
+        }
+        if (!ClientState->RunResults.bFinalized || ClientState->RunResults.Players.Num() != 2) return false;
+        if (Stage == 2)
+        {
+            Test->TestEqual(TEXT("Remote receives the same server ranking"), ClientState->RunResults.Players[0].FinalBalance, int64(3000));
+            Test->TestEqual(TEXT("Remote receives actual contribution total"), ClientState->RunResults.Players[1].TotalContribution, int64(1300));
+            Test->TestEqual(TEXT("Menu waits during the remote graph animation"), Menu->GetVisibility(), ESlateVisibility::Collapsed);
+            Stage = 3;
+        }
+        if (Widget->GetGraphProgress() < 1.f) return false;
+        Test->TestTrue(TEXT("Menu appears after the real remote graph animation"), Menu->GetVisibility() != ESlateVisibility::Collapsed);
+        Test->TestTrue(TEXT("Result screen instance survives the late report"),
+            Widget == ClientPC->GetUIManager()->ActiveScreenWidget);
+        return true;
+    }
+private:
+    FAutomationTestBase* Test;
+    double Started = 0.0;
+    int32 Stage = 0;
+};
+
+bool QueueTravel(FAutomationTestBase* Test, int32 PlayerCount, bool bCheckResults = false)
 {
     if (!GEditor || !GEngine || GEditor->PlayWorld)
     {
@@ -326,6 +416,8 @@ bool QueueTravel(FAutomationTestBase* Test, int32 PlayerCount)
     FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FSetLobbyMode>(Settings, Test));
     ADD_LATENT_AUTOMATION_COMMAND(FStartPIECommand(false));
     FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FTravel>(Test, PlayerCount));
+    if (bCheckResults)
+        FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FResultsReplication>(Test));
     ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
     FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FRestore>(Settings));
     return true;
@@ -346,5 +438,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCasinoMatchLoadingSinglePlayerPIETest,
 bool FCasinoMatchLoadingSinglePlayerPIETest::RunTest(const FString& Parameters)
 {
     return CasinoMatchLoadingPIE::QueueTravel(this, 1);
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCasinoRunResultsNetworkPIETest,
+    "Casino.Results.NetworkPIE", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCasinoRunResultsNetworkPIETest::RunTest(const FString& Parameters)
+{
+    return CasinoMatchLoadingPIE::QueueTravel(this, 2, true);
 }
 #endif

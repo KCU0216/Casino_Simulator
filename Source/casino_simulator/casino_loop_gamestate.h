@@ -89,8 +89,55 @@ struct FCasinoMatchLoadingStatus
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCasinoMatchLoadingChanged);
 
+USTRUCT(BlueprintType)
+struct CASINO_SIMULATOR_API FCasinoRunBalanceSnapshot
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    int32 Day = 0;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    int64 Balance = 0;
+};
+
+USTRUCT(BlueprintType)
+struct CASINO_SIMULATOR_API FCasinoRunPlayerResult
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    int32 RunPlayerId = 0;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    FString PlayerName;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    TArray<FCasinoRunBalanceSnapshot> DailyBalances;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    int64 FinalBalance = 0;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    int64 TotalContribution = 0;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    int32 Rank = 0;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    bool bDisconnected = false;
+};
+
+USTRUCT(BlueprintType)
+struct CASINO_SIMULATOR_API FCasinoRunResults
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    bool bFinalized = false;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    TArray<int32> Days;
+    UPROPERTY(BlueprintReadOnly, Category="Casino|Results")
+    TArray<FCasinoRunPlayerResult> Players;
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCasinoRunResultsChanged);
+
 UCLASS()
-class ACasinoLoopGameState : public AGameStateBase
+class CASINO_SIMULATOR_API ACasinoLoopGameState : public AGameStateBase
 {
     GENERATED_BODY()
 
@@ -113,6 +160,15 @@ public:
 
     void SetMatchLoadingStatus(const FCasinoMatchLoadingStatus& NewStatus);
 
+    // The server keeps daily records privately until the run has ended.
+    UPROPERTY(BlueprintReadOnly, ReplicatedUsing=OnRep_RunResults, Category="Casino|Results")
+    FCasinoRunResults RunResults;
+
+    UPROPERTY(BlueprintAssignable, Category="Casino|Results")
+    FOnCasinoRunResultsChanged OnRunResultsChanged;
+
+    void SetRunResults(const FCasinoRunResults& NewResults);
+
     UFUNCTION(BlueprintPure, Category = "Casino|Loop")
     float GetRemainingDaySeconds() const;
 
@@ -133,4 +189,6 @@ private:
     void OnRep_LoopStatus();
     UFUNCTION()
     void OnRep_MatchLoadingStatus();
+    UFUNCTION()
+    void OnRep_RunResults();
 };

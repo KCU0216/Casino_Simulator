@@ -46,9 +46,26 @@ bool FCasinoMatchLoadingBarrierTest::RunTest(const FString& Parameters)
     auto* TestDriver = NewObject<UIpNetDriver>(GEngine);
     TestDriver->SetWorld(World);
     ON_SCOPE_EXIT { TestDriver->SetWorld(nullptr); };
-    Acasino_simulatorPlayerController* Controllers[2];
-    Acasino_simulatorCharacter* Characters[2];
-    USimulatedClientNetConnection* Connections[2];
+    Acasino_simulatorPlayerController* Controllers[2] = {};
+    Acasino_simulatorCharacter* Characters[2] = {};
+    USimulatedClientNetConnection* Connections[2] = {};
+    ON_SCOPE_EXIT
+    {
+        for (int32 Index = 0; Index < 2; ++Index)
+        {
+            if (Controllers[Index]) Controllers[Index]->Player = nullptr;
+            if (Connections[Index])
+            {
+                Connections[Index]->PlayerController = nullptr;
+                // These socket-free peers never run InitBase or create control channels.
+                // Detach the borrowed driver so GC cannot enter Close's Channels[0] path.
+                // CleanUp repeats the login-state transition, which itself needs a driver.
+                Connections[Index]->SetClientLoginState(EClientLoginState::CleanedUp);
+                Connections[Index]->SetConnectionState(USOCK_Closed);
+                Connections[Index]->Driver = nullptr;
+            }
+        }
+    };
     for (int32 Index = 0; Index < 2; ++Index)
     {
         Controllers[Index] = World->SpawnActor<Acasino_simulatorPlayerController>(ControllerClass,
@@ -69,14 +86,6 @@ bool FCasinoMatchLoadingBarrierTest::RunTest(const FString& Parameters)
             FVector(Index * 700.f, 1000.f, 200.f), FRotator(0.f, Index * 90.f, 0.f), Spawn);
         Point->Tags.Add(Mode->PaymentSpawnTag);
     }
-    ON_SCOPE_EXIT
-    {
-        for (int32 Index = 0; Index < 2; ++Index)
-        {
-            Controllers[Index]->Player = nullptr;
-            Connections[Index]->PlayerController = nullptr;
-        }
-    };
     // Only the first player has entered the destination world so far.
     World->RemoveController(Controllers[1]);
     World->AddController(Controllers[0]);
@@ -98,6 +107,9 @@ bool FCasinoMatchLoadingBarrierTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("A retained lobby controller does not inflate the expected player count"), State->MatchLoadingStatus.ExpectedPlayers, 2);
     OldLobbyController->Player = nullptr;
     OldLobbyConnection->PlayerController = nullptr;
+    OldLobbyConnection->SetClientLoginState(EClientLoginState::CleanedUp);
+    OldLobbyConnection->SetConnectionState(USOCK_Closed);
+    OldLobbyConnection->Driver = nullptr;
     World->RemoveController(OldLobbyController);
     OldLobbyController->Destroy();
     TestTrue(TEXT("Server freezes the first arrival"), Characters[0]->GetCharacterMovement()->MovementMode == MOVE_None);

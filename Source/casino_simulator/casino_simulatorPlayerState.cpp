@@ -14,7 +14,7 @@ void Acasino_simulatorPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimePr
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(Acasino_simulatorPlayerState, bLobbyReady);
     DOREPLIFETIME(Acasino_simulatorPlayerState, bDailyPaymentSubmitted);
-    DOREPLIFETIME(Acasino_simulatorPlayerState, DailyPaymentAmount);
+    DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, DailyPaymentAmount, COND_OwnerOnly);
 
 	// Owner-only: a player's inventory contents aren't relevant to other clients.
 	DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, Inventory, COND_OwnerOnly);
