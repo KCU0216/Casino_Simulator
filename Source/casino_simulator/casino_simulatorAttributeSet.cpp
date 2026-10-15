@@ -46,11 +46,11 @@ void Ucasino_simulatorAttributeSet::PreAttributeChange(const FGameplayAttribute&
 	// 차감 값
 	else if (Attribute == GetNicotineDecayRateAttribute())
 	{
-		NewValue = FMath::Clamp(NewValue, 0.0f, MaxNicotine.GetCurrentValue());
+		NewValue = FMath::Clamp(NewValue, 10.0f, MaxNicotine.GetCurrentValue());
 	}
 	else if (Attribute == GetAlcoholDecayRateAttribute())
 	{
-		NewValue = FMath::Clamp(NewValue, 0.0f, MaxAlcohol.GetCurrentValue());
+		NewValue = FMath::Clamp(NewValue, 10.0f, MaxAlcohol.GetCurrentValue());
 	}
 	// 최대 값
 	else if (Attribute == GetMaxNicotineAttribute())
