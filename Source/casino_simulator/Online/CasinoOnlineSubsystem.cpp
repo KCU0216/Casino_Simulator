@@ -30,6 +30,47 @@
 #include "Misc/AutomationTest.h"
 #endif
 
+void FCasinoVoiceUpdateCache::Reset()
+{
+    Source = nullptr; Channels.Reset(); Volumes.Reset(); Mutes.Reset();
+}
+
+TArray<FString> FCasinoVoiceUpdateCache::Sync(const IVoiceChatUser* InSource,
+    TArray<FString> InChannels, const TArray<FString>& Players, const FString& LocalPlayer)
+{
+    InChannels.Sort();
+    if (Source != InSource || Channels != InChannels)
+    {
+        Reset(); Source = InSource; Channels = MoveTemp(InChannels);
+    }
+    TArray<FString> RemotePlayers;
+    if (Source && !Channels.IsEmpty())
+        for (const FString& Player : Players)
+            if (!Player.IsEmpty() && Player != LocalPlayer) RemotePlayers.AddUnique(Player);
+    for (auto It = Volumes.CreateIterator(); It; ++It)
+        if (!RemotePlayers.Contains(It.Key())) It.RemoveCurrent();
+    for (auto It = Mutes.CreateIterator(); It; ++It)
+        if (!RemotePlayers.Contains(It.Key())) It.RemoveCurrent();
+    return RemotePlayers;
+}
+
+bool FCasinoVoiceUpdateCache::NeedsVolume(const FString& Player, float Volume)
+{
+    const float* Previous = Volumes.Find(Player);
+    // Always preserve the exact silent/non-silent transition at the distance cutoff.
+    if (Previous && ((*Previous == 0.f) == (Volume == 0.f))
+        && FMath::Abs(*Previous - Volume) < .01f) return false;
+    Volumes.Add(Player, Volume);
+    return true;
+}
+
+bool FCasinoVoiceUpdateCache::NeedsMute(const FString& Player, bool bMuted)
+{
+    if (const bool* Previous = Mutes.Find(Player); Previous && *Previous == bMuted) return false;
+    Mutes.Add(Player, bMuted);
+    return true;
+}
+
 namespace CasinoOnline
 {
     const FName RoomKey(TEXT("CASINO_ROOM"));
@@ -111,6 +152,7 @@ void UCasinoOnlineSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UCasinoOnlineSubsystem::Deinitialize()
 {
+    VoiceUpdateCache.Reset();
     ClearRoomCredentials();
     if (IVoiceChatUser* Voice = VoiceUser()) Voice->TransmitToNoChannels();
     if (VoiceInputProcessor && FSlateApplication::IsInitialized())
@@ -553,6 +595,7 @@ void UCasinoOnlineSubsystem::LeaveRoom()
     if (State == ECasinoOnlineState::LoggingIn || State == ECasinoOnlineState::Creating ||
         State == ECasinoOnlineState::Joining || State == ECasinoOnlineState::Searching || State == ECasinoOnlineState::Starting) return;
     ClearPendingJoinCredentials();
+    VoiceUpdateCache.Reset();
     bRoomAdmissionAccepted = false;
     bTalkHeld = false;
     if (IVoiceChatUser* Voice = VoiceUser()) Voice->TransmitToNoChannels();
@@ -580,6 +623,7 @@ void UCasinoOnlineSubsystem::DestroyComplete(FName Name, bool bSuccess)
 
 void UCasinoOnlineSubsystem::ReturnToMenu()
 {
+    VoiceUpdateCache.Reset();
     bSessionWasPresent = false; bHadVoiceChannel = false; bVoiceDirty = true;
     ClearRoomCredentials();
     MutedPlayers.Reset(); Rooms.Reset(); Search.Reset();
@@ -721,7 +765,7 @@ bool UCasinoOnlineSubsystem::TickVoice(float)
         OnChanged.Broadcast();
     }
     if (bVoiceDirty && Voice) ApplyVoiceSettings();
-    if (bConnected) UpdateVoicePlayerVolumes();
+    UpdateVoicePlayerVolumes(); // Also prune cached state after the last channel disappears.
     TArray<FString> PlayerIds = GetVoicePlayers();
     PlayerIds.Sort();
     if (PlayerIds != LastVoicePlayerIds) { LastVoicePlayerIds = MoveTemp(PlayerIds); OnChanged.Broadcast(); }
@@ -744,7 +788,6 @@ void UCasinoOnlineSubsystem::ApplyVoiceSettings()
     Voice->SetAudioOutputVolume(Pref->OutputVolume);
     Voice->SetAudioInputVolume(GetVoiceInputVolume());
     Voice->SetInputDeviceId(Pref->InputDeviceId);
-    for (const FString& Id : MutedPlayers) Voice->SetPlayerMuted(Id, true);
     if (bVoiceAllowed && Pref->bVoiceEnabled && !Pref->bMicrophoneMuted && (!Pref->bPushToTalk || bTalkHeld))
         Voice->TransmitToAllChannels();
     else Voice->TransmitToNoChannels();
@@ -756,14 +799,34 @@ void UCasinoOnlineSubsystem::UpdateVoicePlayerVolumes()
 {
     IVoiceChatUser* Voice = VoiceUser();
     UWorld* World = GetWorld();
-    if (!Voice || !World) return;
+    if (!Voice || !World) { VoiceUpdateCache.Reset(); return; }
+    if (LastVoiceCallbackSource != Voice)
+    {
+        LastVoiceCallbackSource = Voice;
+        // Weak bindings remain safe if EOS replaces/destroys its engine-owned user.
+        // Added/removed callbacks also catch same-ID rejoin between polling ticks.
+        Voice->OnVoiceChatPlayerAdded().AddWeakLambda(this, [this, Voice](const FString&, const FString& Player)
+        {
+            if (VoiceUpdateCache.Source == Voice)
+            { VoiceUpdateCache.Volumes.Remove(Player); VoiceUpdateCache.Mutes.Remove(Player); }
+        });
+        Voice->OnVoiceChatPlayerRemoved().AddWeakLambda(this, [this, Voice](const FString&, const FString& Player)
+        {
+            if (VoiceUpdateCache.Source == Voice)
+            { VoiceUpdateCache.Volumes.Remove(Player); VoiceUpdateCache.Mutes.Remove(Player); }
+        });
+        Voice->OnVoiceChatChannelExited().AddWeakLambda(this, [this, Voice](const FString&, const FVoiceChatResult&)
+        { if (VoiceUpdateCache.Source == Voice) VoiceUpdateCache.Reset(); });
+    }
+    const TArray<FString> RemotePlayers = VoiceUpdateCache.Sync(Voice, Voice->GetChannels(),
+        GetVoicePlayers(), Voice->GetLoggedInPlayerName());
     const auto* Pref = GetDefault<UCasinoVoicePreferences>();
     const APlayerController* PC = GetGameInstance()->GetFirstLocalPlayerController();
     const APawn* Listener = PC ? PC->GetPawn() : nullptr;
     const AGameStateBase* GS = World->GetGameState();
     const bool bUseDistance = State == ECasinoOnlineState::InGame ||
         (Cast<ACasinoLoopGameState>(GS) && State != ECasinoOnlineState::Ready && State != ECasinoOnlineState::Offline);
-    for (const FString& Id : GetVoicePlayers())
+    for (const FString& Id : RemotePlayers)
     {
         float Gain = bUseDistance ? 0.0f : 1.0f;
         if (bUseDistance && Listener && GS)
@@ -779,8 +842,10 @@ void UCasinoOnlineSubsystem::UpdateVoicePlayerVolumes()
                 }
             }
         }
-        Voice->SetPlayerVolume(Id, GetVoicePlayerVolume(Id) * Gain);
-        Voice->SetPlayerMuted(Id, !bRoomAdmissionAccepted || !Pref->bVoiceEnabled || MutedPlayers.Contains(Id));
+        const float DesiredVolume = GetVoicePlayerVolume(Id) * Gain;
+        const bool bDesiredMute = !bRoomAdmissionAccepted || !Pref->bVoiceEnabled || MutedPlayers.Contains(Id);
+        if (VoiceUpdateCache.NeedsVolume(Id, DesiredVolume)) Voice->SetPlayerVolume(Id, DesiredVolume);
+        if (VoiceUpdateCache.NeedsMute(Id, bDesiredMute)) Voice->SetPlayerMuted(Id, bDesiredMute);
     }
 }
 
@@ -950,6 +1015,46 @@ bool FCasinoVoiceDistanceTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Beyond cutoff remains silent"), CasinoVoice::DistanceGain(4000.0f, 500.0f, 2000.0f), 0.0f);
     TestEqual(TEXT("Personal volume multiplies distance gain"), 0.4f * CasinoVoice::DistanceGain(1250.0f, 500.0f, 2000.0f), 0.2f);
     TestEqual(TEXT("Invalid distance is silent"), CasinoVoice::DistanceGain(-1.0f, 500.0f, 2000.0f), 0.0f);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCasinoVoiceUpdateCacheTest, "Casino.Voice.ParticipantUpdateCache",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FCasinoVoiceUpdateCacheTest::RunTest(const FString& Parameters)
+{
+    FCasinoVoiceUpdateCache Cache;
+    // Identity tokens only: the policy never dereferences a voice interface.
+    int32 SourceTokens[2] = {};
+    const auto* First = reinterpret_cast<const IVoiceChatUser*>(&SourceTokens[0]);
+    const auto* Second = reinterpret_cast<const IVoiceChatUser*>(&SourceTokens[1]);
+    const TArray<FString> Players = {TEXT("self"), TEXT("remote")};
+    auto Remote = Cache.Sync(First, {TEXT("room")}, Players, TEXT("self"));
+    TestEqual(TEXT("Local participant is excluded"), Remote.Num(), 1);
+    TestEqual(TEXT("Only the remote participant receives updates"), Remote[0], FString(TEXT("remote")));
+    TestTrue(TEXT("First volume must be applied"), Cache.NeedsVolume(TEXT("remote"), 1.f));
+    TestFalse(TEXT("Unchanged volume is suppressed"), Cache.NeedsVolume(TEXT("remote"), 1.f));
+    TestFalse(TEXT("Tiny distance jitter is suppressed"), Cache.NeedsVolume(TEXT("remote"), .995f));
+    TestTrue(TEXT("Meaningful distance change is applied"), Cache.NeedsVolume(TEXT("remote"), .98f));
+    TestTrue(TEXT("Distance cutoff always becomes exactly silent"), Cache.NeedsVolume(TEXT("remote"), 0.f));
+    TestTrue(TEXT("Leaving the cutoff restores even a very quiet voice"), Cache.NeedsVolume(TEXT("remote"), .005f));
+    TestTrue(TEXT("First mute preference is applied"), Cache.NeedsMute(TEXT("remote"), false));
+    TestFalse(TEXT("Unchanged mute is suppressed"), Cache.NeedsMute(TEXT("remote"), false));
+    TestTrue(TEXT("Changed mute preference is applied"), Cache.NeedsMute(TEXT("remote"), true));
+    Cache.Sync(First, {TEXT("room")}, {TEXT("self")}, TEXT("self"));
+    TestTrue(TEXT("Departed participant volume is pruned"), Cache.Volumes.IsEmpty());
+    TestTrue(TEXT("Departed participant mute is pruned"), Cache.Mutes.IsEmpty());
+    Cache.Sync(First, {TEXT("room")}, Players, TEXT("self"));
+    TestTrue(TEXT("Same ID rejoining reapplies its volume"), Cache.NeedsVolume(TEXT("remote"), .005f));
+    Cache.Sync(First, {TEXT("another room")}, Players, TEXT("self"));
+    TestTrue(TEXT("New channel reapplies unchanged participant volume"), Cache.NeedsVolume(TEXT("remote"), .005f));
+    Cache.Sync(Second, {TEXT("another room")}, Players, TEXT("self"));
+    TestTrue(TEXT("Replacement voice user reapplies unchanged volume"), Cache.NeedsVolume(TEXT("remote"), .005f));
+    TestTrue(TEXT("Disconnected channels have no update targets"), Cache.Sync(Second, {}, Players, TEXT("self")).IsEmpty());
+    TestTrue(TEXT("Disconnect clears stale cached volume"), Cache.Volumes.IsEmpty());
+    Cache.Sync(Second, {TEXT("another room")}, Players, TEXT("self"));
+    TestTrue(TEXT("Reconnect reapplies same ID and value"), Cache.NeedsVolume(TEXT("remote"), .005f));
+    Cache.Reset();
+    TestTrue(TEXT("Explicit leave clears all state"), Cache.Source == nullptr && Cache.Volumes.IsEmpty() && Cache.Mutes.IsEmpty());
     return true;
 }
 #endif

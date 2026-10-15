@@ -15,6 +15,20 @@ class IVoiceChatUser;
 class APlayerState;
 class IInputProcessor;
 
+// Local cache only: never sends participant preferences back over the game network.
+struct FCasinoVoiceUpdateCache
+{
+    const IVoiceChatUser* Source = nullptr;
+    TArray<FString> Channels;
+    TMap<FString, float> Volumes;
+    TMap<FString, bool> Mutes;
+    void Reset();
+    TArray<FString> Sync(const IVoiceChatUser* InSource, TArray<FString> InChannels,
+        const TArray<FString>& Players, const FString& LocalPlayer);
+    bool NeedsVolume(const FString& Player, float Volume);
+    bool NeedsMute(const FString& Player, bool bMuted);
+};
+
 UENUM(BlueprintType)
 enum class ECasinoOnlineState : uint8
 {
@@ -149,6 +163,8 @@ private:
     bool bSessionWasPresent = false;
     TSet<FString> MutedPlayers;
     TArray<FString> LastVoicePlayerIds;
+    FCasinoVoiceUpdateCache VoiceUpdateCache;
+    IVoiceChatUser* LastVoiceCallbackSource = nullptr;
 
     bool EnsureInterfaces();
     void SetState(ECasinoOnlineState NewState);
