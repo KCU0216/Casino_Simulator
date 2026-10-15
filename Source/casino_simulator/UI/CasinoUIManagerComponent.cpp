@@ -67,6 +67,8 @@ void UCasinoUIManagerComponent::RefreshCasinoUIScreen()
         default: break;
         }
     }
+    if (GS && (GS->MatchLoadingStatus.IsPending() || GS->MatchLoadingStatus.Stage == ECasinoMatchLoadingStage::Failed))
+        Screen = ECasinoUIScreen::Loading;
     SetCasinoUIScreen(Screen);
     if (GS)
     {
@@ -196,6 +198,8 @@ bool UCasinoUIManagerComponent::ShowScreenUI(UUserWidget* Widget, ECasinoUIScree
 void UCasinoUIManagerComponent::SetCasinoUIScreen(ECasinoUIScreen Screen)
 {
     auto* PC = GetCasinoController();
+    if (PC && PC->IsCasinoMatchLoadingLocally() && Screen != ECasinoUIScreen::MainMenu && Screen != ECasinoUIScreen::Lobby)
+        Screen = ECasinoUIScreen::Loading;
     if (!IsLocalUIReady())
     {
         bLocalUIRefreshPending = true;

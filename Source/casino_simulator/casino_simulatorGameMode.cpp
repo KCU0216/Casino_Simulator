@@ -125,7 +125,10 @@ void Acasino_simulatorGameMode::HandleStartingNewPlayer_Implementation(APlayerCo
     if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoOnlineMatch")))
     {
         if (auto* PC = Cast<Acasino_simulatorPlayerController>(NewPlayer))
+        {
             PC->ClientEnterCasinoMatch();
+            RegisterOnlineLoadingPlayer(PC);
+        }
         UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Match player %s, pawn %s, mode %s"),
             *GetNameSafe(NewPlayer), *GetNameSafe(NewPlayer ? NewPlayer->GetPawn() : nullptr), *GetClass()->GetName());
     }
@@ -137,10 +140,7 @@ void Acasino_simulatorGameMode::BeginPlay()
     if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoRestart"))) StartDay = 1;
     if (UGameplayStatics::HasOption(OptionsString, TEXT("CasinoOnlineMatch")))
     {
-        OnlineExpectedPlayers = FMath::Clamp(UGameplayStatics::GetIntOption(OptionsString, TEXT("ExpectedPlayers"), 1), 1, 16);
-        OnlineArrivalDeadline = FPlatformTime::Seconds() + 90.0;
-        GetWorldTimerManager().SetTimer(OnlineArrivalTimer, this,
-            &Acasino_simulatorGameMode::WaitForOnlinePlayers, 0.5f, true);
+        BeginOnlineLoading(UGameplayStatics::GetIntOption(OptionsString, TEXT("ExpectedPlayers"), 1));
     }
     else if (bAutoStartDayLoop) StartDayLoop();
 }
@@ -153,28 +153,220 @@ void Acasino_simulatorGameMode::PreLogin(const FString& Options, const FString& 
         ErrorMessage = TEXT("Match already started. Join the next lobby.");
 }
 
+void Acasino_simulatorGameMode::BeginOnlineLoading(int32 ExpectedPlayers)
+{
+    auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!HasAuthority() || !GS) return;
+    OnlineLoadingParticipants.Reset();
+    DepartedLoadingPlayers.Reset();
+    bInitialSpawnsPrepared = false;
+    OnlineExpectedPlayers = FMath::Clamp(ExpectedPlayers, 1, 16);
+    OnlineArrivalDeadline = FPlatformTime::Seconds() + FMath::Max(30.f, OnlineLoadingTimeoutSeconds);
+    FCasinoMatchLoadingStatus Status;
+    Status.Generation = FGuid::NewGuid();
+    Status.Stage = ECasinoMatchLoadingStage::WaitingForPlayers;
+    Status.ExpectedPlayers = OnlineExpectedPlayers;
+    GS->SetMatchLoadingStatus(Status);
+    GetWorldTimerManager().SetTimer(OnlineArrivalTimer, this,
+        &ThisClass::WaitForOnlinePlayers, 0.2f, true);
+    WaitForOnlinePlayers();
+}
+
+void Acasino_simulatorGameMode::RegisterOnlineLoadingPlayer(Acasino_simulatorPlayerController* Player)
+{
+    const auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!HasAuthority() || !IsValid(Player) || Player->GetWorld() != GetWorld() || !GS
+        || GS->MatchLoadingStatus.Stage != ECasinoMatchLoadingStage::WaitingForPlayers
+        || DepartedLoadingPlayers.Contains(Player)
+        || !Player->Player || !Player->HasClientLoadedCurrentWorld()
+        || !IsValid(Cast<Acasino_simulatorCharacter>(Player->GetPawn()))) return;
+    if (OnlineLoadingParticipants.ContainsByPredicate([Player](const auto& Entry) { return Entry.Player == Player; })) return;
+    FOnlineLoadingParticipant Entry;
+    Entry.Player = Player;
+    OnlineLoadingParticipants.Add(Entry);
+    OnlineExpectedPlayers = FMath::Max(OnlineExpectedPlayers, OnlineLoadingParticipants.Num());
+    if (auto* Character = Cast<ACharacter>(Player->GetPawn()))
+    {
+        Character->GetCharacterMovement()->StopMovementImmediately();
+        Character->GetCharacterMovement()->DisableMovement();
+    }
+    Player->ClientBeginCasinoMatchLoading(GS->MatchLoadingStatus.Generation);
+}
+
+void Acasino_simulatorGameMode::NotifyClientWorldReady(Acasino_simulatorPlayerController* Player, const FGuid& Generation)
+{
+    const auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!HasAuthority() || !GS || !IsValid(Player) || Player->GetWorld() != GetWorld()
+        || GS->MatchLoadingStatus.Stage != ECasinoMatchLoadingStage::WaitingForPlayers
+        || !Generation.IsValid() || Generation != GS->MatchLoadingStatus.Generation
+        || !IsValid(Cast<Acasino_simulatorCharacter>(Player->GetPawn()))
+        || !Player->HasClientLoadedCurrentWorld()) return;
+    auto* Entry = OnlineLoadingParticipants.FindByPredicate([Player](const auto& Item) { return Item.Player == Player; });
+    if (!Entry || (Entry->bWorldReady && Entry->ReadyPawn == Player->GetPawn())) return;
+    Entry->bWorldReady = true;
+    Entry->ReadyPawn = Player->GetPawn();
+    PublishOnlineLoadingCounts();
+    WaitForOnlinePlayers();
+}
+
+void Acasino_simulatorGameMode::NotifyClientSpawnReady(Acasino_simulatorPlayerController* Player, const FGuid& Generation)
+{
+    const auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!HasAuthority() || !GS || !IsValid(Player) || Player->GetWorld() != GetWorld()
+        || GS->MatchLoadingStatus.Stage != ECasinoMatchLoadingStage::PreparingSpawns
+        || !Generation.IsValid() || Generation != GS->MatchLoadingStatus.Generation
+        || !Player->HasClientLoadedCurrentWorld()) return;
+    auto* Entry = OnlineLoadingParticipants.FindByPredicate([Player](const auto& Item) { return Item.Player == Player; });
+    if (!Entry || !Entry->bWorldReady || !Entry->ReadyPawn.IsValid() || Entry->ReadyPawn != Player->GetPawn()
+        || Entry->bSpawnReady
+        || !Player->GetPawn()->GetActorLocation().Equals(Entry->SpawnTransform.GetLocation(), 3.f)) return;
+    Entry->bSpawnReady = true;
+    PublishOnlineLoadingCounts();
+    if (!bPreparingInitialSpawns) WaitForOnlinePlayers();
+}
+
+void Acasino_simulatorGameMode::PublishOnlineLoadingCounts()
+{
+    auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!GS || !GS->MatchLoadingStatus.IsPending()) return;
+    auto Status = GS->MatchLoadingStatus;
+    Status.ExpectedPlayers = OnlineExpectedPlayers;
+    Status.ArrivedPlayers = 0;
+    Status.ReadyPlayers = 0;
+    for (const auto& Entry : OnlineLoadingParticipants)
+    {
+        auto* PC = Entry.Player.Get();
+        if (!PC || !IsValid(Cast<Acasino_simulatorCharacter>(PC->GetPawn())) || !PC->HasClientLoadedCurrentWorld()) continue;
+        ++Status.ArrivedPlayers;
+        if (Entry.bWorldReady && Entry.ReadyPawn == PC->GetPawn()
+            && (Status.Stage == ECasinoMatchLoadingStage::WaitingForPlayers || Entry.bSpawnReady)) ++Status.ReadyPlayers;
+    }
+    if (Status.ExpectedPlayers != GS->MatchLoadingStatus.ExpectedPlayers
+        || Status.ArrivedPlayers != GS->MatchLoadingStatus.ArrivedPlayers
+        || Status.ReadyPlayers != GS->MatchLoadingStatus.ReadyPlayers)
+        GS->SetMatchLoadingStatus(Status);
+}
+
 void Acasino_simulatorGameMode::WaitForOnlinePlayers()
 {
-    int32 Arrived = 0;
-    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-        if (APlayerController* PC = It->Get())
-            if (PC->GetPawn() && PC->HasClientLoadedCurrentWorld()) ++Arrived;
-    if (Arrived >= OnlineExpectedPlayers)
+    auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!HasAuthority() || !GS || !GS->MatchLoadingStatus.IsPending()) return;
+    if (FPlatformTime::Seconds() >= OnlineArrivalDeadline)
     {
-        GetWorldTimerManager().ClearTimer(OnlineArrivalTimer);
-        StartDayLoop();
+        FailOnlineLoading(FText::FromString(TEXT("플레이어가 제한 시간 안에 로딩을 완료하지 못했습니다.")));
+        return;
     }
-    else if (FPlatformTime::Seconds() >= OnlineArrivalDeadline)
+    if (GS->MatchLoadingStatus.Stage == ECasinoMatchLoadingStage::WaitingForPlayers)
     {
-        GetWorldTimerManager().ClearTimer(OnlineArrivalTimer);
-        UE_LOG(LogTemp, Error, TEXT("Online match: players did not finish loading within 90 seconds."));
-        if (auto* GS = GetGameState<ACasinoLoopGameState>())
+        for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+            RegisterOnlineLoadingPlayer(Cast<Acasino_simulatorPlayerController>(It->Get()));
+        for (auto& Entry : OnlineLoadingParticipants)
         {
-            auto Status = GS->LoopStatus;
-            Status.Phase = ECasinoLoopPhase::GameOver;
-            GS->SetLoopStatus(Status);
+            auto* PC = Entry.Player.Get();
+            if (PC && Entry.ReadyPawn != PC->GetPawn())
+            {
+                const bool bNeedsNewAcknowledgement = Entry.bWorldReady;
+                Entry.bWorldReady = false;
+                Entry.ReadyPawn.Reset();
+                if (bNeedsNewAcknowledgement) PC->ClientBeginCasinoMatchLoading(GS->MatchLoadingStatus.Generation);
+            }
+            if (auto* Character = PC ? Cast<ACharacter>(PC->GetPawn()) : nullptr)
+            {
+                Character->GetCharacterMovement()->StopMovementImmediately();
+                Character->GetCharacterMovement()->DisableMovement();
+            }
         }
     }
+    PublishOnlineLoadingCounts();
+    if (GS->MatchLoadingStatus.ReadyPlayers >= OnlineExpectedPlayers && OnlineExpectedPlayers > 0)
+    {
+        if (GS->MatchLoadingStatus.Stage == ECasinoMatchLoadingStage::WaitingForPlayers) PrepareOnlineInitialSpawns();
+        else FinishOnlineLoading();
+    }
+}
+
+bool Acasino_simulatorGameMode::GatherCentralSpawns()
+{
+    TArray<AActor*> Points;
+    UGameplayStatics::GetAllActorsWithTag(this, PaymentSpawnTag, Points);
+    Points.Sort([](const AActor& A, const AActor& B) { return A.GetName() < B.GetName(); });
+    PaymentSpawns.Reset();
+    for (AActor* Point : Points) PaymentSpawns.Add(Point);
+    return !PaymentSpawns.IsEmpty();
+}
+
+void Acasino_simulatorGameMode::PrepareOnlineInitialSpawns()
+{
+    auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!GS || bPreparingInitialSpawns) return;
+    if (!GatherCentralSpawns() || PaymentSpawns.Num() < OnlineLoadingParticipants.Num())
+    {
+        FailOnlineLoading(FText::FromString(TEXT("플레이어 시작 위치가 부족합니다. 호스트의 맵 설정을 확인해 주세요.")));
+        return;
+    }
+    auto Status = GS->MatchLoadingStatus;
+    Status.Stage = ECasinoMatchLoadingStage::PreparingSpawns;
+    Status.ReadyPlayers = 0;
+    GS->SetMatchLoadingStatus(Status);
+    // Listen-server client RPCs may acknowledge synchronously while the loop is running.
+    {
+        TGuardValue<bool> PreparingGuard(bPreparingInitialSpawns, true);
+        if (!MovePlayersToCentralSpawns(false))
+        {
+            FailOnlineLoading(FText::FromString(TEXT("플레이어 시작 위치에 배치하지 못했습니다. 시작 지점 주변을 확인해 주세요.")));
+            return;
+        }
+    }
+    WaitForOnlinePlayers();
+}
+
+void Acasino_simulatorGameMode::FinishOnlineLoading()
+{
+    auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!GS || GS->MatchLoadingStatus.Stage != ECasinoMatchLoadingStage::PreparingSpawns) return;
+    bInitialSpawnsPrepared = true;
+    {
+        TGuardValue<bool> CompletingGuard(bCompletingInitialLoading, true);
+        StartDayLoop();
+    }
+    if (GS->LoopStatus.Phase != ECasinoLoopPhase::DayIntro)
+    {
+        FailOnlineLoading(FText::FromString(TEXT("게임 시작을 준비하지 못했습니다. 메인 메뉴에서 다시 시도해 주세요.")));
+        return;
+    }
+    GetWorldTimerManager().ClearTimer(OnlineArrivalTimer);
+    auto Status = GS->MatchLoadingStatus;
+    Status.Stage = ECasinoMatchLoadingStage::Complete;
+    Status.ReadyPlayers = Status.ExpectedPlayers;
+    GS->SetMatchLoadingStatus(Status);
+}
+
+void Acasino_simulatorGameMode::FailOnlineLoading(const FText& Reason)
+{
+    auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (!GS || !GS->MatchLoadingStatus.IsPending()) return;
+    GetWorldTimerManager().ClearTimer(OnlineArrivalTimer);
+    auto Status = GS->MatchLoadingStatus;
+    Status.Stage = ECasinoMatchLoadingStage::Failed;
+    Status.FailureReason = Reason;
+    GS->SetMatchLoadingStatus(Status);
+    UE_LOG(LogTemp, Warning, TEXT("Online match loading failed: %s"), *Reason.ToString());
+}
+
+void Acasino_simulatorGameMode::Logout(AController* Exiting)
+{
+    auto* GS = GetGameState<ACasinoLoopGameState>();
+    if (GS && GS->MatchLoadingStatus.IsPending())
+    {
+        if (auto* PC = Cast<Acasino_simulatorPlayerController>(Exiting)) DepartedLoadingPlayers.Add(PC);
+        const int32 Removed = OnlineLoadingParticipants.RemoveAll([Exiting](const auto& Entry) { return Entry.Player.Get() == Exiting; });
+        if (Removed > 0) OnlineExpectedPlayers = FMath::Max(0, OnlineExpectedPlayers - Removed);
+        PublishOnlineLoadingCounts();
+        if (OnlineExpectedPlayers == 0)
+            FailOnlineLoading(FText::FromString(TEXT("모든 플레이어의 연결이 종료되었습니다.")));
+    }
+    Super::Logout(Exiting);
+    if (GS && GS->MatchLoadingStatus.IsPending()) WaitForOnlinePlayers();
 }
 
 void Acasino_simulatorGameMode::EndPlay(const EEndPlayReason::Type Reason)
@@ -198,12 +390,9 @@ void Acasino_simulatorGameMode::StartDayLoop()
 {
     auto* GS = GetGameState<ACasinoLoopGameState>();
     if (!HasAuthority() || !GS || GS->LoopStatus.Phase != ECasinoLoopPhase::Waiting) return;
-    TArray<AActor*> Points;
-    UGameplayStatics::GetAllActorsWithTag(this, PaymentSpawnTag, Points);
-    Points.Sort([](const AActor& A, const AActor& B) { return A.GetName() < B.GetName(); });
-    PaymentSpawns.Reset();
-    for (AActor* Point : Points) PaymentSpawns.Add(Point);
-    if (PaymentSpawns.IsEmpty())
+    if (GS->MatchLoadingStatus.IsPending() && !bCompletingInitialLoading) return;
+    if (GS->MatchLoadingStatus.Stage == ECasinoMatchLoadingStage::Failed) return;
+    if (!bInitialSpawnsPrepared && !GatherCentralSpawns())
     {
         UE_LOG(LogTemp, Error, TEXT("Day loop: no actors tagged %s. Start cancelled."), *PaymentSpawnTag.ToString());
         return;
@@ -277,7 +466,16 @@ void Acasino_simulatorGameMode::BeginCasinoDay(int32 Day)
     Status.RequiredPayment = CalculateRequiredPayment(Day);
     Status.IntroEndServerTime = GS->GetServerWorldTimeSeconds() + FMath::Max(0.1f, DayIntroDurationSeconds);
     GS->SetLoopStatus(Status);
-    if (!MovePlayersToCentralSpawns(false))
+    // Initial online placement was already acknowledged by every owning client.
+    // Starting the day must not teleport them a second time or expose a stale spawn.
+    if (bInitialSpawnsPrepared)
+    {
+        bInitialSpawnsPrepared = false;
+        for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+            if (auto* PC = Cast<Acasino_simulatorPlayerController>(It->Get()))
+                PC->ClientPrepareDayIntro(PC->GetControlRotation());
+    }
+    else if (!MovePlayersToCentralSpawns(false))
     {
         Status.Phase = ECasinoLoopPhase::GameOver;
         GS->SetLoopStatus(Status);
@@ -329,19 +527,38 @@ bool Acasino_simulatorGameMode::MovePlayersToCentralSpawns(bool bForPayment)
         APlayerController* PC = It->Get();
         auto* Player = PC ? Cast<Acasino_simulatorCharacter>(PC->GetPawn()) : nullptr;
         if (!Player) continue;
+        FOnlineLoadingParticipant* LoadingEntry = nullptr;
+        if (bPreparingInitialSpawns)
+        {
+            LoadingEntry = OnlineLoadingParticipants.FindByPredicate([PC](const auto& Entry) { return Entry.Player.Get() == PC; });
+            if (!LoadingEntry || !LoadingEntry->bWorldReady || LoadingEntry->ReadyPawn != Player)
+            {
+                bAllMoved = false;
+                continue;
+            }
+        }
         if (!PaymentSpawns.IsValidIndex(Index)) { bAllMoved = false; continue; }
         AActor* Point = PaymentSpawns[Index++].Get();
         Player->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
         Player->GetCharacterMovement()->StopMovementImmediately();
         Player->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
         const bool bMoved = Player->TeleportTo(Point->GetActorLocation(), Point->GetActorRotation());
-        if (bForPayment || (GetGameState<ACasinoLoopGameState>() && GetGameState<ACasinoLoopGameState>()->LoopStatus.Phase == ECasinoLoopPhase::DayIntro))
+        if (bPreparingInitialSpawns || bForPayment || (GetGameState<ACasinoLoopGameState>() && GetGameState<ACasinoLoopGameState>()->LoopStatus.Phase == ECasinoLoopPhase::DayIntro))
             Player->GetCharacterMovement()->DisableMovement();
         bAllMoved &= bMoved;
         PC->SetControlRotation(Point->GetActorRotation());
         if (auto* CasinoPC = Cast<Acasino_simulatorPlayerController>(PC))
         {
-            if (bForPayment) CasinoPC->ClientPrepareDailyPayment(Point->GetActorRotation());
+            if (LoadingEntry)
+            {
+                if (bMoved)
+                {
+                    LoadingEntry->SpawnTransform = Player->GetActorTransform();
+                    CasinoPC->ClientFinalizeCasinoSpawn(GetGameState<ACasinoLoopGameState>()->MatchLoadingStatus.Generation,
+                        LoadingEntry->SpawnTransform);
+                }
+            }
+            else if (bForPayment) CasinoPC->ClientPrepareDailyPayment(Point->GetActorRotation());
             else if (GetGameState<ACasinoLoopGameState>()->LoopStatus.Phase == ECasinoLoopPhase::DayIntro)
                 CasinoPC->ClientPrepareDayIntro(Point->GetActorRotation());
             else CasinoPC->ClientPrepareCasinoDay(Point->GetActorRotation());

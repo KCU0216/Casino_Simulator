@@ -17,6 +17,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCasinoUILocalPlayerReadinessTest,
 
 bool FCasinoUILocalPlayerReadinessTest::RunTest(const FString& Parameters)
 {
+    TestEqual(TEXT("Full map URL begins match loading for every expected participant"),
+        Acasino_simulatorPlayerController::GetCasinoMatchTravelPlayerCount(
+            TEXT("/Game/LJH/Map/asdasd?game=/Game/FirstPerson/Blueprints/BP_FirstPersonGameMode.BP_FirstPersonGameMode_C?SeamlessTravel?CasinoOnlineMatch=1?ExpectedPlayers=4")), 4);
+    TestEqual(TEXT("Ordinary menu travel does not begin match loading"),
+        Acasino_simulatorPlayerController::GetCasinoMatchTravelPlayerCount(TEXT("/Game/Blackjack/Level/L_MainMenu")), 0);
+    TestEqual(TEXT("Invalid participant count still waits for the local player"),
+        Acasino_simulatorPlayerController::GetCasinoMatchTravelPlayerCount(TEXT("/Game/Match?CasinoOnlineMatch=1?ExpectedPlayers=0")), 1);
     UClass* ControllerClass = LoadClass<Acasino_simulatorPlayerController>(nullptr,
         TEXT("/Game/FirstPerson/Blueprints/BP_FirstPersonPlayerController.BP_FirstPersonPlayerController_C"));
     UClass* IntroClass = LoadClass<UCasinoManagedWidget>(nullptr,
@@ -161,6 +168,18 @@ bool FCasinoUILocalPlayerReadinessTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("New controller owns the ready local presentation"), Replacement->GetUIManager()->IsLocalUIReady());
     TestNotNull(TEXT("New controller opens the phase screen"), Replacement->GetUIManager()->ActiveScreenWidget.Get());
     TestNotNull(TEXT("New controller creates its HUD"), Replacement->PlayerHUDWidget.Get());
+
+    // Loop replication or an early intro RPC cannot expose gameplay while the
+    // owning client is still confirming its final spawn after seamless travel.
+    Replacement->bClientMatchLoading = true;
+    Replacement->GetUIManager()->SetCasinoUIScreen(ECasinoUIScreen::DayIntro);
+    TestEqual(TEXT("Early day-intro request remains behind loading"), Replacement->UIScreen, ECasinoUIScreen::Loading);
+    Replacement->GetUIManager()->SetCasinoUIScreen(ECasinoUIScreen::Playing);
+    TestEqual(TEXT("Early gameplay request remains behind loading"), Replacement->UIScreen, ECasinoUIScreen::Loading);
+    TestTrue(TEXT("Movement stays locked behind the loading screen"), Replacement->IsMoveInputIgnored());
+    Replacement->bClientMatchLoading = false;
+    Replacement->GetUIManager()->RefreshCasinoUIScreen();
+    TestEqual(TEXT("Completed local barrier allows the replicated intro screen"), Replacement->UIScreen, ECasinoUIScreen::DayIntro);
 
     auto* Remote = World->SpawnActor<Acasino_simulatorPlayerController>(ControllerClass);
     if (!TestNotNull(TEXT("Server-side remote controller"), Remote)) return false;

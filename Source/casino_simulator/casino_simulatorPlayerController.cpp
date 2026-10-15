@@ -26,6 +26,9 @@
 #include "casino_simulatorCameraManager.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Blueprint/WidgetTree.h"
+#include "UObject/UObjectIterator.h"
+#include "Engine/GameInstance.h"
 #include "TimerManager.h"
 #include "casino_simulator.h"
 #include "Widgets/Input/SVirtualJoystick.h"
@@ -57,22 +60,46 @@ Acasino_simulatorPlayerController::Acasino_simulatorPlayerController()
 	PlayerCameraManagerClass = Acasino_simulatorCameraManager::StaticClass();
 }
 
+void Acasino_simulatorPlayerController::RemoveLegacyLobbyWidgetsForTravel()
+{
+    auto* GI = GetGameInstance();
+    if (!IsLocalController() || !GI) return;
+    auto* Online = GI->GetSubsystem<UCasinoOnlineSubsystem>();
+    const auto StopWidget = [Online](UUserWidget* Widget)
+    {
+        Widget->StopAnimationsAndLatentActions();
+        if (auto* WidgetWorld = Widget->GetWorld())
+            WidgetWorld->GetTimerManager().ClearAllTimersForObject(Widget);
+        if (Online)
+        {
+            Online->OnChanged.RemoveAll(Widget);
+            Online->OnError.RemoveAll(Widget);
+        }
+        Widget->SetVisibility(ESlateVisibility::Collapsed);
+    };
+    // The level-script lobby is outside UIManager, and seamless travel replaces
+    // its owning controller/world. Filter by GameInstance to also close stale
+    // instances without touching another PIE client's presentation.
+    for (TObjectIterator<UUserWidget> It; It; ++It)
+    {
+        UUserWidget* Widget = *It;
+        if (!IsValid(Widget) || Widget->IsTemplate() || Widget->GetGameInstance() != GI
+            || Widget->GetClass()->GetPathName() != TEXT("/Game/Blackjack/Level/WBP_LobbyUI.WBP_LobbyUI_C")) continue;
+        StopWidget(Widget);
+        if (Widget->WidgetTree)
+            Widget->WidgetTree->ForEachWidget([&StopWidget](UWidget* Child)
+            {
+                if (auto* ChildWidget = Cast<UUserWidget>(Child)) StopWidget(ChildWidget);
+            });
+        Widget->RemoveFromParent();
+    }
+}
+
 void Acasino_simulatorPlayerController::ClientEnterCasinoMatch_Implementation()
 {
-    TArray<UUserWidget*> Widgets;
-    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Widgets, UUserWidget::StaticClass(), false);
-    for (UUserWidget* Widget : Widgets)
-    {
-        if (Widget && Widget->GetOwningPlayer() == this &&
-            Widget->GetClass()->GetPathName() == TEXT("/Game/Blackjack/Level/WBP_LobbyUI.WBP_LobbyUI_C"))
-        {
-            GetWorldTimerManager().ClearAllTimersForObject(Widget);
-            Widget->RemoveFromParent();
-        }
-    }
-    ResetIgnoreMoveInput();
-    ResetIgnoreLookInput();
-    SetInputMode(FInputModeGameOnly());
+    RemoveLegacyLobbyWidgetsForTravel();
+    SetCasinoUIScreen(ECasinoUIScreen::Loading);
+    ApplyUIScreenInput();
     bShowMouseCursor = false;
     if (GetPawn()) SetViewTarget(GetPawn());
 }

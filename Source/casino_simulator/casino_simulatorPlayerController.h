@@ -182,6 +182,15 @@ public:
     void ServerSetLobbyReady(bool bReady);
     UFUNCTION(Client, Reliable)
     void ClientEnterCasinoMatch();
+    UFUNCTION(Client, Reliable)
+    void ClientBeginCasinoMatchLoading(FGuid Generation);
+    UFUNCTION(Client, Reliable)
+    void ClientFinalizeCasinoSpawn(FGuid Generation, FTransform SpawnTransform);
+    UFUNCTION(Server, Reliable)
+    void ServerReportCasinoWorldReady(FGuid Generation);
+    UFUNCTION(Server, Reliable)
+    void ServerReportCasinoSpawnReady(FGuid Generation);
+    bool IsCasinoMatchLoadingLocally() const { return bClientMatchLoading; }
 
     UFUNCTION(Server, Reliable, BlueprintCallable, Category="Casino|Loop")
     void ServerSubmitDailyPayment(int32 Amount);
@@ -416,6 +425,19 @@ public:
  bool IsDailyPaymentControlLocked() const { return bDailyPaymentControlLocked; }
 private:
  bool bDailyPaymentControlLocked = false;
+ void UpdateCasinoMatchLoading();
+ void RemoveLegacyLobbyWidgetsForTravel();
+ static int32 GetCasinoMatchTravelPlayerCount(const FString& URL);
+ FGuid ClientLoadingGeneration;
+ TWeakObjectPtr<APawn> ClientLoadingPawn;
+ TWeakObjectPtr<APawn> ClientFinalizedPawn;
+ FTransform PendingCasinoSpawn = FTransform::Identity;
+ double LocalLoadingReadySince = 0.0;
+ uint64 LocalSpawnAppliedFrame = 0;
+ bool bClientMatchLoading = false;
+ bool bClientWorldReadySent = false;
+ bool bClientSpawnReadySent = false;
+ bool bPendingCasinoSpawn = false;
 public:
 
 	UFUNCTION(BlueprintCallable, Category = "Interaction")

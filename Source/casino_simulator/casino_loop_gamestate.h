@@ -52,6 +52,43 @@ struct FCasinoLoopStatus
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCasinoLoopChanged);
 
+UENUM(BlueprintType)
+enum class ECasinoMatchLoadingStage : uint8
+{
+    None,
+    WaitingForPlayers,
+    PreparingSpawns,
+    Complete,
+    Failed
+};
+
+USTRUCT(BlueprintType)
+struct FCasinoMatchLoadingStatus
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly)
+    FGuid Generation;
+    UPROPERTY(BlueprintReadOnly)
+    ECasinoMatchLoadingStage Stage = ECasinoMatchLoadingStage::None;
+    UPROPERTY(BlueprintReadOnly)
+    int32 ExpectedPlayers = 0;
+    UPROPERTY(BlueprintReadOnly)
+    int32 ArrivedPlayers = 0;
+    UPROPERTY(BlueprintReadOnly)
+    int32 ReadyPlayers = 0;
+    UPROPERTY(BlueprintReadOnly)
+    FText FailureReason;
+
+    bool IsPending() const
+    {
+        return Stage == ECasinoMatchLoadingStage::WaitingForPlayers
+            || Stage == ECasinoMatchLoadingStage::PreparingSpawns;
+    }
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCasinoMatchLoadingChanged);
+
 UCLASS()
 class ACasinoLoopGameState : public AGameStateBase
 {
@@ -67,6 +104,14 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "Casino|Loop")
     FOnCasinoLoopChanged OnLoopChanged;
+
+    UPROPERTY(BlueprintReadOnly, ReplicatedUsing=OnRep_MatchLoadingStatus, Category="Casino|Loading")
+    FCasinoMatchLoadingStatus MatchLoadingStatus;
+
+    UPROPERTY(BlueprintAssignable, Category="Casino|Loading")
+    FOnCasinoMatchLoadingChanged OnMatchLoadingChanged;
+
+    void SetMatchLoadingStatus(const FCasinoMatchLoadingStatus& NewStatus);
 
     UFUNCTION(BlueprintPure, Category = "Casino|Loop")
     float GetRemainingDaySeconds() const;
@@ -86,4 +131,6 @@ public:
 private:
     UFUNCTION()
     void OnRep_LoopStatus();
+    UFUNCTION()
+    void OnRep_MatchLoadingStatus();
 };

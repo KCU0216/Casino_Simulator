@@ -21,6 +21,7 @@
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
 #include "casino_loop_gamestate.h"
+#include "UI/CasinoTravelLoadingSubsystem.h"
 #include "Framework/Application/IInputProcessor.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SViewport.h"
@@ -536,6 +537,11 @@ void UCasinoOnlineSubsystem::StartComplete(FName Name, bool bSuccess)
         + FString::Printf(TEXT("?SeamlessTravel?CasinoOnlineMatch=1?ExpectedPlayers=%d"), ExpectedPlayers);
     UE_LOG(LogTemp, Log, TEXT("CasinoOnline: Starting match travel: %s"), *URL);
     SetState(ECasinoOnlineState::InGame);
+    if (auto* Loading = GetGameInstance()->GetSubsystem<UCasinoTravelLoadingSubsystem>())
+    {
+        Loading->BeginLoading(ExpectedPlayers);
+        Loading->SetFailureExitHandler(FSimpleDelegate::CreateWeakLambda(this, [this] { LeaveRoom(); }));
+    }
     if (!GetWorld()->ServerTravel(URL, true))
     { Error(TEXT("Travel"), TEXT("Server travel failed.")); LeaveRoom(); }
 }

@@ -14,6 +14,7 @@ class APawn;
 class Acasino_simulatorCharacter;
 class UPoliceEncounterComponent;
 class ARaceManager;
+class Acasino_simulatorPlayerController;
 /**
  *  Simple GameMode for a first person game
  */
@@ -37,6 +38,14 @@ public:
     UPROPERTY(Transient, BlueprintReadWrite, Category="Casino|Race")
     TObjectPtr<ARaceManager> RaceEventManager;
     virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+    virtual void Logout(AController* Exiting) override;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Casino|Loading", meta=(ClampMin="30.0", Units="s"))
+    float OnlineLoadingTimeoutSeconds = 180.f;
+
+    // Called by the owning controller's reliable server RPCs.
+    void NotifyClientWorldReady(Acasino_simulatorPlayerController* Player, const FGuid& Generation);
+    void NotifyClientSpawnReady(Acasino_simulatorPlayerController* Player, const FGuid& Generation);
 
 	UFUNCTION(BlueprintCallable, Category = "Police")
 	void ArrestPlayer(APawn* TargetPlayer, AActor* PoliceActor, AActor* JailPoint);
@@ -112,6 +121,7 @@ private:
     friend class FCasinoAdaptivePaymentTest;
     friend class FCasinoPaymentGrowthFloorTest;
     friend class FRaceWorldEventTest;
+    friend class FCasinoMatchLoadingBarrierTest;
 #endif
     FTimerHandle RaceEventTimer;
     FTimerHandle RaceAnnouncementTimer;
@@ -124,6 +134,26 @@ private:
     FTimerHandle OnlineArrivalTimer;
     double OnlineArrivalDeadline = 0.0;
     int32 OnlineExpectedPlayers = 0;
+    struct FOnlineLoadingParticipant
+    {
+        TWeakObjectPtr<Acasino_simulatorPlayerController> Player;
+        TWeakObjectPtr<APawn> ReadyPawn;
+        FTransform SpawnTransform;
+        bool bWorldReady = false;
+        bool bSpawnReady = false;
+    };
+    TArray<FOnlineLoadingParticipant> OnlineLoadingParticipants;
+    TSet<TWeakObjectPtr<Acasino_simulatorPlayerController>> DepartedLoadingPlayers;
+    bool bPreparingInitialSpawns = false;
+    bool bInitialSpawnsPrepared = false;
+    bool bCompletingInitialLoading = false;
+    void BeginOnlineLoading(int32 ExpectedPlayers);
+    void RegisterOnlineLoadingPlayer(Acasino_simulatorPlayerController* Player);
+    void PublishOnlineLoadingCounts();
+    void PrepareOnlineInitialSpawns();
+    void FinishOnlineLoading();
+    void FailOnlineLoading(const FText& Reason);
+    bool GatherCentralSpawns();
     void WaitForOnlinePlayers();
     FTimerHandle IntroTimer;
     bool bRestartTravelPending = false;

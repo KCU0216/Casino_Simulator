@@ -4,10 +4,22 @@
 #include "casino_simulatorGameMode.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
+#include "UI/CasinoTravelLoadingSubsystem.h"
+#include "Kismet/GameplayStatics.h"
+
+int32 Acasino_simulatorPlayerController::GetCasinoMatchTravelPlayerCount(const FString& URL)
+{
+    int32 OptionsStart = INDEX_NONE;
+    if (!URL.FindChar(TEXT('?'), OptionsStart)) return 0;
+    const FString Options = URL.Mid(OptionsStart);
+    if (!UGameplayStatics::HasOption(Options, TEXT("CasinoOnlineMatch"))) return 0;
+    return FMath::Clamp(UGameplayStatics::GetIntOption(Options, TEXT("ExpectedPlayers"), 1), 1, 16);
+}
 
 void Acasino_simulatorPlayerController::PlayerTick(float DeltaTime)
 {
     Super::PlayerTick(DeltaTime);
+    UpdateCasinoMatchLoading();
     UIManager->UpdateUI();
     if (IsLocalController() && !UIManager->IsTravelPending()) TryInitializePlayerHUD();
 }
@@ -15,6 +27,26 @@ void Acasino_simulatorPlayerController::PreClientTravel(const FString& URL, ETra
 {
     if (IsLocalController())
     {
+        RemoveLegacyLobbyWidgetsForTravel();
+        ClientLoadingGeneration.Invalidate();
+        const int32 ExpectedPlayers = GetCasinoMatchTravelPlayerCount(URL);
+        bClientMatchLoading = ExpectedPlayers > 0;
+        bClientWorldReadySent = false;
+        bClientSpawnReadySent = false;
+        bPendingCasinoSpawn = false;
+        ClientLoadingPawn.Reset();
+        ClientFinalizedPawn.Reset();
+        LocalLoadingReadySince = 0.0;
+        if (bClientMatchLoading)
+            if (auto* Loading = GetGameInstance()->GetSubsystem<UCasinoTravelLoadingSubsystem>())
+            {
+                Loading->BeginLoading(ExpectedPlayers);
+                auto* GI = GetGameInstance();
+                Loading->SetFailureExitHandler(FSimpleDelegate::CreateWeakLambda(GI, [GI]
+                {
+                    if (auto* Online = GI->GetSubsystem<UCasinoOnlineSubsystem>()) Online->LeaveRoom();
+                }));
+            }
         UIManager->PrepareTravel();
         UnbindFromAbilitySystem();
         BindToPlayerState(nullptr);
