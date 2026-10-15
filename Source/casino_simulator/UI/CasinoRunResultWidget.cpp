@@ -21,10 +21,10 @@
 
 namespace CasinoRunResultStyle
 {
-const FLinearColor Gold(.83f, .67f, .34f);
-const FLinearColor Ivory(.93f, .91f, .85f);
-const FLinearColor Muted(.56f, .63f, .72f);
-const FLinearColor Navy(.025f, .045f, .075f, .88f);
+const FLinearColor RunResultGold(.83f, .67f, .34f);
+const FLinearColor RunResultIvory(.93f, .91f, .85f);
+const FLinearColor RunResultMuted(.56f, .63f, .72f);
+const FLinearColor RunResultNavy(.025f, .045f, .075f, .88f);
 constexpr float AnimationSeconds = 3.f;
 
 FLinearColor PlayerColor(int32 Index)
@@ -45,7 +45,7 @@ FString DisplayName(const FCasinoRunPlayerResult& Player)
 }
 
 UTextBlock* Text(UWidgetTree* Tree, FName Name, const FText& Value, int32 Size,
-    FLinearColor Color = Ivory)
+    FLinearColor Color = RunResultIvory)
 {
     UTextBlock* Widget = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
     Widget->SetText(Value);
@@ -113,7 +113,7 @@ public:
         using namespace CasinoRunResultStyle;
         if (Results.Days.Num() < 2) return Layer;
         const FVector2D Size = Geometry.GetLocalSize();
-        const FSlateRoundedBoxBrush Card(FLinearColor(.015f,.027f,.046f,.78f), 10.f, Gold.CopyWithNewOpacity(.20f), 1.f);
+        const FSlateRoundedBoxBrush Card(FLinearColor(.015f,.027f,.046f,.78f), 10.f, RunResultGold.CopyWithNewOpacity(.20f), 1.f);
         FSlateDrawElement::MakeBox(Elements, Layer, Geometry.ToPaintGeometry(), &Card, ESlateDrawEffect::None, FLinearColor(.015f,.027f,.046f,.78f));
         const float Left = 94.f, Right = FMath::Max(Left + 10.f, float(Size.X) - 190.f);
         const float Top = 32.f, Bottom = FMath::Max(Top + 10.f, float(Size.Y) - 38.f);
@@ -149,7 +149,7 @@ public:
             Amount.ReplaceInline(TEXT(".0"), TEXT(""));
             return Amount;
         };
-        Label(TEXT("잔액 · 원"), FVector2D(16.f, 10.f), Gold.CopyWithNewOpacity(.85f), AmountFont);
+        Label(TEXT("잔액 · 원"), FVector2D(16.f, 10.f), RunResultGold.CopyWithNewOpacity(.85f), AmountFont);
         double Maximum = 1.0;
         for (const FCasinoRunPlayerResult& Player : Results.Players)
             for (const FCasinoRunBalanceSnapshot& Snapshot : Player.DailyBalances)
@@ -164,17 +164,17 @@ public:
         {
             const double Value = Maximum * Step / 4.0;
             const float AtY = Y(Value);
-            Line({FVector2D(Left, AtY), FVector2D(Right, AtY)}, Muted.CopyWithNewOpacity(Step == 0 ? .28f : .12f), 1.f, 1);
+            Line({FVector2D(Left, AtY), FVector2D(Right, AtY)}, RunResultMuted.CopyWithNewOpacity(Step == 0 ? .28f : .12f), 1.f, 1);
             const FString Amount = CompactAmount(Value);
-            Label(Amount, FVector2D(Left - Measure->Measure(Amount, Font).X - 12.f, AtY - 8.f), Muted, Font);
+            Label(Amount, FVector2D(Left - Measure->Measure(Amount, Font).X - 12.f, AtY - 8.f), RunResultMuted, Font);
         }
         const int32 LabelStride = FMath::Max(1, FMath::DivideAndRoundUp(Results.Days.Num(), 10));
         for (int32 Index = 0; Index < Results.Days.Num(); ++Index)
         {
-            Line({FVector2D(X(Results.Days[Index]), Top), FVector2D(X(Results.Days[Index]), Bottom)}, Muted.CopyWithNewOpacity(.07f), 1.f, 1);
+            Line({FVector2D(X(Results.Days[Index]), Top), FVector2D(X(Results.Days[Index]), Bottom)}, RunResultMuted.CopyWithNewOpacity(.07f), 1.f, 1);
             if (Index % LabelStride != 0 && Index != Results.Days.Num() - 1) continue;
             const FString Day = FString::Printf(TEXT("%d일"), Results.Days[Index]);
-            Label(Day, FVector2D(X(Results.Days[Index]) - Measure->Measure(Day, Font).X / 2.f, Bottom + 11.f), Muted, Font);
+            Label(Day, FVector2D(X(Results.Days[Index]) - Measure->Measure(Day, Font).X / 2.f, Bottom + 11.f), RunResultMuted, Font);
         }
         const float EasedProgress = Progress * Progress * (3.f - 2.f * Progress);
         const float RevealX = FMath::Lerp(Left, Right, EasedProgress);
@@ -220,7 +220,7 @@ public:
                 bHasEndpoint = true;
                 PreviousDay = Snapshot.Day;
                 Circle(Point, 4.f, Color, 5);
-                Circle(Point, 1.8f, Ivory, 5);
+                Circle(Point, 1.8f, RunResultIvory, 5);
             }
             Flush();
             if (bHasEndpoint)
@@ -250,13 +250,13 @@ public:
             Line({End.Point, FVector2D(NameX, End.LabelY)}, End.Color.CopyWithNewOpacity(.55f), 1.f, 4);
             Circle(End.Point, 7.f, End.Color.CopyWithNewOpacity(.15f), 5);
             Circle(End.Point, 4.f, End.Color, 5);
-            Circle(End.Point, 1.8f, Ivory, 5);
+            Circle(End.Point, 1.8f, RunResultIvory, 5);
             const FSlateRoundedBoxBrush Badge(FLinearColor(.025f,.045f,.07f,.97f), 6.f, End.Color.CopyWithNewOpacity(.38f), 1.f);
             FSlateDrawElement::MakeBox(Elements, Layer + 5,
                 Geometry.ToPaintGeometry(FVector2D(158.f, 38.f), FSlateLayoutTransform(FVector2D(NameX, End.LabelY - 19.f))),
                 &Badge, ESlateDrawEffect::None, FLinearColor(.025f,.045f,.07f,.97f));
             Label(End.Name, FVector2D(NameX + 9.f, End.LabelY - 15.f), End.Color, NameFont);
-            Label(CompactAmount(End.Balance) + TEXT(" 원"), FVector2D(NameX + 9.f, End.LabelY + 3.f), Ivory.CopyWithNewOpacity(.85f), AmountFont);
+            Label(CompactAmount(End.Balance) + TEXT(" 원"), FVector2D(NameX + 9.f, End.LabelY + 3.f), RunResultIvory.CopyWithNewOpacity(.85f), AmountFont);
         }
         return Layer + 7;
     }
@@ -324,10 +324,10 @@ void UCasinoRunResultWidget::EnsureResultsPanel()
     { Summary->SetFont(FCoreStyle::GetDefaultFontStyle("Regular", 18)); Summary->SetWrapTextAt(940.f); }
     ResultsPanel = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("CasinoRunResultsPanel"));
     ResultsPanel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-    WaitingText = Text(WidgetTree, TEXT("CasinoRunResultsWaiting"), FText::FromString(TEXT("최종 기록을 불러오는 중…")), 20, Muted);
+    WaitingText = Text(WidgetTree, TEXT("CasinoRunResultsWaiting"), FText::FromString(TEXT("최종 기록을 불러오는 중…")), 20, RunResultMuted);
     WaitingText->SetJustification(ETextJustify::Center);
     Row(ResultsPanel, WaitingText, 14.f);
-    GraphHeading = Text(WidgetTree, TEXT("CasinoRunGraphHeading"), FText::FromString(TEXT("상납 후 잔액 변화")), 20, Gold);
+    GraphHeading = Text(WidgetTree, TEXT("CasinoRunGraphHeading"), FText::FromString(TEXT("상납 후 잔액 변화")), 20, RunResultGold);
     Row(ResultsPanel, GraphHeading, 4.f);
     GraphBounds = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("CasinoRunGraphBounds"));
     GraphBounds->SetHeightOverride(260.f);
@@ -340,16 +340,16 @@ void UCasinoRunResultWidget::EnsureResultsPanel()
     GraphLegend->SetWrapSize(940.f);
     GraphLegend->SetInnerSlotPadding(FVector2D(16.f, 5.f));
     Row(ResultsPanel, GraphLegend, 8.f);
-    GraphHint = Text(WidgetTree, TEXT("CasinoRunGraphHint"), FText::GetEmpty(), 14, Muted);
+    GraphHint = Text(WidgetTree, TEXT("CasinoRunGraphHint"), FText::GetEmpty(), 14, RunResultMuted);
     Row(ResultsPanel, GraphHint, 12.f);
     RankingPanel = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("CasinoRunRankingPanel"));
-    Row(RankingPanel, Text(WidgetTree, TEXT("CasinoRunRankHeading"), FText::FromString(TEXT("최종 잔액 순위")), 20, Gold), 6.f);
+    Row(RankingPanel, Text(WidgetTree, TEXT("CasinoRunRankHeading"), FText::FromString(TEXT("최종 잔액 순위")), 20, RunResultGold), 6.f);
     UHorizontalBox* Header = WidgetTree->ConstructWidget<UHorizontalBox>();
-    Cell(WidgetTree, Header, Text(WidgetTree, NAME_None, FText::FromString(TEXT("순위")), 14, Muted), 48.f);
-    Cell(WidgetTree, Header, Text(WidgetTree, NAME_None, FText::FromString(TEXT("플레이어")), 14, Muted), 0.f, true);
+    Cell(WidgetTree, Header, Text(WidgetTree, NAME_None, FText::FromString(TEXT("순위")), 14, RunResultMuted), 48.f);
+    Cell(WidgetTree, Header, Text(WidgetTree, NAME_None, FText::FromString(TEXT("플레이어")), 14, RunResultMuted), 0.f, true);
     for (const TCHAR* Caption : {TEXT("최종 잔액"), TEXT("총 상납액")})
     {
-        UTextBlock* Label = Text(WidgetTree, NAME_None, FText::FromString(Caption), 14, Muted);
+        UTextBlock* Label = Text(WidgetTree, NAME_None, FText::FromString(Caption), 14, RunResultMuted);
         Label->SetJustification(ETextJustify::Right);
         Cell(WidgetTree, Header, Label, 178.f);
     }
@@ -362,7 +362,7 @@ void UCasinoRunResultWidget::EnsureResultsPanel()
     Scroll->AddChild(RankingRows);
     TableBounds->SetContent(Scroll);
     Row(RankingPanel, TableBounds, 4.f);
-    Row(RankingPanel, Text(WidgetTree, TEXT("CasinoRunRankNote"), FText::FromString(TEXT("잔액이 같으면 공동 순위 · 총 상납액은 실제 납부한 금액")), 13, Muted), 4.f);
+    Row(RankingPanel, Text(WidgetTree, TEXT("CasinoRunRankNote"), FText::FromString(TEXT("잔액이 같으면 공동 순위 · 총 상납액은 실제 납부한 금액")), 13, RunResultMuted), 4.f);
     Row(ResultsPanel, RankingPanel, 10.f);
 
     // Re-add retained children so the insertion works both before and after Slate construction.
@@ -452,11 +452,11 @@ void UCasinoRunResultWidget::ApplyResults(const FCasinoRunResults& Results)
             Number->SetToolTipText(FText::AsNumber(Amount));
             Cell(WidgetTree, Cells, Number, 178.f);
         }
-        UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
-        Background->SetBrushColor(Index % 2 == 0 ? Navy : FLinearColor(.045f,.065f,.095f,.6f));
-        Background->SetPadding(FMargin(0.f));
-        Background->SetContent(Cells);
-        Row(RankingRows, Background, 3.f);
+        UBorder* RankingRowBackground = WidgetTree->ConstructWidget<UBorder>();
+        RankingRowBackground->SetBrushColor(Index % 2 == 0 ? RunResultNavy : FLinearColor(.045f,.065f,.095f,.6f));
+        RankingRowBackground->SetPadding(FMargin(0.f));
+        RankingRowBackground->SetContent(Cells);
+        Row(RankingRows, RankingRowBackground, 3.f);
         UTextBlock* Legend = Text(WidgetTree, NAME_None, FText::FromString(TEXT("● ") + DisplayName(Player)), 14, Color);
         Legend->SetToolTipText(FText::FromString(Name));
         USizeBox* LegendBounds = WidgetTree->ConstructWidget<USizeBox>();
@@ -466,7 +466,7 @@ void UCasinoRunResultWidget::ApplyResults(const FCasinoRunResults& Results)
         GraphLegend->AddChildToWrapBox(LegendBounds);
     }
     if (Results.Players.IsEmpty())
-        Row(RankingRows, Text(WidgetTree, NAME_None, FText::FromString(TEXT("기록된 참가자가 없습니다.")), 18, Muted), 8.f);
+        Row(RankingRows, Text(WidgetTree, NAME_None, FText::FromString(TEXT("기록된 참가자가 없습니다.")), 18, RunResultMuted), 8.f);
     ApplyPresentationStage();
 }
 
