@@ -3,6 +3,7 @@
 
 
 #include "ThiefCharacter.h"
+#include "Interaction/CasinoDayParticipant.h"
 #include "Engine/World.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -18,7 +19,8 @@ AThiefCharacter::AThiefCharacter()
 
 bool AThiefCharacter::CanSteal() const
 {
-	return ThiefState == EThiefState::Roaming;
+    return ThiefState == EThiefState::Roaming
+        && IsCasinoGameplayAllowed(this);
 }
 
 bool AThiefCharacter::TryStealFrom(

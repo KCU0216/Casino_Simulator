@@ -27,6 +27,7 @@ public:
 	// 감옥 이동 성공 후 경찰 BP에 알립니다.
 	UFUNCTION(BlueprintImplementableEvent, Category = "Police|Jail")
 	void OnPolicePlayerJailed();
+
 };
 
 
