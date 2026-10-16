@@ -4,6 +4,7 @@
 #include "Item/ItemData.h"
 #include "Engine/DataTable.h"
 #include "Net/UnrealNetwork.h"
+#include "casino_simulatorPlayerController.h"
 
 Acasino_simulatorPlayerState::Acasino_simulatorPlayerState()
 {
@@ -18,6 +19,7 @@ void Acasino_simulatorPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimePr
 
 	// Owner-only: a player's inventory contents aren't relevant to other clients.
 	DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, Inventory, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, NumberSlots, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, MiningPowerUpgradeLevel, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(Acasino_simulatorPlayerState, MiningSpeedUpgradeLevel, COND_OwnerOnly);
 }
@@ -40,6 +42,36 @@ bool Acasino_simulatorPlayerState::FindItemData(int32 ItemID, FItemData& OutItem
 	}
 
 	return false;
+}
+
+bool Acasino_simulatorPlayerState::SetNumberSlotAuthoritative(int32 SlotIndex, int32 ItemID)
+{
+    if (!HasAuthority() || SlotIndex < 0 || SlotIndex >= 2 || !NumberSlots.IsValidIndex(SlotIndex)
+        || GetItemQuantity(ItemID) <= 0 || !ItemDataTable
+        || ItemDataTable->GetRowStruct() != FItemData::StaticStruct()) return false;
+
+    const FItemData* Definition = nullptr;
+    for (const auto& Row : ItemDataTable->GetRowMap())
+    {
+        const auto* Candidate = reinterpret_cast<const FItemData*>(Row.Value);
+        if (Candidate && Candidate->UniqueID == ItemID)
+        {
+            if (Definition) return false; // An ambiguous ID cannot select a different item by row order.
+            Definition = Candidate;
+        }
+    }
+    if (!Definition || !Definition->bConsumeOnUse || !Definition->OnUseEffect) return false;
+
+    NumberSlots[SlotIndex] = ItemID;
+    OnRep_NumberSlots();
+    ForceNetUpdate();
+    return true;
+}
+
+void Acasino_simulatorPlayerState::OnRep_NumberSlots()
+{
+    OnInventoryChanged.Broadcast();
+    if (auto* PC = Cast<Acasino_simulatorPlayerController>(GetOwner())) PC->RefreshInventroy();
 }
 
 int32 Acasino_simulatorPlayerState::GetItemQuantity(int32 ItemID) const
@@ -186,5 +218,6 @@ void Acasino_simulatorPlayerState::ResetForNewCasinoRun()
     SetScore(0.f);
     OnRep_Inventory();
     OnRep_MiningUpgradeLevels();
+    OnRep_NumberSlots();
     ForceNetUpdate();
 }

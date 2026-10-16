@@ -116,8 +116,17 @@ public:
 
 
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NumberSlots")
+	/** Confirmed server selection. Clients request changes through their owned character. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_NumberSlots, Category = "NumberSlots")
 	TArray<int> NumberSlots = {0,1};
+
+    bool SetNumberSlotAuthoritative(int32 SlotIndex, int32 ItemID);
+
+protected:
+    UFUNCTION()
+    void OnRep_NumberSlots();
+
+public:
 
 	//~ Begin AActor interface
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

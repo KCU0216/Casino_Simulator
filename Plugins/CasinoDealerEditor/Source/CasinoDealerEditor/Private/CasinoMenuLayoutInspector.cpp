@@ -14,6 +14,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "UObject/UnrealType.h"
 #include "WidgetBlueprint.h"
+#include "Engine/DataTable.h"
+#include "Item/ItemData.h"
 
 namespace
 {
@@ -187,4 +189,24 @@ bool InspectCasinoMenuWidgets(FString& OutError)
         if (!InspectWidget(Path, Directory, OutError)) return false;
     }
     return true;
+}
+
+bool InspectCasinoInventoryWidgets(FString& OutError)
+{
+    const FString Directory = FPaths::ProjectSavedDir() / TEXT("CasinoDealerSetup/InventoryInspect");
+    for (const TCHAR* Path : {TEXT("/Game/1_BluePrint/Widget/WBP_ItemSlot.WBP_ItemSlot"),
+        TEXT("/Game/1_BluePrint/Widget/WBP_Inventory.WBP_Inventory"),
+        TEXT("/Game/1_BluePrint/Widget/WBP_HUD.WBP_HUD")})
+        if (!InspectWidget(Path, Directory, OutError)) return false;
+    UDataTable* Table = LoadObject<UDataTable>(nullptr, TEXT("/Game/3_DataTable/DT_ItemData.DT_ItemData"));
+    if (!Table || Table->GetRowStruct() != FItemData::StaticStruct())
+    { OutError = TEXT("Inventory item table missing or has an unexpected row type."); return false; }
+    TSharedRef<FJsonObject> Rows = MakeShared<FJsonObject>();
+    for (const auto& Entry : Table->GetRowMap())
+    {
+        FString Value;
+        FItemData::StaticStruct()->ExportText(Value, Entry.Value, nullptr, Table, PPF_None, nullptr);
+        Rows->SetStringField(Entry.Key.ToString(), Value);
+    }
+    return WriteJson(Rows, Directory / TEXT("items.json"));
 }

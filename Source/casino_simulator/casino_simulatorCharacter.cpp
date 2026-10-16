@@ -812,6 +812,26 @@ void Acasino_simulatorCharacter::UseNumberSlotItem(int32 SlotIndex)
 	}
 }
 
+void Acasino_simulatorCharacter::RequestSetNumberSlot(int32 SlotIndex, int32 ItemID)
+{
+    if (HasAuthority())
+    {
+        if (auto* State = GetPlayerState<Acasino_simulatorPlayerState>())
+            State->SetNumberSlotAuthoritative(SlotIndex, ItemID);
+    }
+    else if (IsLocallyControlled())
+    {
+        // Selection and use share this actor's reliable RPC ordering.
+        ServerSetNumberSlot(SlotIndex, ItemID);
+    }
+}
+
+void Acasino_simulatorCharacter::ServerSetNumberSlot_Implementation(int32 SlotIndex, int32 ItemID)
+{
+    if (auto* State = GetPlayerState<Acasino_simulatorPlayerState>())
+        State->SetNumberSlotAuthoritative(SlotIndex, ItemID);
+}
+
 void Acasino_simulatorCharacter::ServerUseNumberSlotItem_Implementation(int32 SlotIndex)
 {
 	ApplyNumberSlotItemEffect(SlotIndex);

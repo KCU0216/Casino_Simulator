@@ -12,6 +12,8 @@
 #include "CasinoSlotKeypadMigration.h"
 #include "CasinoGameStyleMigration.h"
 #include "CasinoRunResultsMigration.h"
+#include "CasinoQuickSlotMigration.h"
+#include "CasinoTradeUILayoutMigration.h"
 #include "BlackjackCardSoundSetup.h"
 #include "Engine/Blueprint.h"
 #include "Engine/SimpleConstructionScript.h"
@@ -125,6 +127,29 @@ int32 UCasinoDealerSetupCommandlet::Main(const FString& Params)
 {
     FString Mode = TEXT("Inspect");
     FParse::Value(*Params, TEXT("Mode="), Mode);
+    if (Mode.Equals(TEXT("TradeUI"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoTradeLayout(Error) || !InspectCasinoMenuWidgets(Error))
+        { UE_LOG(LogCasinoDealerSetup, Error, TEXT("Trade UI migration failed: %s"), *Error); return 1; }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Trade UI matches the casino theme; existing transfer graphs and keypad actions preserved."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("QuickSlots"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoQuickSlots(Error) || !InspectCasinoInventoryWidgets(Error))
+        { UE_LOG(LogCasinoDealerSetup, Error, TEXT("Quick-slot migration failed: %s"), *Error); return 1; }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Quick slots now request server-authoritative selection."));
+        return 0;
+    }
+    if (Mode.Equals(TEXT("QuickSlotsInspect"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!InspectCasinoInventoryWidgets(Error))
+        { UE_LOG(LogCasinoDealerSetup, Error, TEXT("Inventory inspection failed: %s"), *Error); return 1; }
+        return 0;
+    }
     if (Mode.Equals(TEXT("RunResults"), ESearchCase::IgnoreCase))
     {
         FString Error;

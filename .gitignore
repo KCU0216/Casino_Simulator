@@ -23,6 +23,9 @@ Backup*/
 # Codex temporary review artifacts
 .codex_tmp_ppt_view/
 
+# Local presentation documents and their generation dependencies
+/Presentation/
+
 # Local animation source assets
 Content/Casino_Animation/
 

@@ -257,6 +257,7 @@ void Acasino_simulatorPlayerController::RefreshInventorySlotCounts()
 
 	// Also push the full inventory so Blueprint can rebuild/refresh dynamic item slot widgets (e.g. WBP_ItemSlot).
 	PlayerHUDWidget->BP_InventoryUpdated(BoundPlayerState ? BoundPlayerState->GetInventory() : TArray<FInventoryEntry>());
+	PlayerHUDWidget->RefreshConfirmedNumberSlots(BoundPlayerState);
 }
 
 void Acasino_simulatorPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)

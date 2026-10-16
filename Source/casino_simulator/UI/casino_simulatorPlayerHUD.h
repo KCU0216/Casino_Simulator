@@ -7,6 +7,8 @@
 #include "Item/InventoryEntry.h"
 #include "casino_simulatorPlayerHUD.generated.h"
 
+class Acasino_simulatorPlayerState;
+
 /**
  *  Player HUD widget: displays the player's nicotine/alcohol levels.
  *  Kept passive - it doesn't source its own data. Acasino_simulatorPlayerController pushes
@@ -19,6 +21,9 @@ class CASINO_SIMULATOR_API Ucasino_simulatorPlayerHUD : public UUserWidget
 	GENERATED_BODY()
 
 public:
+
+	/** Repaints quick slots from the owning player's replicated, server-confirmed selection. */
+	void RefreshConfirmedNumberSlots(Acasino_simulatorPlayerState* State);
 
 	/** Passes control to Blueprint to update the nicotine progress bar */
 	UFUNCTION(BlueprintImplementableEvent, Category="HUD", meta = (DisplayName = "Nicotine Updated"))

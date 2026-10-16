@@ -10,7 +10,7 @@ public class CasinoDealerEditor : ModuleRules
             "Core", "CoreUObject", "Engine", "UnrealEd", "AssetRegistry", "AssetTools",
             "BlueprintGraph", "Kismet", "KismetCompiler", "AnimGraph", "AnimGraphRuntime", "AnimationBlueprintLibrary",
             "IKRig", "IKRigEditor", "Slate", "SlateCore", "Json", "JsonUtilities", "UMG", "UMGEditor",
-            "RenderCore", "RHI", "ImageCore", "casino_simulator"
+            "RenderCore", "RHI", "ImageCore", "casino_simulator", "GameplayAbilities", "GameplayTags"
         });
     }
 }

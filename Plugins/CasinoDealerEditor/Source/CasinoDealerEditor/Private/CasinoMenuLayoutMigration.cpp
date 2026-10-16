@@ -417,7 +417,8 @@ bool Save(UWidgetBlueprint* Blueprint, FString& Error)
         TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackCardUI.WBP_BlackjackCardUI"),
         TEXT("/Game/Store/UI/WBP_StoreMain.WBP_StoreMain"),
         TEXT("/Game/Store/UI/WBP_StoreItemCard.WBP_StoreItemCard"),
-        TEXT("/Game/Store/UI/WBP_StoreItemEntry.WBP_StoreItemEntry")})
+        TEXT("/Game/Store/UI/WBP_StoreItemEntry.WBP_StoreItemEntry"),
+        TEXT("/Game/1_BluePrint/Widget/WBP_Trade.WBP_Trade")})
         if (Blueprint->GetPathName() == Path) Allowed = true;
     if (!Allowed) { Error = TEXT("Attempt to save an asset outside menu migration scope."); return false; }
     const FString Filename = FPackageName::LongPackageNameToFilename(Blueprint->GetOutermost()->GetName(), FPackageName::GetAssetPackageExtension());
@@ -902,7 +903,8 @@ bool MigrateCasinoPresentationWidget(const TCHAR* AssetPath,
         TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackCardUI.WBP_BlackjackCardUI"),
         TEXT("/Game/Store/UI/WBP_StoreMain.WBP_StoreMain"),
         TEXT("/Game/Store/UI/WBP_StoreItemCard.WBP_StoreItemCard"),
-        TEXT("/Game/Store/UI/WBP_StoreItemEntry.WBP_StoreItemEntry")})
+        TEXT("/Game/Store/UI/WBP_StoreItemEntry.WBP_StoreItemEntry"),
+        TEXT("/Game/1_BluePrint/Widget/WBP_Trade.WBP_Trade")})
         if (FString(AssetPath) == Path) Allowed = true;
     if (!Allowed) { OutError = TEXT("Presentation asset is outside the requested scope."); return false; }
     UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, AssetPath);

@@ -415,6 +415,15 @@ protected:
 	/** Called from Input Actions for slot 2 input */
 	void Slot2Input(const FInputActionValue& Value);
 
+public:
+    /** Select an owned consumable for a quick slot; the owner UI updates from server replication. */
+    UFUNCTION(BlueprintCallable, Category="Inventory")
+    CASINO_SIMULATOR_API void RequestSetNumberSlot(int32 SlotIndex, int32 ItemID);
+
+    UFUNCTION(Server, Reliable)
+    void ServerSetNumberSlot(int32 SlotIndex, int32 ItemID);
+
+protected:
 	/** Shared Slot1Input/Slot2Input handler: routes to the server if we're not the authority, then refreshes local inventory UI. */
 	void UseNumberSlotItem(int32 SlotIndex);
 

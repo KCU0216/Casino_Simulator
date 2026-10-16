@@ -398,7 +398,8 @@ private:
     int32 Stage = 0;
 };
 
-bool QueueTravel(FAutomationTestBase* Test, int32 PlayerCount, bool bCheckResults = false)
+bool QueueTravel(FAutomationTestBase* Test, int32 PlayerCount, bool bCheckResults = false,
+    TSharedPtr<IAutomationLatentCommand> AfterTravel = nullptr)
 {
     if (!GEditor || !GEngine || GEditor->PlayWorld)
     {
@@ -418,6 +419,8 @@ bool QueueTravel(FAutomationTestBase* Test, int32 PlayerCount, bool bCheckResult
     FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FTravel>(Test, PlayerCount));
     if (bCheckResults)
         FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FResultsReplication>(Test));
+    if (AfterTravel.IsValid())
+        FAutomationTestFramework::Get().EnqueueLatentCommand(AfterTravel.ToSharedRef());
     ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
     FAutomationTestFramework::Get().EnqueueLatentCommand(MakeShared<FRestore>(Settings));
     return true;

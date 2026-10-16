@@ -78,3 +78,27 @@ void ApplyCasinoPaymentKeypadLayout(UUserWidget* Keypad)
 		if (UGridSlot* CellSlot = Cast<UGridSlot>(Cell->Slot)) CellSlot->SetPadding(FMargin(4.f));
 	}
 }
+
+void ApplyCasinoTradeKeypadLayout(UUserWidget* Keypad)
+{
+	if (!IsValid(Keypad) || Keypad->GetFName() != TEXT("WBP_Calculate")) return;
+	UWidget* Parent = Keypad->GetParent();
+	UUserWidget* Trade = Parent ? Parent->GetTypedOuter<UUserWidget>() : nullptr;
+	if (!Trade || !Trade->GetWidgetFromName(TEXT("CasinoTradeContent"))) return;
+	UGridPanel* Grid = Cast<UGridPanel>(Keypad->GetWidgetFromName(TEXT("GridPanel_35")));
+	UCanvasPanelSlot* Slot = Grid ? Cast<UCanvasPanelSlot>(Grid->Slot) : nullptr;
+	if (!Slot) return;
+	// Only this instance moves. The shared keypad's background still spans the
+	// viewport, so clicking outside continues to finish numeric entry.
+	Slot->SetAnchors(FAnchors(.5f, .5f));
+	Slot->SetOffsets(FMargin(380.f, 0.f, 400.f, 400.f));
+	Slot->SetAlignment(FVector2D(.5f, .5f));
+	for (int32 Index = 0; Index < 4; ++Index)
+	{ Grid->SetColumnFill(Index, 1.f); Grid->SetRowFill(Index, 1.f); }
+	for (UWidget* Cell : Grid->GetAllChildren())
+	{
+		if (USizeBox* Size = Cast<USizeBox>(Cell))
+		{ Size->SetWidthOverride(92.f); Size->SetHeightOverride(92.f); }
+		if (UGridSlot* CellSlot = Cast<UGridSlot>(Cell->Slot)) CellSlot->SetPadding(FMargin(4.f));
+	}
+}
