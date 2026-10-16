@@ -50,6 +50,11 @@ static float SimulateFinishTime(const FRunnerRaceScript& S)
 	return T;
 }
 
+void ARaceManager::TestFunction(int& A)
+{
+	A = 20;
+}
+
 ARaceManager::ARaceManager()
 {
 	PrimaryActorTick.bCanEverTick = true;
