@@ -55,7 +55,7 @@ public:
 
 	// ─────────── 트레이스(구슬) 연출 파라미터 ───────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ladder|Trace")
-	float TraceDuration = 2.5f;
+	float TraceDuration = 5.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ladder|Trace")
 	FLinearColor TraceColor = FLinearColor::Red;

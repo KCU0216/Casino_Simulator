@@ -6,11 +6,38 @@
 #include "GameFramework/Controller.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundBase.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Kismet/GameplayStatics.h"
 
 ALadderMachine::ALadderMachine()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;   // 설정값 리플리케이션 + RPC 사용
+
+	TraceAudio = CreateDefaultSubobject<UAudioComponent>(TEXT("TraceAudio"));
+	ResultAudio = CreateDefaultSubobject<UAudioComponent>(TEXT("ResultAudio"));
+	for (UAudioComponent* Audio : { TraceAudio.Get(), ResultAudio.Get() })
+	{
+		Audio->SetupAttachment(GetRootComponent());
+		Audio->bAutoActivate = false;
+		Audio->bStopWhenOwnerDestroyed = true;
+		Audio->bOverrideAttenuation = true;
+		Audio->AttenuationOverrides.bAttenuate = true;
+		Audio->AttenuationOverrides.bSpatialize = true;
+		Audio->AttenuationOverrides.AttenuationShapeExtents = FVector(350.0f, 0.0f, 0.0f);
+		Audio->AttenuationOverrides.FalloffDistance = 1200.0f;
+	}
+	static ConstructorHelpers::FObjectFinder<USoundBase> TraceSound(
+		TEXT("/Game/6_Sound/LadderTraceRallyX.LadderTraceRallyX"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> WinSound(
+		TEXT("/Game/LJH/Asset/SlotMachine/Sound/Winning.Winning"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> LoseSound(
+		TEXT("/Game/6_Sound/LadderLose.LadderLose"));
+	if (TraceSound.Succeeded()) TraceAudio->SetSound(TraceSound.Object);
+	if (WinSound.Succeeded()) WinResultSound = WinSound.Object;
+	if (LoseSound.Succeeded()) LoseResultSound = LoseSound.Object;
 
 	// 기본 배당 테이블 (합계 = 줄 개수 → 공정 EV).
 	auto Add = [this](int32 R, const TArray<int32>& M)
@@ -33,7 +60,6 @@ void ALadderMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ALadderMachine, Rows);
 	DOREPLIFETIME(ALadderMachine, Payouts);
 	DOREPLIFETIME(ALadderMachine, BetAmount);
-	DOREPLIFETIME(ALadderMachine, Mode);
 	DOREPLIFETIME(ALadderMachine, RailCursor);
 	DOREPLIFETIME(ALadderMachine, DisplayBalance);
 	DOREPLIFETIME(ALadderMachine, LadderState);
@@ -42,6 +68,12 @@ void ALadderMachine::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 void ALadderMachine::BeginPlay()
 {
 	Super::BeginPlay();
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		UGameplayStatics::PrimeSound(TraceAudio->Sound);
+		UGameplayStatics::PrimeSound(WinResultSound);
+		UGameplayStatics::PrimeSound(LoseResultSound);
+	}
 	if (HasAuthority())
 	{
 		SetRailCount(Rails);   // 서버가 초기 판 세팅 → 클라로 리플리케이트
@@ -50,6 +82,18 @@ void ALadderMachine::BeginPlay()
 		InitialPayouts = Payouts;
 		bInitialStateCaptured = true;
 	}
+}
+
+void ALadderMachine::StopMachineAudio()
+{
+	TraceAudio->Stop();
+	ResultAudio->Stop();
+}
+
+void ALadderMachine::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	StopMachineAudio();
+	Super::EndPlay(EndPlayReason);
 }
 
 // 점유 시작: 서버에서 머신 Owner 를 앉은 클라 컨트롤러로 → 그 클라의 Server RPC 허용.
@@ -81,7 +125,6 @@ void ALadderMachine::BroadcastInitialState()
 	BroadcastLadderState();
 	OnRailCountChanged.Broadcast(Rails);
 	OnResultsChanged.Broadcast();
-	OnModeChanged.Broadcast(Mode);
 	OnCursorChanged.Broadcast(RailCursor);
 	OnBetChanged.Broadcast(BetAmount);
 	OnBalanceChanged.Broadcast(DisplayBalance);   // 로컬 GetBalance() 대신 복제값 사용
@@ -280,7 +323,7 @@ void ALadderMachine::Client_InsufficientFunds_Implementation()
 	OnInsufficientFunds.Broadcast();
 }
 
-// ─────────── Nav (입력 진입점 — 서버 라우팅) ───────────
+// ─────────── Rail selection / round reset (server routing) ───────────
 
 void ALadderMachine::SetRailCursor(int32 NewCursor)
 {
@@ -291,80 +334,6 @@ void ALadderMachine::SetRailCursor(int32 NewCursor)
 }
 void ALadderMachine::Server_SetRailCursor_Implementation(int32 NewCursor) { SetRailCursor(NewCursor); }
 
-void ALadderMachine::NavCycle()
-{
-	if (!HasAuthority()) { Server_NavCycle(); return; }
-	if (bResultOpen) return;
-	const uint8 Next = (static_cast<uint8>(Mode) + 1) % 4;
-	Mode = static_cast<ELadderMode>(Next);
-	OnRep_Mode();
-}
-void ALadderMachine::Server_NavCycle_Implementation() { NavCycle(); }
-
-void ALadderMachine::NavLeft()
-{
-	if (!HasAuthority()) { Server_NavLeft(); return; }
-	if (bResultOpen) return;
-	switch (Mode)
-	{
-	case ELadderMode::RailSelect: SetRailCursor(RailCursor - 1); break;
-	case ELadderMode::RailCount:  RemoveRail();                  break;
-	case ELadderMode::Bet:        ChangeBet(-1);                 break;
-	default: break;
-	}
-}
-void ALadderMachine::Server_NavLeft_Implementation() { NavLeft(); }
-
-void ALadderMachine::NavRight()
-{
-	if (!HasAuthority()) { Server_NavRight(); return; }
-	if (bResultOpen) return;
-	switch (Mode)
-	{
-	case ELadderMode::RailSelect: SetRailCursor(RailCursor + 1); break;
-	case ELadderMode::RailCount:  AddRail();                     break;
-	case ELadderMode::Bet:        ChangeBet(1);                  break;
-	default: break;
-	}
-}
-void ALadderMachine::Server_NavRight_Implementation() { NavRight(); }
-
-void ALadderMachine::NavSelect()
-{
-	if (!HasAuthority())
-	{
-		// 클라 즉시 피드백(잔액부족). 권위 검증은 서버가 다시 함.
-		// 클라는 로컬 Currency 를 못 읽으므로 복제된 DisplayBalance 로 예측 판단.
-		if (!bIsPlaying && Mode == ELadderMode::RailSelect && DisplayBalance < BetAmount)
-		{
-			OnInsufficientFunds.Broadcast();
-		}
-		Server_NavSelect();
-		return;
-	}
-
-	if (bResultOpen) return;
-
-	switch (Mode)
-	{
-	case ELadderMode::RailSelect:
-		if (!bIsPlaying)
-		{
-			if (GetBalance() >= BetAmount) { ServerStartPlay(RailCursor); }
-			else                           { OnInsufficientFunds.Broadcast(); }
-		}
-		break;
-
-	case ELadderMode::Refresh:
-		ClearBoard();
-		ShuffleResults();
-		break;
-
-	default: break;
-	}
-}
-void ALadderMachine::Server_NavSelect_Implementation() { NavSelect(); }
-
 void ALadderMachine::ResetRound()
 {
 	if (!HasAuthority()) { Server_ResetRound(); return; }
@@ -373,8 +342,6 @@ void ALadderMachine::ResetRound()
 	bResultOpen = false;
 
 	ClearBoard();
-	Mode = ELadderMode::RailSelect;
-	OnRep_Mode();
 	SetRailCursor(0);
 	ClampBet();
 
@@ -396,10 +363,8 @@ void ALadderMachine::ResetMachineToInitialState()
 	Rows = InitialRows;
 	Payouts = InitialPayouts;
 	RailCursor = 0;
-	Mode = ELadderMode::RailSelect;
 	OnRep_RailConfig();
 	OnRep_Payouts();
-	OnRep_Mode();
 	PublishLadderState();
 	ForceNetUpdate();
 }
@@ -467,6 +432,7 @@ void ALadderMachine::ServerReveal()
 
 void ALadderMachine::Multicast_BoardCleared_Implementation()
 {
+	StopMachineAudio();
 	CurrentPlan = FLadderPlan();
 	bIsPlaying  = false;
 	OnBoardCleared.Broadcast();
@@ -474,6 +440,12 @@ void ALadderMachine::Multicast_BoardCleared_Implementation()
 
 void ALadderMachine::Multicast_PlayStarted_Implementation(FLadderPlan Plan, int32 BalanceAfterStake)
 {
+	StopMachineAudio();
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		// The source recording starts with about 100 ms of silence.
+		TraceAudio->Play(0.1f);
+	}
 	CurrentPlan = Plan;
 	bIsPlaying  = true;
 	bResultOpen = false;
@@ -483,6 +455,12 @@ void ALadderMachine::Multicast_PlayStarted_Implementation(FLadderPlan Plan, int3
 
 void ALadderMachine::Multicast_Result_Implementation(bool bWin, int32 DestRail, int32 Multiplier, int32 Winnings, int32 NewBalance)
 {
+	StopMachineAudio();
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		ResultAudio->SetSound(bWin ? WinResultSound : LoseResultSound);
+		ResultAudio->Play();
+	}
 	bIsPlaying  = false;
 	bResultOpen = true;
 	OnBalanceChanged.Broadcast(NewBalance);          // 당첨금 반영 최종 잔액
@@ -491,6 +469,7 @@ void ALadderMachine::Multicast_Result_Implementation(bool bWin, int32 DestRail, 
 
 void ALadderMachine::Multicast_ResultClosed_Implementation()
 {
+	StopMachineAudio();
 	bResultOpen = false;
 	OnResultClosed.Broadcast();
 }
@@ -532,11 +511,6 @@ void ALadderMachine::OnRep_Payouts()
 void ALadderMachine::OnRep_Bet()
 {
 	OnBetChanged.Broadcast(BetAmount);
-}
-
-void ALadderMachine::OnRep_Mode()
-{
-	OnModeChanged.Broadcast(Mode);
 }
 
 void ALadderMachine::OnRep_Cursor()

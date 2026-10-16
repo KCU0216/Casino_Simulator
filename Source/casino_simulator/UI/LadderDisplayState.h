@@ -21,5 +21,5 @@ struct FLadderDisplayState
 	TArray<int32> Odds;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Ladder")
-	float TraceDuration = 2.5f;
+	float TraceDuration = 5.0f;
 };

@@ -13,6 +13,9 @@ class ARaceRunner;
 class Acasino_simulatorCharacter;
 class UWidgetComponent;
 class URaceBillboardWidget;
+class UAudioComponent;
+class USoundBase;
+class APlayerState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRacePhaseChanged, ERacePhase, NewPhase);
 
@@ -113,11 +116,25 @@ public:
 
 protected:
 #if WITH_DEV_AUTOMATION_TESTS
+	friend class FRaceAudioFlowTest;
 	friend class FRaceEntranceFlowTest;
     friend class FRaceBillboardFlowTest;
     friend class FRaceOwnedTicketsUITest;
 #endif
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Race|Sound") TObjectPtr<UAudioComponent> CrowdAudio;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Race|Sound") TObjectPtr<UAudioComponent> RaceCueAudio;
+	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> CountdownSound;
+	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> StartSound;
+	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> FinishSound;
+	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> TicketWinSound;
+	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> TicketLoseSound;
+	void UpdateRaceAudio(ERacePhase PreviousPhase, bool bHadPhase);
+	void UpdateCountdownAudio();
+	void PlayRaceCue(USoundBase* Sound);
+	int32 LastCountdownSecond = 4;
+	UFUNCTION(NetMulticast, Reliable) void Multicast_PlayTicketResult(APlayerState* Buyer, bool bWon);
     UFUNCTION() void OnRep_Phase();
     UFUNCTION() void OnRep_BillboardData();
     UFUNCTION() void OnRep_AwakenRunner();

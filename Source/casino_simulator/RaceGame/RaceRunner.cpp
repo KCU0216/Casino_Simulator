@@ -11,6 +11,9 @@
 #include "NiagaraSystem.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundBase.h"
+#include "Kismet/GameplayStatics.h"
 
 ARaceRunner::ARaceRunner()
 {
@@ -23,6 +26,19 @@ ARaceRunner::ARaceRunner()
 
 	Skin = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Skin"));
 	Skin->SetupAttachment(SceneRoot);
+	FootstepAudio = CreateDefaultSubobject<UAudioComponent>(TEXT("FootstepAudio"));
+	FootstepAudio->SetupAttachment(SceneRoot);
+	FootstepAudio->bAutoActivate = false;
+	FootstepAudio->bStopWhenOwnerDestroyed = true;
+	FootstepAudio->bOverrideAttenuation = true;
+	FootstepAudio->AttenuationOverrides.bAttenuate = true;
+	FootstepAudio->AttenuationOverrides.bSpatialize = true;
+	FootstepAudio->AttenuationOverrides.AttenuationShapeExtents = FVector(150.f, 0.f, 0.f);
+	FootstepAudio->AttenuationOverrides.FalloffDistance = 1200.f;
+	FootstepAudio->SetVolumeMultiplier(.45f);
+	static ConstructorHelpers::FObjectFinder<USoundBase> Footsteps(
+		TEXT("/Game/6_Sound/RaceFootsteps.RaceFootsteps"));
+	if (Footsteps.Succeeded()) FootstepAudio->SetSound(Footsteps.Object);
     Skin->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     static ConstructorHelpers::FObjectFinder<UNiagaraSystem> BurstAsset(
         TEXT("/Game/KCU/HorseRacing/FX/NS_RunnerAwakenBurst.NS_RunnerAwakenBurst"));
@@ -117,6 +133,7 @@ void ARaceRunner::ServerSetExiting(bool bNew, double StartServerTime)
 
 void ARaceRunner::ResetVisual()
 {
+	FootstepAudio->Stop();
 	ClearAwakenEffect();
 	LocalTime = 0.f;
 	PosUnits = 0.f;
@@ -178,6 +195,22 @@ void ARaceRunner::ApplyMovementState()
 	{
 		SetActorLocation(RaceScript.StartLoc);
 	}
+	UpdateFootstepAudio();
+}
+
+void ARaceRunner::UpdateFootstepAudio()
+{
+	if (GetNetMode() == NM_DedicatedServer) return;
+	const bool bShouldPlay = bIsRunning && LocalMovementPhase == ERacePhase::Racing;
+	if (!bShouldPlay)
+	{
+		FootstepAudio->Stop();
+		return;
+	}
+	const float SpeedScale = FMath::Clamp(RaceScript.Speed / 200.f, .75f, 1.4f);
+	const float MovementScale = LocalTime < StumbleUntil ? .65f : (bAwakenedLocal ? 1.35f : 1.f);
+	FootstepAudio->SetPitchMultiplier(SpeedScale * MovementScale);
+	if (!FootstepAudio->IsPlaying()) FootstepAudio->Play();
 }
 
 void ARaceRunner::OnRep_Stats() { OnStatsUpdated(); }
@@ -190,6 +223,7 @@ void ARaceRunner::Tick(float Dt)
 	if (LocalMovementPhase == ERacePhase::Entering && bIsEntering) TickEntering();
 	else if (LocalMovementPhase == ERacePhase::Racing && bRacing) TickRacing();
 	else if (LocalMovementPhase == ERacePhase::Exiting && bIsExiting) TickExiting();
+	UpdateFootstepAudio();
 }
 
 double ARaceRunner::GetServerTime() const

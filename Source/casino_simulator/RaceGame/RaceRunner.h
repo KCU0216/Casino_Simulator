@@ -14,6 +14,7 @@ class UNiagaraSystem;
 class UNiagaraComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
+class UAudioComponent;
 
 UCLASS()
 class CASINO_SIMULATOR_API ARaceRunner : public AActor
@@ -81,7 +82,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Race")	void SetRunnerName(const FString& NewName);
 
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Race|Sound") TObjectPtr<UAudioComponent> FootstepAudio;
+	void UpdateFootstepAudio();
 #if WITH_DEV_AUTOMATION_TESTS
+	friend class FRaceAudioFlowTest;
 	friend class FRaceEntranceFlowTest;
 #endif
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Runner|Character") USceneComponent* SceneRoot;
