@@ -110,7 +110,13 @@ public:
     UFUNCTION(BlueprintPure, Category="Casino|Voice") bool IsVoiceEnabled() const;
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoicePlayerVolume(const FString& VoicePlayerId, float Volume);
     UFUNCTION(BlueprintPure, Category="Casino|Voice") float GetVoicePlayerVolume(const FString& VoicePlayerId) const;
+    // Slider edits apply immediately; nested edits defer only the settings-file write.
+    UFUNCTION(BlueprintCallable, Category="Casino|Voice") void BeginVoicePreferenceEdit();
+    UFUNCTION(BlueprintCallable, Category="Casino|Voice") void EndVoicePreferenceEdit();
+    UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoiceKeyCaptureActive(bool bActive);
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") bool IsVoiceKeyCaptureActive() const;
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetPushToTalkKey(FKey Key);
+    UFUNCTION(BlueprintPure, Category="Casino|Voice") static bool IsValidPushToTalkKey(FKey Key);
     UFUNCTION(BlueprintPure, Category="Casino|Voice") FKey GetPushToTalkKey() const;
     // Distances are Unreal units (centimeters). Only used during gameplay.
     UFUNCTION(BlueprintCallable, Category="Casino|Voice") void SetVoiceDistances(float FullVolumeDistance, float MaxDistance);
@@ -138,6 +144,7 @@ public:
 
 private:
     friend class FCasinoRoomPasswordStateTest;
+    friend class FCasinoVoiceSettingsTest;
     IOnlineSubsystem* OSS = nullptr; // Engine-owned, scoped to this PIE/game instance.
     IOnlineIdentityPtr Identity;
     IOnlineSessionPtr Sessions;
@@ -158,6 +165,9 @@ private:
     bool bMenuTravelPending = false;
     int32 ExpectedPlayers = 0;
     bool bTalkHeld = false;
+    bool bVoiceKeyCaptureActive = false;
+    int32 VoicePreferenceEditDepth = 0;
+    bool bVoicePreferencesPendingSave = false;
     bool bVoiceDirty = true;
     bool bHadVoiceChannel = false;
     bool bSessionWasPresent = false;
@@ -189,4 +199,5 @@ private:
     bool TickVoice(float DeltaSeconds);
     void ApplyVoiceSettings();
     void UpdateVoicePlayerVolumes();
+    void SaveVoicePreferences();
 };

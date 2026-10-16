@@ -32,6 +32,8 @@
 #include "UI/CasinoRoomDialogWidget.h"
 #include "UI/PauseMenuWidget.h"
 #include "UI/CasinoKeypadStyle.h"
+#include "UI/CasinoVoiceSettingsWidgets.h"
+#include "Online/CasinoOnlineSubsystem.h"
 #include "Widgets/SOverlay.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCasinoMenuPreview, Log, All);
@@ -43,6 +45,7 @@ IConsoleCommand* SettingsPreviewCommand = nullptr;
 IConsoleCommand* PausePreviewCommand = nullptr;
 IConsoleCommand* DayPreviewCommand = nullptr;
 IConsoleCommand* LadderPreviewCommand = nullptr;
+IConsoleCommand* VoiceSettingsPreviewCommand = nullptr;
 const TCHAR* MainClassPath = TEXT("/Game/Blackjack/Level/WBP_MainMenu.WBP_MainMenu_C");
 const TCHAR* LobbyClassPath = TEXT("/Game/Blackjack/Level/WBP_LobbyUI.WBP_LobbyUI_C");
 const TCHAR* PlayerClassPath = TEXT("/Game/Blackjack/Level/WBP_LobbyPlayerEntry.WBP_LobbyPlayerEntry_C");
@@ -208,7 +211,7 @@ bool AddSettingsSamples(UUserWidget* Settings, FString& Error)
 
 bool RenderOne(FWidgetRenderer& Renderer, UUserWidget* Widget, const FIntPoint& Size,
     const FString& Filename, FString& Error, bool bCheckMenuPalette = true, bool bCheckTranslucency = false,
-    TSharedPtr<SWidget> Composite = nullptr)
+    TSharedPtr<SWidget> Composite = nullptr, TFunction<bool(FString&)> CheckLayout = {})
 {
     const float Scale = FMath::Max(.01f, GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Size));
     const FVector2D DrawSize(Size.X, Size.Y);
@@ -224,7 +227,10 @@ bool RenderOne(FWidgetRenderer& Renderer, UUserWidget* Widget, const FIntPoint& 
         Target->InitCustomFormat(Size.X, Size.Y, PF_FloatRGBA, true);
         Target->UpdateResourceImmediate(true);
     }
-    Renderer.DrawWidget(Target.Get(), Composite.IsValid() ? Composite.ToSharedRef() : Widget->TakeWidget(), Scale, DrawSize, 0.f, false);
+    // UMG caches weak Slate pointers. Keep the tree alive through readback and
+    // geometry checks after DrawWidget releases its temporary virtual window.
+    const TSharedRef<SWidget> SlateRoot = Composite.IsValid() ? Composite.ToSharedRef() : Widget->TakeWidget();
+    Renderer.DrawWidget(Target.Get(), SlateRoot, Scale, DrawSize, 0.f, false);
     FlushRenderingCommands();
     FImage Image;
     if (!FImageUtils::GetRenderTargetImage(Target.Get(), Image))
@@ -284,6 +290,8 @@ bool RenderOne(FWidgetRenderer& Renderer, UUserWidget* Widget, const FIntPoint& 
     }
     if (!FImageUtils::SaveImageByExtension(*Filename, PngImage))
     { Error = TEXT("Could not save menu preview: ") + Filename; return false; }
+    if (CheckLayout && !CheckLayout(Error))
+    { Error += TEXT(" [") + FPaths::GetBaseFilename(Filename) + TEXT("]"); return false; }
     UE_LOG(LogCasinoMenuPreview, Display, TEXT("Rendered %s (%d x %d, project DPI %.3f)"), *Filename, Size.X, Size.Y, Scale);
     Widget->ReleaseSlateResources(true);
     return true;
@@ -549,8 +557,114 @@ bool RenderCasinoLadderPreviews(FString& Error)
     return true;
 }
 
+namespace CasinoVoicePreview
+{
+FSlateRect Bounds(UWidget* Widget)
+{
+    const FGeometry Geometry = Widget->GetPaintSpaceGeometry();
+    const FVector2D A = Geometry.LocalToAbsolute(FVector2D::ZeroVector);
+    const FVector2D B = Geometry.LocalToAbsolute(Geometry.GetLocalSize());
+    return FSlateRect(A.X, A.Y, B.X, B.Y);
+}
+
+bool Contains(UWidget* Outer, UWidget* Inner)
+{
+    if (!Outer || !Inner) return false;
+    const FSlateRect A = Bounds(Outer), B = Bounds(Inner);
+    return B.Right > B.Left && B.Bottom > B.Top && B.Left >= A.Left - 2.f
+        && B.Top >= A.Top - 2.f && B.Right <= A.Right + 2.f && B.Bottom <= A.Bottom + 2.f;
+}
+
+bool Check(UUserWidget* Settings, bool Controls, FString& Error)
+{
+    UWidget* Frame = Find<UWidget>(Settings, Controls ? TEXT("CasinoSettingsFrame_KeySettingsPanel") : TEXT("CasinoSettingsFrame_AudioPanel"));
+    UUserWidget* Panel = Find<UUserWidget>(Settings, Controls ? TEXT("CasinoVoiceKeyBindingPanel") : TEXT("CasinoVoiceSettingsPanel"));
+    if (!Frame || !Panel)
+    { Error = TEXT("Voice settings frame or panel is missing."); return false; }
+    if (!Contains(Frame, Panel))
+    {
+        const FSlateRect A = Bounds(Frame), B = Bounds(Panel);
+        Error = FString::Printf(TEXT("Voice settings panel exceeds its frame: frame=(%.1f,%.1f,%.1f,%.1f), panel=(%.1f,%.1f,%.1f,%.1f)."),
+            A.Left,A.Top,A.Right,A.Bottom,B.Left,B.Top,B.Right,B.Bottom);
+        return false;
+    }
+    const TArray<FName> Names = Controls ? TArray<FName>{TEXT("PushToTalkKeySelector"), TEXT("PushToTalkResetKey")}
+        : TArray<FName>{TEXT("VoiceOutputSlider"), TEXT("VoiceInputSlider"), TEXT("VoiceParticipantList")};
+    for (FName Name : Names)
+        if (!Contains(Frame, Panel->GetWidgetFromName(Name)))
+        { Error = TEXT("Voice control exceeds the settings frame: ") + Name.ToString(); return false; }
+    return true;
+}
+
+bool Render(FString& Error)
+{
+    if (!IsInGameThread() || IsRunningCommandlet() || !GIsEditor || !FApp::CanEverRender()
+        || !FSlateApplication::IsInitialized() || !GDynamicRHI || GDynamicRHI->GetInterfaceType() == ERHIInterfaceType::Null)
+    { Error = TEXT("Voice previews require the rendering editor with Slate."); return false; }
+    const FString Saved = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir());
+    const FString Directory = Saved / TEXT("CasinoDealerSetup/VoiceSettingsPreviews");
+    if (!IFileManager::Get().MakeDirectory(*Directory, true))
+    { Error = TEXT("Could not create voice preview directory."); return false; }
+    FWidgetRenderer* Renderer = new FWidgetRenderer(false, true);
+    ON_SCOPE_EXIT { FlushRenderingCommands(); BeginCleanup(Renderer); };
+    const FIntPoint Sizes[] = {FIntPoint(1920,1080), FIntPoint(1280,720), FIntPoint(1440,1080), FIntPoint(2560,1080)};
+    const TCHAR* Variants[] = {TEXT("Audio"),TEXT("Controls"),TEXT("EmptyRoster"),TEXT("LongRoster"),TEXT("InGameAudio"),TEXT("InGameControls")};
+    int32 Rendered = 0;
+    FString Manifest = TEXT("Actual settings and embedded pause-menu previews. Voice participant samples exist only in transient design widgets. No live Construct, voice connection, preference setters, settings Apply, or configuration writes are invoked. Control containment is checked after paint; in-game panels retain gameplay alpha.\n");
+    for (const FIntPoint Size : Sizes) for (int32 Variant = 0; Variant < UE_ARRAY_COUNT(Variants); ++Variant)
+    {
+        const bool InGame = Variant >= 4, Controls = Variant == 1 || Variant == 5;
+        TStrongObjectPtr<UUserWidget> Root(CreatePreview(InGame ? PauseClassPath : SettingsClassPath, Error));
+        UUserWidget* Settings = Root.IsValid() ? (InGame ? Find<UUserWidget>(Root.Get(), TEXT("WBP_Settings")) : Root.Get()) : nullptr;
+        if (!Settings) { Error = TEXT("Voice preview could not find the settings instance."); return false; }
+        if (InGame)
+        {
+            UPauseMenuWidget* Pause = Cast<UPauseMenuWidget>(Root.Get());
+            UWidgetSwitcher* Switcher = Find<UWidgetSwitcher>(Root.Get(), TEXT("WidgetSwitcher_0"));
+            if (!Pause || !Switcher) { Error = TEXT("Voice preview pause contract differs."); return false; }
+            Pause->ApplyInGameSettingsAppearance();
+            Switcher->SetActiveWidget(Settings);
+        }
+        if (!AddSettingsSamples(Settings, Error) || !SelectSettingsPage(Settings, Controls ? 3 : 2, Error)) return false;
+        UCasinoVoiceSettingsWidget* Voice = Find<UCasinoVoiceSettingsWidget>(Settings, TEXT("CasinoVoiceSettingsPanel"));
+        UUserWidget* Binding = Find<UUserWidget>(Settings, TEXT("CasinoVoiceKeyBindingPanel"));
+        if (!Voice || !Binding) { Error = TEXT("Voice settings native widgets are missing."); return false; }
+        TArray<FCasinoVoiceParticipant> Samples;
+        const int32 Count = Variant == 2 ? 0 : Variant == 3 ? 15 : 3;
+        for (int32 Index = 0; Index < Count; ++Index)
+        {
+            FCasinoVoiceParticipant& Sample = Samples.AddDefaulted_GetRef();
+            Sample.Id = FString::Printf(TEXT("preview-%d"), Index);
+            Sample.DisplayName = Index == 1 ? TEXT("긴 플레이어 이름도 읽기 쉽게 표시하는 테스트") : FString::Printf(TEXT("플레이어 %d"), Index + 1);
+            Sample.Volume = Index == 1 ? .45f : Index == 2 ? 1.6f : 1.f;
+            Sample.bMuted = Index == 2; Sample.bTalking = Index == 0;
+        }
+        Voice->PrepareDesignerPreview(Samples);
+        PreparePreviewTree(Voice);
+        Binding->TakeWidget();
+        PreparePreviewTree(Binding);
+        const FString Filename = Directory / FString::Printf(TEXT("%s_%dx%d.png"), Variants[Variant], Size.X, Size.Y);
+        if (!RenderOne(*Renderer, Root.Get(), Size, Filename, Error, !InGame, InGame, nullptr,
+            [Settings, Controls](FString& LayoutError) { return Check(Settings, Controls, LayoutError); })) return false;
+        Manifest += Filename + TEXT("\n"); ++Rendered;
+    }
+    if (!FFileHelper::SaveStringToFile(Manifest, *(Directory / TEXT("preview-info.txt")), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+    { Error = TEXT("Could not write voice preview manifest."); return false; }
+    UE_LOG(LogCasinoMenuPreview, Display, TEXT("Completed %d voice settings previews: %s"), Rendered, *Directory);
+    return true;
+}
+}
+
 void RegisterCasinoMenuPreviewCommands()
 {
+    if (!VoiceSettingsPreviewCommand)
+        VoiceSettingsPreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(TEXT("CasinoVoiceSettings.RenderPreviews"),
+            TEXT("Preview voice controls, roster, push-to-talk bindings and in-game settings without changing preferences."),
+            FConsoleCommandDelegate::CreateLambda([]()
+            {
+                FString Error;
+                if (!CasinoVoicePreview::Render(Error)) UE_LOG(LogCasinoMenuPreview, Error, TEXT("Voice settings previews failed: %s"), *Error);
+            }), ECVF_Default);
     if (!LadderPreviewCommand)
     {
         LadderPreviewCommand = IConsoleManager::Get().RegisterConsoleCommand(TEXT("CasinoLadder.RenderPreviews"),
@@ -603,6 +717,8 @@ void RegisterCasinoMenuPreviewCommands()
 
 void UnregisterCasinoMenuPreviewCommands()
 {
+    if (VoiceSettingsPreviewCommand)
+    { IConsoleManager::Get().UnregisterConsoleObject(VoiceSettingsPreviewCommand, false); VoiceSettingsPreviewCommand = nullptr; }
     if (LadderPreviewCommand)
     {
         IConsoleManager::Get().UnregisterConsoleObject(LadderPreviewCommand, false);

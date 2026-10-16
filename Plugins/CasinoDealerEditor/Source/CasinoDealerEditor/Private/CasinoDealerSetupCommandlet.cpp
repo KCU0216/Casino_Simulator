@@ -14,6 +14,7 @@
 #include "CasinoRunResultsMigration.h"
 #include "CasinoQuickSlotMigration.h"
 #include "CasinoTradeUILayoutMigration.h"
+#include "CasinoVoiceSettingsMigration.h"
 #include "BlackjackCardSoundSetup.h"
 #include "Engine/Blueprint.h"
 #include "Engine/SimpleConstructionScript.h"
@@ -127,6 +128,14 @@ int32 UCasinoDealerSetupCommandlet::Main(const FString& Params)
 {
     FString Mode = TEXT("Inspect");
     FParse::Value(*Params, TEXT("Mode="), Mode);
+    if (Mode.Equals(TEXT("VoiceSettings"), ESearchCase::IgnoreCase))
+    {
+        FString Error;
+        if (!MigrateCasinoVoiceSettings(Error) || !InspectCasinoMenuWidgets(Error))
+        { UE_LOG(LogCasinoDealerSetup, Error, TEXT("Voice settings migration failed: %s"), *Error); return 1; }
+        UE_LOG(LogCasinoDealerSetup, Display, TEXT("Voice settings and push-to-talk binding added; existing settings graphs and controls preserved."));
+        return 0;
+    }
     if (Mode.Equals(TEXT("TradeUI"), ESearchCase::IgnoreCase))
     {
         FString Error;

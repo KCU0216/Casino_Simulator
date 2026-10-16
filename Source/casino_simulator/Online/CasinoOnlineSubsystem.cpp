@@ -28,6 +28,9 @@
 #include "Input/Events.h"
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
+#include "UObject/StrongObjectPtr.h"
+#include <limits>
 #endif
 
 void FCasinoVoiceUpdateCache::Reset()
@@ -111,11 +114,13 @@ namespace CasinoVoice
         explicit FTalkInput(UCasinoOnlineSubsystem* InOnline) : Online(InOnline) {}
         void Tick(float, FSlateApplication& App, TSharedRef<ICursor>) override
         {
-            if (Online.IsValid() && !IsOurWindow(App)) Online->SetPushToTalkHeld(false);
+            if (Online.IsValid() && (Online->IsVoiceKeyCaptureActive() || !IsOurWindow(App)))
+                Online->SetPushToTalkHeld(false);
         }
         bool HandleKeyDownEvent(FSlateApplication& App, const FKeyEvent& Event) override
         {
-            if (Online.IsValid() && IsOurWindow(App) && Event.GetKey() == Online->GetPushToTalkKey() && !Event.IsRepeat())
+            if (Online.IsValid() && !Online->IsVoiceKeyCaptureActive() && IsOurWindow(App) &&
+                Event.GetKey() == Online->GetPushToTalkKey() && !Event.IsRepeat())
                 Online->SetPushToTalkHeld(true);
             return false;
         }
@@ -152,6 +157,10 @@ void UCasinoOnlineSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UCasinoOnlineSubsystem::Deinitialize()
 {
+    VoicePreferenceEditDepth = 0;
+    if (bVoicePreferencesPendingSave) SaveVoicePreferences();
+    bVoiceKeyCaptureActive = false;
+    bTalkHeld = false;
     VoiceUpdateCache.Reset();
     ClearRoomCredentials();
     if (IVoiceChatUser* Voice = VoiceUser()) Voice->TransmitToNoChannels();
@@ -741,6 +750,7 @@ IVoiceChatUser* UCasinoOnlineSubsystem::VoiceUser() const
 
 bool UCasinoOnlineSubsystem::TickVoice(float)
 {
+    if (bVoiceKeyCaptureActive) SetPushToTalkHeld(false);
     if (!VoiceInputProcessor && FSlateApplication::IsInitialized() && !IsRunningDedicatedServer())
     {
         VoiceInputProcessor = MakeShared<CasinoVoice::FTalkInput>(this);
@@ -788,7 +798,8 @@ void UCasinoOnlineSubsystem::ApplyVoiceSettings()
     Voice->SetAudioOutputVolume(Pref->OutputVolume);
     Voice->SetAudioInputVolume(GetVoiceInputVolume());
     Voice->SetInputDeviceId(Pref->InputDeviceId);
-    if (bVoiceAllowed && Pref->bVoiceEnabled && !Pref->bMicrophoneMuted && (!Pref->bPushToTalk || bTalkHeld))
+    if (bVoiceAllowed && Pref->bVoiceEnabled && !Pref->bMicrophoneMuted &&
+        (!Pref->bPushToTalk || (bTalkHeld && !bVoiceKeyCaptureActive)))
         Voice->TransmitToAllChannels();
     else Voice->TransmitToNoChannels();
     bVoiceDirty = false;
@@ -852,7 +863,7 @@ void UCasinoOnlineSubsystem::UpdateVoicePlayerVolumes()
 void UCasinoOnlineSubsystem::SetVoiceEnabled(bool bEnabled)
 {
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
-    Pref->bVoiceEnabled = bEnabled; Pref->SaveConfig(); bTalkHeld = false; bVoiceDirty = true; ApplyVoiceSettings();
+    Pref->bVoiceEnabled = bEnabled; SaveVoicePreferences(); bTalkHeld = false; bVoiceDirty = true; ApplyVoiceSettings();
     OnChanged.Broadcast();
 }
 bool UCasinoOnlineSubsystem::IsVoiceEnabled() const { return GetDefault<UCasinoVoicePreferences>()->bVoiceEnabled; }
@@ -860,7 +871,7 @@ void UCasinoOnlineSubsystem::SetVoicePlayerVolume(const FString& Id, float Volum
 {
     if (Id.IsEmpty() || !FMath::IsFinite(Volume)) return;
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
-    Pref->PlayerVolumes.Add(Id, FMath::Clamp(Volume, 0.0f, 2.0f)); Pref->SaveConfig();
+    Pref->PlayerVolumes.Add(Id, FMath::Clamp(Volume, 0.0f, 2.0f)); SaveVoicePreferences();
     UpdateVoicePlayerVolumes(); OnChanged.Broadcast();
 }
 float UCasinoOnlineSubsystem::GetVoicePlayerVolume(const FString& Id) const
@@ -868,20 +879,52 @@ float UCasinoOnlineSubsystem::GetVoicePlayerVolume(const FString& Id) const
     const float* Volume = GetDefault<UCasinoVoicePreferences>()->PlayerVolumes.Find(Id);
     return Volume && FMath::IsFinite(*Volume) ? FMath::Clamp(*Volume, 0.0f, 2.0f) : 1.0f;
 }
+void UCasinoOnlineSubsystem::BeginVoicePreferenceEdit()
+{
+    ++VoicePreferenceEditDepth;
+}
+void UCasinoOnlineSubsystem::EndVoicePreferenceEdit()
+{
+    if (VoicePreferenceEditDepth > 0) --VoicePreferenceEditDepth;
+    if (VoicePreferenceEditDepth == 0 && bVoicePreferencesPendingSave) SaveVoicePreferences();
+}
+void UCasinoOnlineSubsystem::SaveVoicePreferences()
+{
+    bVoicePreferencesPendingSave = true;
+    if (VoicePreferenceEditDepth > 0) return;
+    GetMutableDefault<UCasinoVoicePreferences>()->SaveConfig();
+    bVoicePreferencesPendingSave = false;
+}
+void UCasinoOnlineSubsystem::SetVoiceKeyCaptureActive(bool bActive)
+{
+    bVoiceKeyCaptureActive = bActive;
+    if (bActive) SetPushToTalkHeld(false);
+}
+bool UCasinoOnlineSubsystem::IsVoiceKeyCaptureActive() const { return bVoiceKeyCaptureActive; }
+bool UCasinoOnlineSubsystem::IsValidPushToTalkKey(FKey Key)
+{
+    return Key.IsValid() && Key != EKeys::AnyKey && Key != EKeys::Escape && Key != EKeys::Tab &&
+        !Key.IsGamepadKey() && !Key.IsMouseButton() && !Key.IsModifierKey() &&
+        !Key.IsAxis1D() && !Key.IsAxis2D() && !Key.IsAxis3D();
+}
 void UCasinoOnlineSubsystem::SetPushToTalkKey(FKey Key)
 {
-    if (!Key.IsValid() || Key.IsGamepadKey() || Key.IsMouseButton() || Key == EKeys::AnyKey) return;
+    if (!IsValidPushToTalkKey(Key)) return;
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
-    Pref->PushToTalkKey = Key; Pref->SaveConfig(); SetPushToTalkHeld(false);
+    Pref->PushToTalkKey = Key; SaveVoicePreferences(); SetPushToTalkHeld(false);
 }
-FKey UCasinoOnlineSubsystem::GetPushToTalkKey() const { return GetDefault<UCasinoVoicePreferences>()->PushToTalkKey; }
+FKey UCasinoOnlineSubsystem::GetPushToTalkKey() const
+{
+    const FKey Key = GetDefault<UCasinoVoicePreferences>()->PushToTalkKey;
+    return IsValidPushToTalkKey(Key) ? Key : EKeys::V;
+}
 void UCasinoOnlineSubsystem::SetVoiceDistances(float FullDistance, float MaxDistance)
 {
     if (!FMath::IsFinite(FullDistance) || !FMath::IsFinite(MaxDistance)) return;
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
     Pref->FullVolumeDistance = FMath::Max(0.0f, FullDistance);
     Pref->MaxVoiceDistance = FMath::Max(Pref->FullVolumeDistance + 1.0f, MaxDistance);
-    Pref->SaveConfig(); UpdateVoicePlayerVolumes();
+    SaveVoicePreferences(); UpdateVoicePlayerVolumes();
 }
 float UCasinoOnlineSubsystem::GetVoiceFullVolumeDistance() const { return GetDefault<UCasinoVoicePreferences>()->FullVolumeDistance; }
 float UCasinoOnlineSubsystem::GetVoiceMaxDistance() const { return GetDefault<UCasinoVoicePreferences>()->MaxVoiceDistance; }
@@ -889,15 +932,16 @@ float UCasinoOnlineSubsystem::GetVoiceMaxDistance() const { return GetDefault<UC
 void UCasinoOnlineSubsystem::SetMicrophoneMuted(bool bMuted)
 {
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
-    Pref->bMicrophoneMuted = bMuted; Pref->SaveConfig(); bVoiceDirty = true; ApplyVoiceSettings();
+    Pref->bMicrophoneMuted = bMuted; SaveVoicePreferences(); bVoiceDirty = true; ApplyVoiceSettings();
 }
 void UCasinoOnlineSubsystem::SetPushToTalkEnabled(bool bEnabled)
 {
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
-    Pref->bPushToTalk = bEnabled; Pref->SaveConfig(); bTalkHeld = false; bVoiceDirty = true; ApplyVoiceSettings();
+    Pref->bPushToTalk = bEnabled; SaveVoicePreferences(); bTalkHeld = false; bVoiceDirty = true; ApplyVoiceSettings();
 }
 void UCasinoOnlineSubsystem::SetPushToTalkHeld(bool bHeld)
 {
+    bHeld = bHeld && !bVoiceKeyCaptureActive;
     if (bTalkHeld == bHeld) return;
     bTalkHeld = bHeld; bVoiceDirty = true; ApplyVoiceSettings();
 }
@@ -905,14 +949,14 @@ void UCasinoOnlineSubsystem::SetVoiceOutputVolume(float Volume)
 {
     if (!FMath::IsFinite(Volume)) return;
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
-    Pref->OutputVolume = FMath::Clamp(Volume, 0.0f, 1.0f); Pref->SaveConfig(); bVoiceDirty = true; ApplyVoiceSettings();
+    Pref->OutputVolume = FMath::Clamp(Volume, 0.0f, 1.0f); SaveVoicePreferences(); bVoiceDirty = true; ApplyVoiceSettings();
 }
 void UCasinoOnlineSubsystem::SetVoiceInputVolume(float Volume)
 {
     if (!FMath::IsFinite(Volume)) return;
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
     Pref->InputVolume = FMath::Clamp(Volume, 0.0f, 2.0f);
-    Pref->SaveConfig(); bVoiceDirty = true; ApplyVoiceSettings();
+    SaveVoicePreferences(); bVoiceDirty = true; ApplyVoiceSettings();
 }
 float UCasinoOnlineSubsystem::GetVoiceInputVolume() const
 {
@@ -922,7 +966,7 @@ float UCasinoOnlineSubsystem::GetVoiceInputVolume() const
 void UCasinoOnlineSubsystem::SetVoiceInputDevice(const FString& DeviceId)
 {
     auto* Pref = GetMutableDefault<UCasinoVoicePreferences>();
-    Pref->InputDeviceId = DeviceId; Pref->SaveConfig(); bVoiceDirty = true; ApplyVoiceSettings();
+    Pref->InputDeviceId = DeviceId; SaveVoicePreferences(); bVoiceDirty = true; ApplyVoiceSettings();
 }
 void UCasinoOnlineSubsystem::SetVoicePlayerMuted(const FString& Id, bool bMuted)
 {
@@ -1004,6 +1048,91 @@ bool FCasinoRoomAdmissionTest::RunTest(const FString& Parameters)
 #endif
 
 #if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCasinoVoiceSettingsTest, "Casino.Voice.SettingsAndTalkInput",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FCasinoVoiceSettingsTest::RunTest(const FString& Parameters)
+{
+    // This transient subsystem is never initialized, so it cannot connect to EOS or
+    // register input/tickers. Every preference setter stays inside a deferred edit.
+    TStrongObjectPtr<UGameInstance> TestGameInstance(NewObject<UGameInstance>(GetTransientPackage()));
+    TStrongObjectPtr<UCasinoOnlineSubsystem> Online(NewObject<UCasinoOnlineSubsystem>(TestGameInstance.Get()));
+    auto* Preferences = GetMutableDefault<UCasinoVoicePreferences>();
+    const float OriginalInput = Preferences->InputVolume;
+    const float OriginalOutput = Preferences->OutputVolume;
+    const FKey OriginalKey = Preferences->PushToTalkKey;
+    const TMap<FString, float> OriginalPlayers = Preferences->PlayerVolumes;
+    Online->BeginVoicePreferenceEdit();
+    Online->BeginVoicePreferenceEdit();
+    ON_SCOPE_EXIT
+    {
+        Preferences->InputVolume = OriginalInput;
+        Preferences->OutputVolume = OriginalOutput;
+        Preferences->PushToTalkKey = OriginalKey;
+        Preferences->PlayerVolumes = OriginalPlayers;
+        // Deliberately discard the test's pending write before ending the edit:
+        // tests must never write the user's real GameUserSettings or preferences.
+        Online->bVoicePreferencesPendingSave = false;
+        while (Online->VoicePreferenceEditDepth > 0) Online->EndVoicePreferenceEdit();
+    };
+
+    Online->SetVoiceInputVolume(5.f);
+    Online->SetVoiceOutputVolume(-1.f);
+    Online->SetVoicePlayerVolume(TEXT("__CasinoVoiceSettingsTest__"), 5.f);
+    TestEqual(TEXT("Microphone gain clamps to 200 percent"), Online->GetVoiceInputVolume(), 2.f);
+    TestEqual(TEXT("Receive volume clamps to silence"), Online->GetVoiceOutputVolume(), 0.f);
+    TestEqual(TEXT("Personal gain clamps to 200 percent"), Online->GetVoicePlayerVolume(TEXT("__CasinoVoiceSettingsTest__")), 2.f);
+    const float InvalidVolume = std::numeric_limits<float>::quiet_NaN();
+    Online->SetVoiceInputVolume(InvalidVolume);
+    Online->SetVoiceOutputVolume(InvalidVolume);
+    Online->SetVoicePlayerVolume(TEXT("__CasinoVoiceSettingsTest__"), InvalidVolume);
+    TestEqual(TEXT("Invalid microphone gain retains the valid value"), Online->GetVoiceInputVolume(), 2.f);
+    TestEqual(TEXT("Invalid receive volume retains the valid value"), Online->GetVoiceOutputVolume(), 0.f);
+    TestEqual(TEXT("Invalid personal gain retains the valid value"), Online->GetVoicePlayerVolume(TEXT("__CasinoVoiceSettingsTest__")), 2.f);
+    const int32 PlayerCount = Preferences->PlayerVolumes.Num();
+    Online->SetVoicePlayerVolume(FString(), .5f);
+    TestEqual(TEXT("An empty participant ID cannot create a preference"), Preferences->PlayerVolumes.Num(), PlayerCount);
+    TestTrue(TEXT("Slider edits defer the settings-file write"), Online->bVoicePreferencesPendingSave);
+    Online->EndVoicePreferenceEdit();
+    TestEqual(TEXT("Nested edit retains the outer edit"), Online->VoicePreferenceEditDepth, 1);
+    TestTrue(TEXT("Ending only the inner edit does not flush"), Online->bVoicePreferencesPendingSave);
+
+    Online->SetPushToTalkKey(EKeys::K);
+    TestEqual(TEXT("A regular keyboard key is accepted"), Online->GetPushToTalkKey(), EKeys::K);
+    for (const FKey& InvalidKey : {FKey(), EKeys::Escape, EKeys::Tab, EKeys::AnyKey,
+        EKeys::LeftShift, EKeys::LeftControl, EKeys::LeftMouseButton, EKeys::MouseX, EKeys::Gamepad_FaceButton_Bottom})
+    {
+        TestFalse(TEXT("Reserved and unsupported talk keys are rejected"), Online->IsValidPushToTalkKey(InvalidKey));
+        Online->SetPushToTalkKey(InvalidKey);
+        TestEqual(TEXT("Rejected binding retains the selected key"), Online->GetPushToTalkKey(), EKeys::K);
+    }
+    Preferences->PushToTalkKey = EKeys::Tab;
+    TestEqual(TEXT("Old invalid saved binding falls back to V"), Online->GetPushToTalkKey(), EKeys::V);
+    Online->SetPushToTalkKey(EKeys::K);
+    Online->SetPushToTalkHeld(true);
+    TestTrue(TEXT("Talk press is held before key capture"), Online->bTalkHeld);
+    Online->SetVoiceKeyCaptureActive(true);
+    TestFalse(TEXT("Starting key capture immediately releases talk"), Online->bTalkHeld);
+    Online->SetPushToTalkHeld(true);
+    TestFalse(TEXT("Capture also blocks direct gameplay talk presses"), Online->bTalkHeld);
+    if (FSlateApplication::IsInitialized())
+    {
+        CasinoVoice::FTalkInput TalkInput(Online.Get());
+        FSlateApplication& App = FSlateApplication::Get();
+        const FKeyEvent TalkEvent(EKeys::K, FModifierKeysState(), 0, false, 0, 0);
+        TestFalse(TEXT("Talk preprocessor never consumes a captured key"), TalkInput.HandleKeyDownEvent(App, TalkEvent));
+        TestFalse(TEXT("Captured key does not start transmission"), Online->bTalkHeld);
+        Online->bTalkHeld = true;
+        TestFalse(TEXT("Key release remains unconsumed during capture"), TalkInput.HandleKeyUpEvent(App, TalkEvent));
+        TestFalse(TEXT("Key release clears any stale held state during capture"), Online->bTalkHeld);
+    }
+    Online->SetVoiceKeyCaptureActive(false);
+    TestFalse(TEXT("Ending capture does not start talk automatically"), Online->bTalkHeld);
+    Online->SetPushToTalkHeld(true);
+    Online->ApplicationDeactivated();
+    TestFalse(TEXT("Losing application focus releases talk"), Online->bTalkHeld);
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCasinoVoiceDistanceTest, "Casino.Voice.DistanceAttenuation",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FCasinoVoiceDistanceTest::RunTest(const FString& Parameters)

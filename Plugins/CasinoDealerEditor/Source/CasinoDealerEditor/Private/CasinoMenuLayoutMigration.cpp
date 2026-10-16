@@ -896,7 +896,8 @@ bool MigrateCasinoPresentationWidget(const TCHAR* AssetPath,
     const TSet<FName>& AddedBindingTargets)
 {
     OutError.Reset();
-    bool Allowed = FString(AssetPath) == LadderControlPath;
+    bool Allowed = FString(AssetPath) == LadderControlPath
+        || FString(AssetPath) == TEXT("/Game/KCU/WBP_Settings.WBP_Settings");
     for (const TCHAR* Path : DayLoopPaths) if (FString(AssetPath) == Path) Allowed = true;
     for (const TCHAR* Path : {
         TEXT("/Game/Blackjack/BluePrint/Widget/WBP_BlackjackHUD.WBP_BlackjackHUD"),
