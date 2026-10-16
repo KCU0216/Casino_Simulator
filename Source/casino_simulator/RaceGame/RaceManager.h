@@ -32,6 +32,8 @@ class CASINO_SIMULATOR_API ARaceManager : public AActor
 	GENERATED_BODY()
 
 public:
+	UFUNCTION(BlueprintCallable)
+	void TestFunction(int& A);
 	ARaceManager();
 
 	virtual void Tick(float DeltaSeconds) override;
