@@ -75,9 +75,34 @@ protected:
 	float MaxTurnTorque = 30.f;
 
 
+	// Clearance above the traced ground, measured from the mesh's lowest bound (cm).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mining|Cart|Step Assist", meta = (ClampMin = "0.0"))
+	float MaxStepAssistHeight = 100.f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mining|Cart|Step Assist", meta = (ClampMin = "0.0"))
+	float StepAssistStrength = 25.f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mining|Cart|Step Assist", meta = (ClampMin = "0.0"))
+	float MaxStepAssistAcceleration = 1500.f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mining|Cart|Step Assist", meta = (ClampMin = "0.0"))
+	float StepAssistBlockedSpeed = 50.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mining|Cart|Step Assist", meta = (ClampMin = "0.0"))
+	float StepAssistBlockedDelay = 0.15f;
+
+	// Soft tilt limit: corrective torque grows beyond this angle; rotation is never teleported.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mining|Cart|Stability", meta = (ClampMin = "0.0", ClampMax = "80.0"))
+	float MaxTiltAngle = 15.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mining|Cart|Stability", meta = (ClampMin = "0.0"))
+	float TiltSpringStrength = 80.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mining|Cart|Stability", meta = (ClampMin = "0.0"))
+	float TiltDampingStrength = 12.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Mining|Cart|Stability", meta = (ClampMin = "0.0"))
+	float MaxTiltTorque = 100.f;
 
 public:
 
@@ -93,6 +118,14 @@ public:
 	void OnRep_Carrier();
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FCartCarryAssistTest;
+#endif
 	void UpdateCargoLastCarrier();
+	void ApplyStepAssist(float DeltaTime, const FVector& ToTarget);
+	void ApplyTiltStabilization();
+	float CalculateStepAssistAcceleration(float GroundZ, float BottomZ) const;
+	FVector CalculateTiltTorque(const FVector& AngularVelocity) const;
+	float CarryBlockedTime = 0.f;
 
 };

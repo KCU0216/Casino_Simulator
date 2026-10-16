@@ -11,7 +11,6 @@
 #include "RaceBillboardWidget.h"
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
-#include "GameFramework/PlayerController.h"
 #include "Sound/SoundBase.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -91,12 +90,8 @@ ARaceManager::ARaceManager()
 		ConstructorHelpers::FObjectFinder<USoundBase> Asset(Path);
 		return Asset.Object;
 	};
-	CrowdAudio->SetSound(LoadSound(TEXT("/Game/6_Sound/RaceCrowd.RaceCrowd")));
 	CountdownSound = LoadSound(TEXT("/Game/6_Sound/RaceCountdown.RaceCountdown"));
 	StartSound = LoadSound(TEXT("/Game/6_Sound/RaceStart.RaceStart"));
-	FinishSound = LoadSound(TEXT("/Game/6_Sound/RaceFinish.RaceFinish"));
-	TicketWinSound = LoadSound(TEXT("/Game/LJH/Asset/SlotMachine/Sound/Winning.Winning"));
-	TicketLoseSound = LoadSound(TEXT("/Game/6_Sound/LadderLose.LadderLose"));
 
 }
 
@@ -119,8 +114,7 @@ void ARaceManager::BeginPlay()
 	Super::BeginPlay();
 	if (GetNetMode() != NM_DedicatedServer)
 	{
-		for (USoundBase* Sound : { CrowdAudio->Sound.Get(), CountdownSound.Get(), StartSound.Get(),
-			FinishSound.Get(), TicketWinSound.Get(), TicketLoseSound.Get() })
+		for (USoundBase* Sound : { CountdownSound.Get(), StartSound.Get() })
 		{
 			UGameplayStatics::PrimeSound(Sound);
 		}
@@ -449,23 +443,16 @@ void ARaceManager::PlayRaceCue(USoundBase* Sound)
 
 void ARaceManager::UpdateRaceAudio(ERacePhase PreviousPhase, bool bHadPhase)
 {
-	if (Phase == ERacePhase::Racing)
+	// Keep countdown and start cues; race ambience and result sounds are disabled.
+	CrowdAudio->Stop();
+	if (Phase == ERacePhase::Racing && bHadPhase)
 	{
-		if (!CrowdAudio->IsPlaying()) CrowdAudio->Play();
-		// Joining an ongoing race should resume ambience without announcing another start.
-		if (bHadPhase) PlayRaceCue(StartSound);
+		PlayRaceCue(StartSound);
 	}
 	else
 	{
-		CrowdAudio->Stop();
-		if (bHadPhase && PreviousPhase == ERacePhase::Racing && Phase == ERacePhase::Exiting)
-		{
-			PlayRaceCue(FinishSound);
-		}
-		else
-		{
-			RaceCueAudio->Stop();
-		}
+		RaceCueAudio->Stop();
+		RaceCueAudio->SetSound(nullptr);
 	}
 	if (Phase == ERacePhase::Betting) LastCountdownSecond = 4;
 }
@@ -478,21 +465,6 @@ void ARaceManager::UpdateCountdownAudio()
 	{
 		LastCountdownSecond = Remaining;
 		PlayRaceCue(CountdownSound);
-	}
-}
-
-void ARaceManager::Multicast_PlayTicketResult_Implementation(APlayerState* Buyer, bool bWon)
-{
-	if (GetNetMode() == NM_DedicatedServer || !Buyer) return;
-	// The manager has no owning client. Only the ticket buyer's local controller may hear this cue.
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
-	{
-		APlayerController* PC = It->Get();
-		if (PC && PC->IsLocalController() && PC->PlayerState == Buyer)
-		{
-			UGameplayStatics::PlaySound2D(PC, bWon ? TicketWinSound.Get() : TicketLoseSound.Get());
-			break;
-		}
 	}
 }
 
@@ -618,7 +590,6 @@ void ARaceManager::SettleTickets()
 	for (int32 i = Tickets.Num() - 1; i >= 0; --i)
 	{
 		if (Tickets[i].bWon) continue;
-		Multicast_PlayTicketResult(Tickets[i].Buyer, Tickets[i].RunnerIndex == WinnerIndex);
 		bTicketsChanged = true;
 		if (Tickets[i].RunnerIndex == WinnerIndex)
 			Tickets[i].bWon = true;

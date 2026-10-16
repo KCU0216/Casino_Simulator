@@ -6,7 +6,6 @@
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
-#include "Sound/SoundWave.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRaceAudioFlowTest, "Casino.Race.AudioFlow",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -23,14 +22,8 @@ bool FRaceAudioFlowTest::RunTest(const FString& Parameters)
         Manager->RaceCueAudio->bOverrideAttenuation && Manager->CrowdAudio->bOverrideAttenuation
         && Manager->RaceCueAudio->AttenuationOverrides.bAttenuate);
     TestTrue(TEXT("Footsteps follow each runner"), Runner->FootstepAudio->GetAttachParent() == Runner->GetRootComponent());
-    auto* Crowd = Cast<USoundWave>(Manager->CrowdAudio->Sound);
-    auto* Steps = Cast<USoundWave>(Runner->FootstepAudio->Sound);
-    if (!TestNotNull(TEXT("Crowd sound"), Crowd) || !TestNotNull(TEXT("Footstep sound"), Steps)) return false;
-    TestTrue(TEXT("Only continuous ambience loops"), Crowd->bLooping && Steps->bLooping);
-    TestTrue(TEXT("Personal win and loss sounds differ"), Manager->TicketWinSound != Manager->TicketLoseSound);
-    UFunction* TicketEvent = Manager->FindFunction(TEXT("Multicast_PlayTicketResult"));
-    TestTrue(TEXT("Ticket cue reaches each client for local buyer filtering"),
-        TicketEvent && TicketEvent->HasAllFunctionFlags(FUNC_NetMulticast | FUNC_NetReliable));
+    TestNull(TEXT("Race crowd sound is unassigned"), Manager->CrowdAudio->Sound.Get());
+    TestNull(TEXT("Race footstep sound is unassigned"), Runner->FootstepAudio->Sound.Get());
 
     Manager->OnRep_Phase();
     Manager->Phase = ERacePhase::Betting;
@@ -54,7 +47,8 @@ bool FRaceAudioFlowTest::RunTest(const FString& Parameters)
     TestNull(TEXT("Repeated phase replication does not replay start"), Manager->RaceCueAudio->Sound.Get());
     Manager->Phase = ERacePhase::Exiting;
     Manager->OnRep_Phase();
-    TestTrue(TEXT("Race completion selects finish cue"), Manager->RaceCueAudio->Sound == Manager->FinishSound);
+    TestNull(TEXT("Race completion does not select a finish cue"), Manager->RaceCueAudio->Sound.Get());
+    TestFalse(TEXT("Race crowd stays silent"), Manager->CrowdAudio->IsPlaying());
     auto* LateManager = World->SpawnActor<ARaceManager>();
     LateManager->Phase = ERacePhase::Racing;
     LateManager->OnRep_Phase();
@@ -65,7 +59,7 @@ bool FRaceAudioFlowTest::RunTest(const FString& Parameters)
     Script.RaceStartServerTime = World->GetTimeSeconds();
     Runner->ServerSetupScript(Script);
     Runner->ServerSetRacing(true, Script.RaceStartServerTime);
-    TestEqual(TEXT("Footstep pace follows runner speed"), Runner->FootstepAudio->PitchMultiplier, 1.3f);
+    TestFalse(TEXT("Runner footsteps stay silent during racing"), Runner->FootstepAudio->IsPlaying());
     Runner->ServerSetRacing(false);
     TestFalse(TEXT("Runner footsteps stop outside racing"), Runner->FootstepAudio->IsPlaying());
     return true;

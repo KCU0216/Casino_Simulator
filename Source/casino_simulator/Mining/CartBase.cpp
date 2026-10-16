@@ -7,6 +7,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/World.h"
 #include "Mining/OrePickupBase.h"
 #include "NativeGameplayTags.h"
 #include "Net/UnrealNetwork.h"
@@ -61,8 +62,10 @@ void ACartBase::Tick(float DeltaTime)
 		return;
 	}
 
+	ApplyTiltStabilization();
 	if (!IsValid(Carrier))
 	{
+		CarryBlockedTime = 0.f;
 		return;
 	}
 
@@ -92,6 +95,7 @@ void ACartBase::Tick(float DeltaTime)
 	const FVector CarryForce = (SpringForce + DampingForce).GetClampedToMaxSize(MaxCarryForce);
 
 	CartMesh->AddForce(CarryForce);
+	ApplyStepAssist(DeltaTime, ToTarget);
 
 	FVector CartForward = -CartMesh->GetForwardVector();
 	CartForward.Z = 0.0f;
@@ -203,6 +207,7 @@ bool ACartBase::TryCarry(Acasino_simulatorCharacter* Character)
 	Carrier = Character;
 	UpdateCargoLastCarrier();
 	CarrierTargetLocation = GetActorLocation();
+	CarryBlockedTime = 0.f;
 	Character->SetCarriedCart(this);
 	ForceNetUpdate();
 	return true;
@@ -219,6 +224,7 @@ bool ACartBase::TryRelease(Acasino_simulatorCharacter* Character)
 	}
 	UpdateCargoLastCarrier();
 	Carrier = nullptr;
+	CarryBlockedTime = 0.f;
 	Character->SetCarriedCart(nullptr);
 	return true;
 }
@@ -245,4 +251,66 @@ void ACartBase::UpdateCargoLastCarrier()
 			Ore->SetLastCarrier(Carrier);
 		}
 	}
+}
+
+float ACartBase::CalculateStepAssistAcceleration(float GroundZ, float BottomZ) const
+{
+	const float HeightRemaining = FMath::Clamp(GroundZ + MaxStepAssistHeight - BottomZ, 0.f, MaxStepAssistHeight);
+	return FMath::Clamp(HeightRemaining * StepAssistStrength, 0.f, MaxStepAssistAcceleration);
+}
+
+void ACartBase::ApplyStepAssist(float DeltaTime, const FVector& ToTarget)
+{
+	if (!CartMesh->IsSimulatingPhysics()) return;
+	const FVector PullDirection = ToTarget.GetSafeNormal2D();
+	const float ForwardSpeed = FVector::DotProduct(CartMesh->GetPhysicsLinearVelocity(), PullDirection);
+	// Do not lift a parked cart or a cart already following its carrier normally.
+	if (ToTarget.SizeSquared2D() < FMath::Square(40.f) || ForwardSpeed >= StepAssistBlockedSpeed)
+	{
+		CarryBlockedTime = 0.f;
+		return;
+	}
+	CarryBlockedTime += DeltaTime;
+	if (CarryBlockedTime < StepAssistBlockedDelay || MaxStepAssistHeight <= 0.f) return;
+
+	const FBoxSphereBounds Bounds = CartMesh->Bounds;
+	const float BottomZ = Bounds.Origin.Z - Bounds.BoxExtent.Z;
+	const FVector TraceStart = Bounds.Origin;
+	const FVector TraceEnd(TraceStart.X, TraceStart.Y, BottomZ - MaxStepAssistHeight - 50.f);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(CartStepAssist), false, this);
+	Params.AddIgnoredActor(Carrier.Get());
+	// Ores and players are not ground; ignore physics bodies and pawns.
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+	Objects.AddObjectTypesToQuery(ECC_WorldDynamic);
+	FHitResult GroundHit;
+	if (!GetWorld()->LineTraceSingleByObjectType(GroundHit, TraceStart, TraceEnd, Objects, Params)
+		|| GroundHit.bStartPenetrating || GroundHit.ImpactNormal.Z < 0.5f) return;
+
+	const float LiftAcceleration = CalculateStepAssistAcceleration(GroundHit.ImpactPoint.Z, BottomZ);
+	// Upward assistance only. Gravity handles descent; no added Z velocity damping.
+	CartMesh->AddForce(FVector(0.f, 0.f, LiftAcceleration), NAME_None, true);
+}
+
+FVector ACartBase::CalculateTiltTorque(const FVector& AngularVelocity) const
+{
+	const FVector Up = CartMesh->GetUpVector();
+	const float TiltAngle = FMath::Acos(FMath::Clamp(FVector::DotProduct(Up, FVector::UpVector), -1.f, 1.f));
+	const float ExcessTilt = FMath::Max(0.f, TiltAngle - FMath::DegreesToRadians(MaxTiltAngle));
+	FVector CorrectionAxis = FVector::CrossProduct(Up, FVector::UpVector).GetSafeNormal();
+	if (ExcessTilt > 0.f && CorrectionAxis.IsNearlyZero())
+	{
+		// An upside-down cart still needs a recovery axis.
+		CorrectionAxis = CartMesh->GetForwardVector().GetSafeNormal2D();
+	}
+	const FVector TiltVelocity(AngularVelocity.X, AngularVelocity.Y, 0.f);
+	return (CorrectionAxis * ExcessTilt * TiltSpringStrength - TiltVelocity * TiltDampingStrength)
+		.GetClampedToMaxSize(MaxTiltTorque);
+}
+
+void ACartBase::ApplyTiltStabilization()
+{
+	if (!CartMesh->IsSimulatingPhysics()) return;
+	// World-horizontal torque controls tilt while preserving free yaw and vertical travel.
+	CartMesh->AddTorqueInRadians(CalculateTiltTorque(CartMesh->GetPhysicsAngularVelocityInRadians()), NAME_None, true);
 }

@@ -127,14 +127,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Race|Sound") TObjectPtr<UAudioComponent> RaceCueAudio;
 	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> CountdownSound;
 	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> StartSound;
-	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> FinishSound;
-	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> TicketWinSound;
-	UPROPERTY(EditDefaultsOnly, Category="Race|Sound") TObjectPtr<USoundBase> TicketLoseSound;
 	void UpdateRaceAudio(ERacePhase PreviousPhase, bool bHadPhase);
 	void UpdateCountdownAudio();
 	void PlayRaceCue(USoundBase* Sound);
 	int32 LastCountdownSecond = 4;
-	UFUNCTION(NetMulticast, Reliable) void Multicast_PlayTicketResult(APlayerState* Buyer, bool bWon);
     UFUNCTION() void OnRep_Phase();
     UFUNCTION() void OnRep_BillboardData();
     UFUNCTION() void OnRep_AwakenRunner();
